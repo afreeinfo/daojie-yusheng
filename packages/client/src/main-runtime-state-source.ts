@@ -357,6 +357,7 @@ export function createMainRuntimeStateSource(options: MainRuntimeStateSourceOpti
   let pendingWorldDelta: S2C_WorldDelta | null = null;
   let pendingSelfDelta: S2C_SelfDelta | null = null;
   let pendingPanelDelta: S2C_PanelDelta | null = null;
+  let pendingMapStatic: S2C_MapStatic | null = null;
 
   const resolveMapEnterHints = (player: PlayerState | null | undefined): { mapIdHint?: string; instanceIdHint?: string } => {
     return {
@@ -367,6 +368,28 @@ export function createMainRuntimeStateSource(options: MainRuntimeStateSourceOpti
         ? latestMapEnter.iid
         : undefined,
     };
+  };
+
+  const applyMapStaticToCurrentRuntime = (data: S2C_MapStatic): void => {
+    options.applyMapStaticToRuntime(data);
+    const player = options.getPlayer();
+    if (player && data.minimapLibrary) {
+      player.unlockedMinimapIds = data.minimapLibrary.map((entry) => entry.mapId).sort();
+      options.inventorySyncPlayerContext(player);
+    }
+    if (player && data.mapId === player.mapId) {
+      options.refreshUiChrome();
+    }
+  };
+
+  const flushPendingMapStaticForCurrentMap = (): void => {
+    const player = options.getPlayer();
+    if (!player || !pendingMapStatic || pendingMapStatic.mapId !== player.mapId) {
+      return;
+    }
+    const pending = pendingMapStatic;
+    pendingMapStatic = null;
+    applyMapStaticToCurrentRuntime(pending);
   };
 
   const flushPendingBootstrapEnvelope = (): void => {
@@ -389,6 +412,7 @@ export function createMainRuntimeStateSource(options: MainRuntimeStateSourceOpti
       pendingPanelDelta = null;
       options.applyPanelDelta(pending);
     }
+    flushPendingMapStaticForCurrentMap();
   };
 
   return {  
@@ -403,6 +427,7 @@ export function createMainRuntimeStateSource(options: MainRuntimeStateSourceOpti
       pendingWorldDelta = null;
       pendingSelfDelta = null;
       pendingPanelDelta = null;
+      pendingMapStatic = null;
     },    
     /**
  * handleInitSession：处理InitSession并更新相关状态。
@@ -457,6 +482,7 @@ export function createMainRuntimeStateSource(options: MainRuntimeStateSourceOpti
         return;
       }
       options.applySelfDelta(data);
+      flushPendingMapStaticForCurrentMap();
     },    
     /**
  * handlePanelDelta：处理面板增量并更新相关状态。
@@ -519,15 +545,18 @@ export function createMainRuntimeStateSource(options: MainRuntimeStateSourceOpti
     handleMapStatic(data: S2C_MapStatic): void {
   // 关键分支按状态与边界条件处理，非法路径会被提前拦截。
 
-      options.applyMapStaticToRuntime(data);
       const player = options.getPlayer();
-      if (player && data.minimapLibrary) {
-        player.unlockedMinimapIds = data.minimapLibrary.map((entry) => entry.mapId).sort();
-        options.inventorySyncPlayerContext(player);
+      if (player && data.mapId !== player.mapId) {
+        if (latestMapEnter?.mid === data.mapId) {
+          pendingMapStatic = data;
+        }
+        applyMapStaticToCurrentRuntime(data);
+        return;
       }
-      if (player && data.mapId === player.mapId) {
-        options.refreshUiChrome();
+      if (pendingMapStatic?.mapId === data.mapId) {
+        pendingMapStatic = null;
       }
+      applyMapStaticToCurrentRuntime(data);
     },    
     /**
  * handleBootstrap：处理引导并更新相关状态。
@@ -537,6 +566,7 @@ export function createMainRuntimeStateSource(options: MainRuntimeStateSourceOpti
 
 
     handleBootstrap(data: S2C_Bootstrap): void {
+      pendingMapStatic = null;
       options.hideObserveModal();
       options.clearTargetingState();
       latestInitSession = latestInitSession?.pid === data.self.id ? latestInitSession : null;

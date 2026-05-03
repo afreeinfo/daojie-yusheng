@@ -37,7 +37,10 @@ import { preserveSelection } from '../selection-preserver';
 import {
   ATTR_COLORS,
   ATTR_TAB_LABELS,
+  CRAFT_ICON_ATLAS_CELLS,
   ELEMENT_COLORS,
+  ATTR_ICON_ATLAS_CELLS,
+  type NumericCardIconAtlasCell,
   NUMERIC_TOOLTIP_DESCRIPTIONS,
   NUMERIC_TOOLTIP_LABELS,
   PLAYER_SPECIAL_TOOLTIP_DESCRIPTIONS,
@@ -506,8 +509,66 @@ function escapeHtml(value: string): string {
     .replaceAll("'", '&#39;');
 }
 
+/** getNumericCardIconAtlasCell：读取数值卡片在属性图集中的格子坐标。 */
+function getNumericCardIconAtlasCell(key: string): NumericCardIconAtlasCell | undefined {
+  return ATTR_ICON_ATLAS_CELLS[key];
+}
+
+/** renderAtlasIcon：渲染图集中的一个图标。 */
+function renderAtlasIcon(key: string, className: string): string {
+  const iconCell = getNumericCardIconAtlasCell(key);
+  if (!iconCell) {
+    return '';
+  }
+  return `<span class="${className}" style="--attr-icon-col:${iconCell.col};--attr-icon-row:${iconCell.row};" aria-hidden="true"></span>`;
+}
+
+/** renderCraftAtlasIcon：渲染技艺图集中的一个图标。 */
+function renderCraftAtlasIcon(key: string): string {
+  const iconCell = CRAFT_ICON_ATLAS_CELLS[key];
+  if (!iconCell) {
+    return '';
+  }
+  return `<span class="attr-craft-icon" style="--craft-icon-col:${iconCell.col};--craft-icon-row:${iconCell.row};" aria-hidden="true"></span>`;
+}
+
+/** renderAttrMiniCard：渲染属性数值宫格卡片。 */
+function renderAttrMiniCard(
+  card: AttrNumericCardSnapshot,
+  options: {
+    cardAttr: string;
+    labelAttr: string;
+    valueAttr: string;
+    subAttr: string;
+  },
+): string {
+  const iconHtml = renderAtlasIcon(card.key, 'attr-mini-icon');
+  return `<div class="attr-mini ${iconHtml ? 'attr-mini--with-icon' : ''}" ${options.cardAttr}="${escapeHtml(card.key)}" data-tooltip-title="${escapeHtml(card.tooltipTitle)}" data-tooltip-detail="${escapeHtml(card.tooltipDetail)}">
+    <div class="attr-mini-main">
+      ${iconHtml}
+      <div class="attr-mini-value" ${options.valueAttr}="true">${card.value}</div>
+    </div>
+    <div class="attr-mini-label" ${options.labelAttr}="true">${card.label}</div>
+    <div class="attr-mini-sub ${card.sub ? '' : 'hidden'}" ${options.subAttr}="true">${card.sub ?? ''}</div>
+  </div>`;
+}
+
+/** formatRadarNodePercent：把雷达 viewBox 坐标转为绝对定位百分比。 */
+function formatRadarNodePercent(value: string): string {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return '50%';
+  }
+  return `${((numeric / 340) * 100).toFixed(3)}%`;
+}
+
 /** 属性雷达图中的单个节点，包含标签、数值、颜色和提示文案。 */
 interface RadarEntry {
+/**
+ * key：图标与增量更新使用的稳定键。
+ */
+
+  key: string;
 /**
  * label：label名称或显示文本。
  */
@@ -532,7 +593,7 @@ interface RadarEntry {
  * tooltipTitle：提示Title名称或显示文本。
  */
 
-  tooltipTitle: string;  
+  tooltipTitle: string;
   /**
  * tooltipDetail：提示详情状态或数据块。
  */
@@ -542,6 +603,11 @@ interface RadarEntry {
 
 /** 单个雷达节点的渲染快照，记录坐标、标签和值提示。 */
 interface AttrRadarNodeSnapshot {
+/**
+ * key：图标与增量更新使用的稳定键。
+ */
+
+  key: string;
 /**
  * label：label名称或显示文本。
  */
@@ -591,7 +657,7 @@ interface AttrRadarNodeSnapshot {
  * tooltipTitle：提示Title名称或显示文本。
  */
 
-  tooltipTitle: string;  
+  tooltipTitle: string;
   /**
  * tooltipDetail：提示详情状态或数据块。
  */
@@ -691,7 +757,7 @@ interface AttrNumericCardSnapshot {
  * tooltipTitle：提示Title名称或显示文本。
  */
 
-  tooltipTitle: string;  
+  tooltipTitle: string;
   /**
  * tooltipDetail：提示详情状态或数据块。
  */
@@ -764,6 +830,16 @@ interface AttrCraftSkillSnapshot {
  */
 
   progressPercent: string;
+  /**
+ * tooltipTitle：提示Title名称或显示文本。
+ */
+
+  tooltipTitle: string;
+  /**
+ * tooltipDetail：提示详情状态或数据块。
+ */
+
+  tooltipDetail: string;
 }
 
 /** 生活技能页的渲染快照，按技能列表展示。 */
@@ -1046,7 +1122,7 @@ export class AttrPanel {
           },
         }, final, numericStatBreakdowns),
         qi: this.buildNumericPaneSnapshot('灵力运转', stats, ratioDivisors, {
-          keys: ['maxQi', 'maxQiOutputPerTick', 'qiRegenRate', 'hpRegenRate', 'cooldownSpeed', 'auraCostReduce', 'auraPowerRate'],
+          keys: ['maxQi', 'maxQiOutputPerTick', 'qiRegenRate', 'hpRegenRate', 'cooldownSpeed'],
           ratioKeys: ['cooldownSpeed'],
           legends: {
             maxQi: '最大灵力值',
@@ -1054,8 +1130,6 @@ export class AttrPanel {
             qiRegenRate: '灵力回复',
             hpRegenRate: '生命回复',
             cooldownSpeed: '冷却速度',
-            auraCostReduce: '光环消耗缩减',
-            auraPowerRate: '光环效果增强',
           },
         }, final, numericStatBreakdowns),
         special: this.buildSpecialPaneSnapshot(stats, ratioDivisors, specialStats, final, numericStatBreakdowns),
@@ -1079,6 +1153,7 @@ export class AttrPanel {
       const roundedValue = Math.round(finalValue);
       return {
         label: ATTR_KEY_LABELS[key],
+        key,
         value: finalValue,
         valueLabel: formatDisplayInteger(roundedValue),
         tooltipTitle: ATTR_KEY_LABELS[key],
@@ -1113,6 +1188,7 @@ export class AttrPanel {
       const roundedBonus = Math.round(damageBonus);
       return {
         label: `${ELEMENT_KEY_LABELS[key]}灵根`,
+        key: `root-${key}`,
         value: damageBonus,
         valueLabel: formatDisplayInteger(roundedBonus),
         tooltipTitle: `${ELEMENT_KEY_LABELS[key]}灵根`,
@@ -1272,6 +1348,7 @@ export class AttrPanel {
         y: labelPoint.y + (isUpper ? -18 : 18),
       };
       return {
+        key: entry.key,
         label: entry.label,
         valueLabel: entry.valueLabel ?? formatDisplayInteger(entry.value),
         color: entry.color,
@@ -1503,13 +1580,20 @@ export class AttrPanel {
       return null;
     }
     const remain = Math.max(0, skill.expToNext - skill.exp);
+    const progress = `${formatDisplayInteger(skill.exp)}/${formatDisplayInteger(skill.expToNext)}`;
     return {
       key,
       label,
       level: `LV ${formatDisplayInteger(skill.level)}`,
-      progress: `${formatDisplayInteger(skill.exp)}/${formatDisplayInteger(skill.expToNext)}`,
+      progress,
       remain: `距下一级还需 ${formatDisplayInteger(remain)} ${label}经验`,
       progressPercent: `${(getCraftProgressRatio(skill.exp, skill.expToNext) * 100).toFixed(2)}%`,
+      tooltipTitle: label,
+      tooltipDetail: [
+        `等级：LV ${formatDisplayInteger(skill.level)}`,
+        `经验：${progress}`,
+        `距下一级还需 ${formatDisplayInteger(remain)}`,
+      ].join('\n'),
     };
   }  
   /**
@@ -1579,29 +1663,29 @@ export class AttrPanel {
       return `<div class="panel-section" data-pane-kind="numeric">
         <div class="panel-section-title" data-numeric-title="true">${snapshot.title}</div>
         <div class="attr-grid wide">
-          ${snapshot.cards.map((card) => `
-            <div class="attr-mini" data-numeric-card="${card.key}" data-tooltip-title="${escapeHtml(card.tooltipTitle)}" data-tooltip-detail="${escapeHtml(card.tooltipDetail)}">
-              <div class="attr-mini-label" data-numeric-label="true">${card.label}</div>
-              <div class="attr-mini-value" data-numeric-value="true">${card.value}</div>
-              <div class="attr-mini-sub ${card.sub ? '' : 'hidden'}" data-numeric-sub="true">${card.sub ?? ''}</div>
-            </div>
-          `).join('')}
+          ${snapshot.cards.map((card) => renderAttrMiniCard(card, {
+            cardAttr: 'data-numeric-card',
+            labelAttr: 'data-numeric-label',
+            valueAttr: 'data-numeric-value',
+            subAttr: 'data-numeric-sub',
+          })).join('')}
         </div>
       </div>`;
     }
     if (snapshot.kind === 'craft') {
-      return `<div class="body-training-panel" data-pane-kind="craft">
+      return `<div class="attr-craft-list" data-pane-kind="craft">
         ${snapshot.skills.map((skill) => `
-          <section class="body-training-hero" data-craft-skill="${skill.key}">
-            <div class="body-training-hero-main">
-              <span class="body-training-kicker" data-craft-label="true">${skill.label}</span>
-              <strong class="body-training-level" data-craft-level="true">${skill.level}</strong>
-              <span class="body-training-progress-text" data-craft-progress="true">${skill.progress}</span>
+          <section class="attr-craft-row" data-craft-skill="${escapeHtml(skill.key)}" data-tooltip-title="${escapeHtml(skill.tooltipTitle)}" data-tooltip-detail="${escapeHtml(skill.tooltipDetail)}">
+            ${renderCraftAtlasIcon(skill.key)}
+            <span class="attr-craft-label" data-craft-label="true">${escapeHtml(skill.label)}</span>
+            <strong class="attr-craft-level" data-craft-level="true">${escapeHtml(skill.level)}</strong>
+            <div class="attr-craft-exp">
+              <span class="attr-craft-exp-text" data-craft-progress="true">${escapeHtml(skill.progress)}</span>
+              <div class="attr-craft-exp-track" aria-hidden="true">
+                <span class="attr-craft-exp-fill" data-craft-progress-fill="true" style="width:${skill.progressPercent}"></span>
+              </div>
             </div>
-            <div class="body-training-progress-bar">
-              <span class="body-training-progress-fill" data-craft-progress-fill="true" style="width:${skill.progressPercent}"></span>
-            </div>
-            <div class="body-training-hero-note" data-craft-remain="true">${skill.remain}</div>
+            <span class="attr-craft-remain" data-craft-remain="true">${escapeHtml(skill.remain)}</span>
           </section>
         `).join('')}
       </div>`;
@@ -1635,8 +1719,15 @@ export class AttrPanel {
               </g>
             `).join('')}
           </svg>
+          ${snapshot.nodes.map((node, index) => `
+            <div class="attr-radar-icon-node" data-radar-icon-node="${index}" style="left:${formatRadarNodePercent(node.labelX)};top:${formatRadarNodePercent(node.labelY)};" data-tooltip-title="${escapeHtml(node.tooltipTitle)}" data-tooltip-detail="${escapeHtml(node.tooltipDetail)}">
+              ${renderAtlasIcon(node.key, 'attr-radar-icon')}
+              <span class="attr-radar-icon-value" data-radar-icon-value="true">${node.valueLabel}</span>
+            </div>
+          `).join('')}
           ${snapshot.summaryCards?.length ? snapshot.summaryCards.map((card) => `
             <div class="attr-radar-floating-stat" data-radar-summary-card="${card.key}" data-tooltip-title="${escapeHtml(card.tooltipTitle)}" data-tooltip-detail="${escapeHtml(card.tooltipDetail)}">
+              ${renderAtlasIcon(card.key, 'attr-radar-floating-icon')}
               <span class="attr-radar-floating-label" data-radar-summary-label="true">${card.label}</span>
               <span class="attr-radar-floating-value" data-radar-summary-value="true">${card.value}</span>
             </div>
@@ -1645,13 +1736,12 @@ export class AttrPanel {
       </div>
       ${snapshot.cards?.length ? `
         <div class="attr-grid wide attr-radar-extra-grid" data-radar-extra-grid="true">
-          ${snapshot.cards.map((card) => `
-            <div class="attr-mini" data-radar-extra-card="${card.key}" data-tooltip-title="${escapeHtml(card.tooltipTitle)}" data-tooltip-detail="${escapeHtml(card.tooltipDetail)}">
-              <div class="attr-mini-label" data-radar-extra-label="true">${card.label}</div>
-              <div class="attr-mini-value" data-radar-extra-value="true">${card.value}</div>
-              <div class="attr-mini-sub ${card.sub ? '' : 'hidden'}" data-radar-extra-sub="true">${card.sub ?? ''}</div>
-            </div>
-          `).join('')}
+          ${snapshot.cards.map((card) => renderAttrMiniCard(card, {
+            cardAttr: 'data-radar-extra-card',
+            labelAttr: 'data-radar-extra-label',
+            valueAttr: 'data-radar-extra-value',
+            subAttr: 'data-radar-extra-sub',
+          })).join('')}
         </div>
       ` : ''}
     </div>`;
@@ -1755,6 +1845,8 @@ export class AttrPanel {
         if (!labelNode || !levelNode || !progressNode || !fillNode || !remainNode) {
           return false;
         }
+        skillNode.setAttribute('data-tooltip-title', skill.tooltipTitle);
+        skillNode.setAttribute('data-tooltip-detail', skill.tooltipDetail);
         labelNode.textContent = skill.label;
         levelNode.textContent = skill.level;
         progressNode.textContent = skill.progress;
@@ -1800,6 +1892,19 @@ export class AttrPanel {
       value.textContent = node.valueLabel;
       value.setAttribute('x', node.valueX);
       value.setAttribute('y', node.valueY);
+      const iconNode = pane.querySelector<HTMLElement>(`[data-radar-icon-node="${index}"]`);
+      if (!iconNode) {
+        return false;
+      }
+      const iconValueNode = iconNode.querySelector<HTMLElement>('[data-radar-icon-value="true"]');
+      if (!iconValueNode) {
+        return false;
+      }
+      iconNode.setAttribute('data-tooltip-title', node.tooltipTitle);
+      iconNode.setAttribute('data-tooltip-detail', node.tooltipDetail);
+      iconNode.style.left = formatRadarNodePercent(node.labelX);
+      iconNode.style.top = formatRadarNodePercent(node.labelY);
+      iconValueNode.textContent = node.valueLabel;
     }
     const summaryCards = snapshot.summaryCards ?? [];
     if (summaryCards.length > 0) {
@@ -2060,12 +2165,16 @@ export class AttrPanel {
         top: 8px;
         right: 10px;
         z-index: 1;
-        display: inline-flex;
-        align-items: baseline;
-        gap: 6px;
+        display: inline-grid;
+        grid-template-columns: 24px minmax(0, max-content);
+        align-items: center;
+        gap: 7px;
+        min-width: 64px;
+        height: 30px;
+        padding: 0;
         color: var(--ink-grey);
         font-size: var(--font-size-12);
-        line-height: 1.2;
+        line-height: 1;
         cursor: help;
         transition: color 0.16s ease, text-shadow 0.16s ease, transform 0.16s ease;
       }
@@ -2073,13 +2182,37 @@ export class AttrPanel {
       .attr-radar-floating-stat:focus-visible {
         color: var(--stamp-red);
         text-shadow: 0 1px 8px rgba(124, 37, 31, 0.22);
-        transform: translateY(-1px);
         outline: none;
       }
+      .attr-radar-floating-icon {
+        width: 22px;
+        height: 22px;
+        justify-self: center;
+        align-self: center;
+        background-image: url('/assets/attr-icons/attribute-icons-atlas.png');
+        background-repeat: no-repeat;
+        background-size: 176px 154px;
+        background-position:
+          calc(var(--attr-icon-col) * -22px)
+          calc(var(--attr-icon-row) * -22px);
+        filter: drop-shadow(0 2px 4px rgba(58, 38, 24, 0.16));
+        pointer-events: none;
+      }
+      .attr-radar-floating-label {
+        display: none;
+      }
       .attr-radar-floating-value {
+        display: flex;
+        align-items: center;
+        height: 24px;
         font-size: var(--font-size-14);
         font-weight: var(--font-weight-strong);
         color: var(--ink-black);
+        line-height: 24px;
+        white-space: nowrap;
+      }
+      .attr-radar-floating-stat[data-radar-summary-card="rootFoundation"] .attr-radar-floating-value {
+        transform: translateY(2px);
       }
       .attr-radar-extra-grid {
         margin-top: 12px;
@@ -2098,13 +2231,54 @@ export class AttrPanel {
         opacity: 0.9;
       }
       .attr-radar-label {
-        font-family: var(--font-role-body);
-        font-size: var(--font-size-role-body-12);
-        fill: var(--ink-black);
+        display: none;
       }
       .attr-radar-value {
-        font-size: var(--font-size-11);
-        fill: var(--ink-grey);
+        display: none;
+      }
+      .attr-radar-icon-node {
+        position: absolute;
+        z-index: 2;
+        display: inline-grid;
+        grid-template-columns: 24px minmax(0, max-content);
+        align-items: center;
+        justify-content: center;
+        gap: 5px;
+        min-width: 64px;
+        height: 32px;
+        padding: 0;
+        transform: translate(-50%, -50%);
+        cursor: help;
+        pointer-events: auto;
+      }
+      .attr-radar-icon-node:hover,
+      .attr-radar-icon-node:focus-visible {
+        text-shadow: 0 1px 8px rgba(124, 37, 31, 0.2);
+        outline: none;
+      }
+      .attr-radar-icon {
+        width: 22px;
+        height: 22px;
+        justify-self: center;
+        align-self: center;
+        background-image: url('/assets/attr-icons/attribute-icons-atlas.png');
+        background-repeat: no-repeat;
+        background-size: 176px 154px;
+        background-position:
+          calc(var(--attr-icon-col) * -22px)
+          calc(var(--attr-icon-row) * -22px);
+        filter: drop-shadow(0 2px 4px rgba(58, 38, 24, 0.16));
+        pointer-events: none;
+      }
+      .attr-radar-icon-value {
+        display: flex;
+        align-items: center;
+        height: 22px;
+        font-size: var(--font-size-12);
+        font-weight: var(--font-weight-strong);
+        line-height: 22px;
+        color: var(--ink-black);
+        white-space: nowrap;
       }
     `;
     document.head.appendChild(style);

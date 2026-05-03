@@ -259,6 +259,37 @@ export class InstanceCatalogService implements OnModuleInit {
     );
   }
 
+  async markInstanceTemplateMissing(input: {
+    instanceId: string;
+    templateId: string;
+  }): Promise<boolean> {
+    if (!this.pool || !this.enabled || !input.instanceId.trim() || !input.templateId.trim()) {
+      return false;
+    }
+    const result = await this.pool.query(
+      `
+        UPDATE ${INSTANCE_CATALOG_TABLE}
+        SET status = 'active',
+            runtime_status = 'template_missing',
+            assigned_node_id = NULL,
+            lease_token = NULL,
+            lease_expire_at = NULL,
+            last_active_at = now()
+        WHERE instance_id = $1
+          AND template_id = $2
+          AND (
+            status <> 'active'
+            OR runtime_status <> 'template_missing'
+            OR assigned_node_id IS NOT NULL
+            OR lease_token IS NOT NULL
+            OR lease_expire_at IS NOT NULL
+          )
+      `,
+      [input.instanceId.trim(), input.templateId.trim()],
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
   async claimInstanceLease(input: {
     instanceId: string;
     nodeId: string;

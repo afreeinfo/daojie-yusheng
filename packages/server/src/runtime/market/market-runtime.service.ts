@@ -253,12 +253,21 @@ let MarketRuntimeService = MarketRuntimeService_1 = class MarketRuntimeService {
     /** 构造某件物品的坊市图鉴页，供查看价格和挂单情况。 */
     buildItemBook(itemKey) {
 
+        const requestedItemKey = typeof itemKey === 'string' ? itemKey.trim() : '';
+
         const normalizedItemKey = this.resolveInternalMarketItemKey(itemKey);
+
+        const responseItemKey = requestedItemKey || this.buildClientMarketKey(normalizedItemKey);
+
+        const book = this.buildItemBookView(normalizedItemKey);
+        if (book) {
+            book.itemKey = responseItemKey;
+        }
         return {
             currencyItemId: market_1.MARKET_CURRENCY_ITEM_ID,
             currencyItemName: this.getCurrencyItemName(),
-            itemKey: this.buildClientMarketKey(normalizedItemKey),
-            book: this.buildItemBookView(normalizedItemKey),
+            itemKey: responseItemKey,
+            book,
         };
     }
     /** 构造玩家自己的成交历史分页。 */
@@ -1420,8 +1429,50 @@ let MarketRuntimeService = MarketRuntimeService_1 = class MarketRuntimeService {
             }
         }
 
+        const structuredItem = this.resolveStructuredMarketItemKey(payload?.itemKey);
+        if (structuredItem) {
+            return structuredItem;
+        }
+
         const itemId = typeof payload?.itemId === 'string' ? payload.itemId.trim() : '';
         return itemId ? this.contentTemplateRepository.createItem(itemId, 1) : null;
+    }
+    /**
+ * resolveStructuredMarketItemKey：从客户端结构化 itemKey 还原求购物品。
+ * @param itemKey 客户端传入的 itemKey。
+ * @returns 可求购的物品，无法还原时返回 null。
+ */
+
+    resolveStructuredMarketItemKey(itemKey) {
+  // 关键分支按状态与边界条件处理，非法路径会被提前拦截。
+
+        const normalizedItemKey = typeof itemKey === 'string' ? itemKey.trim() : '';
+        if (!normalizedItemKey.startsWith('{')) {
+            return null;
+        }
+        try {
+            const parsed = JSON.parse(normalizedItemKey);
+            const itemId = typeof parsed?.itemId === 'string' ? parsed.itemId.trim() : '';
+            if (!itemId) {
+                return null;
+            }
+            const baseItem = this.contentTemplateRepository.createItem(itemId, 1);
+            if (!baseItem) {
+                return null;
+            }
+            const mergedItem = {
+                ...baseItem,
+                itemId,
+                count: 1,
+            };
+            if (Number.isFinite(Number(parsed.enhanceLevel))) {
+                mergedItem.enhanceLevel = Math.max(0, Math.trunc(Number(parsed.enhanceLevel)));
+            }
+            return this.toFullItem(mergedItem);
+        }
+        catch {
+            return null;
+        }
     }
     /**
  * toOrderItem：执行to订单道具相关逻辑。

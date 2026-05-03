@@ -115,3 +115,72 @@ export const PLAYER_SPECIAL_TOOLTIP_DESCRIPTIONS: Record<PlayerSpecialCardKey, s
   comprehension: '提高境界修为与功法经验获取；不作为六维参与基础属性换算。',
   luck: '提高常规掉落与稀有掉落收益；不再提供命中、闪避、暴击等战斗属性。',
 };
+
+export type NumericCardIconAtlasCell = {
+  col: number;
+  row: number;
+};
+
+export const ATTR_ICON_ATLAS_COLUMNS = 8;
+export const ATTR_ICON_ATLAS_ROWS = 7;
+
+export const ATTR_ICON_ATLAS_CELLS: Record<string, NumericCardIconAtlasCell> = {
+  maxHp: { col: 0, row: 0 },
+  maxQi: { col: 1, row: 0 },
+  physAtk: { col: 2, row: 0 },
+  spellAtk: { col: 3, row: 0 },
+  physDef: { col: 4, row: 0 },
+  spellDef: { col: 5, row: 0 },
+  hit: { col: 6, row: 0 },
+  dodge: { col: 7, row: 0 },
+  crit: { col: 0, row: 1 },
+  antiCrit: { col: 1, row: 1 },
+  critDamage: { col: 2, row: 1 },
+  breakPower: { col: 3, row: 1 },
+  resolvePower: { col: 4, row: 1 },
+  maxQiOutputPerTick: { col: 5, row: 1 },
+  qiRegenRate: { col: 6, row: 1 },
+  hpRegenRate: { col: 7, row: 1 },
+  cooldownSpeed: { col: 0, row: 2 },
+  lootRate: { col: 1, row: 2 },
+  viewRange: { col: 2, row: 2 },
+  moveSpeed: { col: 3, row: 2 },
+  actionsPerTurn: { col: 4, row: 2 },
+  playerExpRate: { col: 5, row: 2 },
+  techniqueExpRate: { col: 6, row: 2 },
+  realmExpPerTick: { col: 7, row: 2 },
+  techniqueExpPerTick: { col: 0, row: 3 },
+  rareLootRate: { col: 1, row: 3 },
+  foundation: { col: 2, row: 3 },
+  rootFoundation: { col: 3, row: 3 },
+  combatExp: { col: 4, row: 3 },
+  comprehension: { col: 5, row: 3 },
+  luck: { col: 6, row: 3 },
+  constitution: { col: 7, row: 3 },
+  spirit: { col: 0, row: 4 },
+  perception: { col: 1, row: 4 },
+  talent: { col: 2, row: 4 },
+  strength: { col: 3, row: 4 },
+  meridians: { col: 4, row: 4 },
+  'root-metal': { col: 5, row: 4 },
+  'root-wood': { col: 6, row: 4 },
+  'root-water': { col: 7, row: 4 },
+  'root-fire': { col: 0, row: 5 },
+  'root-earth': { col: 1, row: 5 },
+  'neutral-aura': { col: 2, row: 5 },
+  sha: { col: 3, row: 5 },
+  'metal-aura': { col: 4, row: 5 },
+  'wood-aura': { col: 5, row: 5 },
+  'water-aura': { col: 6, row: 5 },
+  'fire-aura': { col: 7, row: 5 },
+  'earth-aura': { col: 0, row: 6 },
+};
+
+export const CRAFT_ICON_ATLAS_COLUMNS = 3;
+export const CRAFT_ICON_ATLAS_ROWS = 1;
+
+export const CRAFT_ICON_ATLAS_CELLS: Record<string, NumericCardIconAtlasCell> = {
+  alchemy: { col: 0, row: 0 },
+  gather: { col: 1, row: 0 },
+  enhancement: { col: 2, row: 0 },
+};

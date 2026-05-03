@@ -1597,7 +1597,7 @@ export class MarketPanel {
     if (!this.selectedItemKey) {
       return null;
     }
-    return this.getVisibleListedItems(update).find((item) => item.itemKey === this.selectedItemKey) ?? null;
+    return this.findListingVariantByKey(this.selectedItemKey, update);
   }
 
   /** 渲染主分类标签。 */
@@ -1847,6 +1847,24 @@ export class MarketPanel {
   /** 分组展示优先用 +0 条目，没有再退到当前第一条。 */
   private getGroupReferenceEntry(group: MarketListingGroupView): MarketListedItemView | null {
     return group.variants.find((entry) => this.getMarketEnhanceLevel(entry.item) === 0) ?? group.variants[0] ?? null;
+  }
+
+  /** 按 key 读取市场条目，包含本地补出的强化档位。 */
+  private findListingVariantByKey(itemKey: string | null | undefined, update: S2C_MarketUpdate | null = this.marketUpdate): MarketListedItemView | null {
+    if (!itemKey) {
+      return null;
+    }
+    const listed = this.getKnownListedItems(update).find((entry) => entry.itemKey === itemKey) ?? null;
+    if (listed) {
+      return listed;
+    }
+    for (const group of this.getVisibleListingGroups(update)) {
+      const variant = group.variants.find((entry) => entry.itemKey === itemKey) ?? null;
+      if (variant) {
+        return variant;
+      }
+    }
+    return null;
   }
 
   /** 把页码夹到合法范围内。 */

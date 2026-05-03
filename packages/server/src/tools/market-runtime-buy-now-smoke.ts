@@ -32,6 +32,13 @@ async function main(): Promise<void> {
       getItemName(itemId: string) {
         return itemId === 'rat_tail' ? '鼠尾' : itemId;
       },
+      createItem(itemId: string, count = 1) {
+        return {
+          itemId,
+          count,
+          name: itemId === 'rat_tail' ? '鼠尾' : itemId,
+        };
+      },
     } as never,
     {
       peekInventoryItem(requestedPlayerId: string, slotIndex: number) {
@@ -77,6 +84,23 @@ async function main(): Promise<void> {
           throw new Error(`unexpected credit args: ${requestedPlayerId}`);
         }
         player.wallet.balances[0].balance += amount;
+        return player;
+      },
+      canReceiveInventoryItem() {
+        return true;
+      },
+      receiveInventoryItem(requestedPlayerId: string, item: Record<string, unknown>) {
+        const player = runtimePlayers.get(requestedPlayerId);
+        if (!player) {
+          throw new Error(`unexpected receive args: ${JSON.stringify({ requestedPlayerId, item })}`);
+        }
+        const normalizedCount = Number.isFinite(Number(item?.count ?? 0)) ? Math.max(1, Math.trunc(Number(item.count))) : 1;
+        const existing = player.inventory.items.find((entry) => entry.itemId === item.itemId);
+        if (existing) {
+          existing.count = Number(existing.count ?? 0) + normalizedCount;
+        } else {
+          player.inventory.items.push({ ...item, count: normalizedCount });
+        }
         return player;
       },
       restoreSnapshot(snapshot: Record<string, unknown>) {
@@ -131,16 +155,12 @@ async function main(): Promise<void> {
   ];
 
   const result = await service.buyNow(buyerId, { itemKey, quantity: 2 });
-  assert.equal(durableCalls.length, 1);
-  assert.equal(durableCalls[0]?.expectedRuntimeOwnerId, 'runtime:buyer');
-  assert.equal(durableCalls[0]?.expectedSessionEpoch, 7);
-  assert.equal(durableCalls[0]?.expectedInstanceId, 'instance:market-buy');
-  assert.equal(durableCalls[0]?.expectedAssignedNodeId, 'node:market-buy');
-  assert.equal(durableCalls[0]?.expectedOwnershipEpoch, 12);
+  assert.equal(durableCalls.length, 0);
   assert.equal(buyerPlayer.wallet.balances[0].balance, 6);
   assert.equal(buyerPlayer.inventory.items[0]?.count ?? 0, 2);
-  assert.equal(sellerPlayer.wallet.balances[0].balance, 9);
-  assert.equal(sellerPlayer.inventory.items[0].count, 2);
+  assert.equal(sellerPlayer.inventory.items[0].count, 4);
+  assert.equal(sellerPlayer.inventory.items.find((entry) => entry.itemId === 'spirit_stone')?.count ?? 0, 6);
+  assert.equal((service as unknown as { openOrders: Array<Record<string, unknown>> }).openOrders.length, 0);
   assert.equal(result.notices.some((entry) => entry.playerId === buyerId), true);
   console.log(JSON.stringify({ ok: true, case: 'market-runtime-buy-now' }, null, 2));
 }

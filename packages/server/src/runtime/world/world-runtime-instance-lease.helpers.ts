@@ -497,7 +497,7 @@ export async function claimRecoverableCatalogInstances(runtime) {
       runtime.worldRuntimeSectService.restoreCatalogSectTemplate(entry, runtime);
     }
     if (typeof runtime.templateRepository?.has === 'function' && !runtime.templateRepository.has(templateId)) {
-      runtime.logger.warn(`实例目录引用的地图模板不存在，跳过 lease 接管：${instanceId} -> ${templateId}`);
+      await markMissingTemplateCatalogEntry(runtime, entry, instanceId, templateId, 'lease 接管');
       continue;
     }
     const leaseToken = `${nodeId}:${instanceId}:${Date.now()}:${Math.random().toString(36).slice(2, 10)}`;
@@ -606,6 +606,9 @@ async function restorePersistentInstanceFormations(runtime, instanceId) {
 }
 
 function shouldRestoreCatalogEntry(entry) {
+  if (entry?.status === 'destroyed' || entry?.runtime_status === 'stopped') {
+    return false;
+  }
   const destroyAt = entry?.destroy_at ? new Date(entry.destroy_at).getTime() : 0;
   if (Number.isFinite(destroyAt) && destroyAt > 0 && destroyAt <= Date.now()) {
     return false;
@@ -622,6 +625,20 @@ function shouldRestoreCatalogEntry(entry) {
     return false;
   }
   return Date.now() - lastActiveAt <= LONG_LIVED_INSTANCE_TTL_MS;
+}
+
+async function markMissingTemplateCatalogEntry(runtime, entry, instanceId, templateId, phase) {
+  if (entry?.runtime_status === 'template_missing') {
+    return;
+  }
+  if (typeof runtime.instanceCatalogService?.markInstanceTemplateMissing !== 'function') {
+    runtime.logger.warn(`实例目录引用的地图模板不存在，跳过 ${phase}：${instanceId} -> ${templateId}`);
+    return;
+  }
+  const changed = await runtime.instanceCatalogService.markInstanceTemplateMissing({ instanceId, templateId });
+  if (changed) {
+    runtime.logger.warn(`实例目录引用的地图模板不存在，已标记为待内容恢复：${instanceId} -> ${templateId}`);
+  }
 }
 
 function normalizeLoadedContainerStates(rows) {

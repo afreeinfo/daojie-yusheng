@@ -11,126 +11,154 @@
         "level": 1,
         "expFactor": 136,
         "attrs": {
-          "spirit": 12,
-          "talent": 11,
-          "meridians": 12
+          "constitution": 5,
+          "spirit": 6,
+          "talent": 6,
+          "strength": 7,
+          "meridians": 8
         }
       },
       {
         "level": 2,
         "expFactor": 152,
         "attrs": {
-          "spirit": 12,
-          "talent": 11,
-          "meridians": 12
+          "constitution": 5,
+          "spirit": 6,
+          "talent": 6,
+          "strength": 7,
+          "meridians": 8
         }
       },
       {
         "level": 3,
         "expFactor": 168,
         "attrs": {
-          "spirit": 12,
-          "talent": 11,
-          "meridians": 12
+          "constitution": 5,
+          "spirit": 6,
+          "talent": 6,
+          "strength": 8,
+          "meridians": 8
         }
       },
       {
         "level": 4,
         "expFactor": 188,
         "attrs": {
-          "spirit": 12,
-          "talent": 11,
-          "meridians": 12
+          "constitution": 5,
+          "spirit": 6,
+          "talent": 7,
+          "strength": 8,
+          "meridians": 8
         }
       },
       {
         "level": 5,
         "expFactor": 208,
         "attrs": {
-          "spirit": 12,
-          "talent": 11,
-          "meridians": 12
+          "constitution": 6,
+          "spirit": 6,
+          "talent": 7,
+          "strength": 8,
+          "meridians": 8
         }
       },
       {
         "level": 6,
         "expFactor": 232,
         "attrs": {
-          "spirit": 12,
-          "talent": 11,
-          "meridians": 12
+          "constitution": 6,
+          "spirit": 6,
+          "talent": 7,
+          "strength": 8,
+          "meridians": 8
         }
       },
       {
         "level": 7,
         "expFactor": 260,
         "attrs": {
-          "spirit": 12,
-          "talent": 11,
-          "meridians": 12
+          "constitution": 6,
+          "spirit": 6,
+          "talent": 7,
+          "strength": 8,
+          "meridians": 9
         }
       },
       {
         "level": 8,
         "expFactor": 292,
         "attrs": {
-          "spirit": 12,
-          "talent": 11,
-          "meridians": 12
+          "constitution": 6,
+          "spirit": 6,
+          "talent": 7,
+          "strength": 8,
+          "meridians": 9
         }
       },
       {
         "level": 9,
         "expFactor": 328,
         "attrs": {
-          "spirit": 12,
-          "talent": 11,
-          "meridians": 12
+          "constitution": 6,
+          "spirit": 7,
+          "talent": 7,
+          "strength": 8,
+          "meridians": 9
         }
       },
       {
         "level": 10,
         "expFactor": 368,
         "attrs": {
-          "spirit": 12,
-          "talent": 11,
-          "meridians": 12
+          "constitution": 6,
+          "spirit": 7,
+          "talent": 7,
+          "strength": 8,
+          "meridians": 9
         }
       },
       {
         "level": 11,
         "expFactor": 412,
         "attrs": {
-          "spirit": 12,
-          "talent": 11,
-          "meridians": 12
+          "constitution": 6,
+          "spirit": 7,
+          "talent": 7,
+          "strength": 8,
+          "meridians": 9
         }
       },
       {
         "level": 12,
         "expFactor": 460,
         "attrs": {
-          "spirit": 12,
-          "talent": 11,
-          "meridians": 12
+          "constitution": 6,
+          "spirit": 7,
+          "talent": 7,
+          "strength": 8,
+          "meridians": 9
         }
       },
       {
         "level": 13,
         "expFactor": 516,
         "attrs": {
-          "spirit": 13,
-          "talent": 11,
-          "meridians": 13
+          "constitution": 6,
+          "spirit": 7,
+          "talent": 7,
+          "strength": 8,
+          "meridians": 9
         }
       },
       {
         "level": 14,
         "expFactor": 0,
         "attrs": {
-          "spirit": 13,
-          "talent": 12,
-          "meridians": 13
+          "constitution": 6,
+          "spirit": 7,
+          "talent": 7,
+          "strength": 8,
+          "meridians": 9
         }
       }
     ],
@@ -148,126 +176,154 @@
         "level": 1,
         "expFactor": 136,
         "attrs": {
-          "spirit": 10,
+          "constitution": 6,
+          "spirit": 6,
+          "perception": 5,
           "talent": 6,
-          "meridians": 17
+          "meridians": 10
         }
       },
       {
         "level": 2,
         "expFactor": 152,
         "attrs": {
-          "spirit": 10,
+          "constitution": 6,
+          "spirit": 6,
+          "perception": 5,
           "talent": 6,
-          "meridians": 17
+          "meridians": 10
         }
       },
       {
         "level": 3,
         "expFactor": 168,
         "attrs": {
-          "spirit": 10,
+          "constitution": 6,
+          "spirit": 6,
+          "perception": 5,
           "talent": 6,
-          "meridians": 18
+          "meridians": 10
         }
       },
       {
         "level": 4,
         "expFactor": 188,
         "attrs": {
-          "spirit": 10,
+          "constitution": 6,
+          "spirit": 7,
+          "perception": 5,
           "talent": 6,
-          "meridians": 18
+          "meridians": 10
         }
       },
       {
         "level": 5,
         "expFactor": 208,
         "attrs": {
-          "spirit": 10,
+          "constitution": 6,
+          "spirit": 7,
+          "perception": 5,
           "talent": 6,
-          "meridians": 18
+          "meridians": 11
         }
       },
       {
         "level": 6,
         "expFactor": 232,
         "attrs": {
-          "spirit": 10,
+          "constitution": 6,
+          "spirit": 7,
+          "perception": 5,
           "talent": 6,
-          "meridians": 18
+          "meridians": 11
         }
       },
       {
         "level": 7,
         "expFactor": 260,
         "attrs": {
-          "spirit": 10,
+          "constitution": 6,
+          "spirit": 7,
+          "perception": 5,
           "talent": 6,
-          "meridians": 18
+          "meridians": 11
         }
       },
       {
         "level": 8,
         "expFactor": 292,
         "attrs": {
-          "spirit": 10,
+          "constitution": 6,
+          "spirit": 7,
+          "perception": 5,
           "talent": 6,
-          "meridians": 18
+          "meridians": 11
         }
       },
       {
         "level": 9,
         "expFactor": 328,
         "attrs": {
-          "spirit": 10,
-          "talent": 7,
-          "meridians": 18
+          "constitution": 6,
+          "spirit": 7,
+          "perception": 5,
+          "talent": 6,
+          "meridians": 11
         }
       },
       {
         "level": 10,
         "expFactor": 368,
         "attrs": {
-          "spirit": 11,
-          "talent": 7,
-          "meridians": 18
+          "constitution": 6,
+          "spirit": 7,
+          "perception": 5,
+          "talent": 6,
+          "meridians": 11
         }
       },
       {
         "level": 11,
         "expFactor": 412,
         "attrs": {
-          "spirit": 11,
-          "talent": 7,
-          "meridians": 18
+          "constitution": 6,
+          "spirit": 7,
+          "perception": 5,
+          "talent": 6,
+          "meridians": 11
         }
       },
       {
         "level": 12,
         "expFactor": 460,
         "attrs": {
-          "spirit": 11,
-          "talent": 7,
-          "meridians": 18
+          "constitution": 6,
+          "spirit": 7,
+          "perception": 5,
+          "talent": 6,
+          "meridians": 11
         }
       },
       {
         "level": 13,
         "expFactor": 516,
         "attrs": {
-          "spirit": 11,
-          "talent": 7,
-          "meridians": 18
+          "constitution": 6,
+          "spirit": 7,
+          "perception": 5,
+          "talent": 6,
+          "meridians": 11
         }
       },
       {
         "level": 14,
         "expFactor": 0,
         "attrs": {
-          "spirit": 11,
+          "constitution": 7,
+          "spirit": 7,
+          "perception": 5,
           "talent": 7,
-          "meridians": 18
+          "meridians": 11
         }
       }
     ],

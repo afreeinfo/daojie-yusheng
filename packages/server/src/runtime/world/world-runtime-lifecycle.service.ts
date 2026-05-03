@@ -177,7 +177,7 @@ let WorldRuntimeLifecycleService = class WorldRuntimeLifecycleService {
                     deps.worldRuntimeSectService.restoreCatalogSectTemplate(entry, deps);
                 }
                 if (typeof deps.templateRepository?.has === 'function' && !deps.templateRepository.has(templateId)) {
-                    deps.logger.warn(`实例目录引用的地图模板不存在，跳过恢复：${instanceId} -> ${templateId}`);
+                    await markMissingTemplateCatalogEntry(deps, entry, instanceId, templateId, '恢复');
                     continue;
                 }
                 deps.createInstance({
@@ -193,7 +193,9 @@ let WorldRuntimeLifecycleService = class WorldRuntimeLifecycleService {
                     ownerSectId: typeof entry.owner_sect_id === 'string' ? entry.owner_sect_id : null,
                     partyId: typeof entry.party_id === 'string' ? entry.party_id : null,
                     status: typeof entry.status === 'string' ? entry.status : 'active',
-                    runtimeStatus: typeof entry.runtime_status === 'string' ? entry.runtime_status : 'running',
+                    runtimeStatus: entry.runtime_status === 'template_missing'
+                        ? 'running'
+                        : (typeof entry.runtime_status === 'string' ? entry.runtime_status : 'running'),
                     assignedNodeId: typeof entry.assigned_node_id === 'string' ? entry.assigned_node_id : null,
                     leaseToken: typeof entry.lease_token === 'string' ? entry.lease_token : null,
                     leaseExpireAt: entry.lease_expire_at ? new Date(entry.lease_expire_at).toISOString() : null,
@@ -279,6 +281,20 @@ function shouldRestoreCatalogEntry(entry) {
         return false;
     }
     return Date.now() - lastActiveAt <= LONG_LIVED_INSTANCE_TTL_MS;
+}
+
+async function markMissingTemplateCatalogEntry(deps, entry, instanceId, templateId, phase) {
+    if (entry?.runtime_status === 'template_missing') {
+        return;
+    }
+    if (typeof deps.instanceCatalogService?.markInstanceTemplateMissing !== 'function') {
+        deps.logger.warn(`实例目录引用的地图模板不存在，跳过${phase}：${instanceId} -> ${templateId}`);
+        return;
+    }
+    const changed = await deps.instanceCatalogService.markInstanceTemplateMissing({ instanceId, templateId });
+    if (changed) {
+        deps.logger.warn(`实例目录引用的地图模板不存在，已标记为待内容恢复：${instanceId} -> ${templateId}`);
+    }
 }
 
 function normalizeLoadedContainerStates(rows) {

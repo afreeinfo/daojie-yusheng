@@ -407,7 +407,28 @@ async function testRestoreAndRebuild() {
         worldRuntimeCombatEffectsService: {
             resetAll() { resetLog.push('combatEffects'); }
         },
+        instanceCatalogService: {
+            isEnabled() {
+                return true;
+            },
+            async listInstanceCatalogEntries() {
+                return [{
+                    instance_id: 'public:removed_map',
+                    template_id: 'removed_map',
+                    persistent_policy: 'persistent',
+                    status: 'active',
+                    runtime_status: 'running',
+                }];
+            },
+            async markInstanceTemplateMissing(input) {
+                resetLog.push(['markInstanceTemplateMissing', input.instanceId, input.templateId]);
+                return true;
+            },
+        },
         templateRepository: {
+            has(templateId) {
+                return templateId === 'yunlai_town';
+            },
             list() {
                 return [{ id: 'yunlai_town' }];
             },
@@ -422,17 +443,25 @@ async function testRestoreAndRebuild() {
             log(message) {
                 resetLog.push(['log', message]);
             },
+            warn(message) {
+                resetLog.push(['warn', message]);
+            },
         },
         mapPersistenceService: {
             isEnabled() {
                 return false;
             },
         },
+        getInstanceRuntime() {
+            return null;
+        },
         listInstanceEntries() {
             return [];
         },
     });
     assert.deepEqual(resetLog, [
+        ['markInstanceTemplateMissing', 'public:removed_map', 'removed_map'],
+        ['warn', '实例目录引用的地图模板不存在，已标记为待内容恢复：public:removed_map -> removed_map'],
         'instance',
         'playerLocation',
         'pending',

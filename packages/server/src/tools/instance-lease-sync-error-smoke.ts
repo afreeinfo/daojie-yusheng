@@ -11,12 +11,14 @@ const {
 async function main() {
   const contained = await verifyLeaseSyncErrorContained();
   const degraded = await verifyLocalLeaseDegradeAndRecover();
+  const missingTemplate = await verifyMissingTemplateCatalogIsQuarantined();
 
   console.log(JSON.stringify({
     ok: true,
     containedLeaseSyncError: contained.containedLeaseSyncError,
     degradedLeaseRecovered: degraded.degradedLeaseRecovered,
-    answers: '实例 lease 周期同步遇到 PostgreSQL 续约异常时会记录并继续；本节点 lease 过期时真实写路径进入 lease_degraded 保活，不卸载实例，catalog 续约恢复后重新变为 leased',
+    missingTemplateQuarantined: missingTemplate.missingTemplateQuarantined,
+    answers: '实例 lease 周期同步遇到 PostgreSQL 续约异常时会记录并继续；本节点 lease 过期时真实写路径进入 lease_degraded 保活，不卸载实例，catalog 续约恢复后重新变为 leased；实例目录引用已退役地图模板时会隔离为 template_missing 并清掉 lease，不反复接管',
     excludes: '不证明真实 PostgreSQL 网络质量、跨节点 failover、Swarm 调度或生产数据库锁等待来源',
   }, null, 2));
 }
@@ -145,6 +147,82 @@ async function verifyLocalLeaseDegradeAndRecover() {
   return {
     degradedLeaseRecovered: true,
     runtimeStatus: instance.meta.runtimeStatus,
+  };
+}
+
+async function verifyMissingTemplateCatalogIsQuarantined() {
+  const warnings = [];
+  const marked = [];
+  const catalogEntry = {
+    instance_id: 'public:removed_map',
+    template_id: 'removed_map',
+    persistent_policy: 'persistent',
+    status: 'active',
+    runtime_status: 'leased',
+    assigned_node_id: 'old-node',
+    lease_token: 'old-lease',
+    lease_expire_at: new Date(Date.now() - 10_000).toISOString(),
+  };
+  const runtime = {
+    logger: {
+      warn(message) {
+        warnings.push(String(message));
+      },
+    },
+    nodeRegistryService: {
+      getNodeId() {
+        return 'instance-lease-sync-error-smoke:local';
+      },
+    },
+    templateRepository: {
+      has(templateId) {
+        return templateId !== 'removed_map';
+      },
+    },
+    instanceCatalogService: {
+      isEnabled() {
+        return true;
+      },
+      async listInstanceCatalogEntries() {
+        return [catalogEntry];
+      },
+      async markInstanceTemplateMissing(input) {
+        marked.push(input);
+        catalogEntry.status = 'active';
+        catalogEntry.runtime_status = 'template_missing';
+        catalogEntry.assigned_node_id = null;
+        catalogEntry.lease_token = null;
+        catalogEntry.lease_expire_at = null;
+        return true;
+      },
+      async claimInstanceLease() {
+        throw new Error('missing template catalog entry must not claim lease');
+      },
+    },
+    listInstanceEntries() {
+      return [];
+    },
+    getInstanceRuntime() {
+      return null;
+    },
+  };
+
+  await syncAllInstanceLeases(runtime);
+  assert.deepEqual(marked, [{ instanceId: 'public:removed_map', templateId: 'removed_map' }]);
+  assert.equal(catalogEntry.runtime_status, 'template_missing');
+  assert.equal(catalogEntry.assigned_node_id, null);
+  assert.equal(catalogEntry.lease_token, null);
+  assert.equal(catalogEntry.lease_expire_at, null);
+  assert.ok(warnings.some((message) => message.includes('已标记为待内容恢复')));
+
+  const warningCount = warnings.length;
+  await syncAllInstanceLeases(runtime);
+  assert.equal(marked.length, 1);
+  assert.equal(warnings.length, warningCount);
+
+  return {
+    missingTemplateQuarantined: true,
+    runtimeStatus: catalogEntry.runtime_status,
   };
 }
 
