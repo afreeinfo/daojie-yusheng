@@ -94,6 +94,11 @@ function createGateway(log = [], playerId = 'player:1') {
             },
         },
         worldRuntimeService: runtime,
+        worldSyncService: {
+            emitDeltaSync(inputPlayerId, client) {
+                log.push(['emitDeltaSync', inputPlayerId, client.id]);
+            },
+        },
     };
 }
 
@@ -148,9 +153,38 @@ function testReturnToSpawnUsesDedicatedCommand() {
     ]);
 }
 
+function testPortalTravelFlushesCurrentSocketSync() {
+    const log = [];
+    const helper = new WorldGatewayActionHelper(createGateway(log));
+    const client = createClient(log);
+
+    helper.handleUseAction(client, { actionId: 'portal:travel' });
+
+    assert.deepEqual(log, [
+        ['markProtocol', 'socket:1', 'mainline'],
+        ['executeAction', 'player:1', 'portal:travel', null, true],
+        ['emitDeltaSync', 'player:1', 'socket:1'],
+    ]);
+}
+
+function testDedicatedPortalEventFlushesCurrentSocketSync() {
+    const log = [];
+    const helper = new WorldGatewayActionHelper(createGateway(log));
+    const client = createClient(log);
+
+    helper.handleUsePortal(client);
+
+    assert.deepEqual(log, [
+        ['usePortal', 'player:1'],
+        ['emitDeltaSync', 'player:1', 'socket:1'],
+    ]);
+}
+
 testWorldMigrateDelegatesToExecuteAction();
 testTargetedSkillStillUsesCastSkillPath();
 testBodyTrainingStillUsesExecuteAction();
 testReturnToSpawnUsesDedicatedCommand();
+testPortalTravelFlushesCurrentSocketSync();
+testDedicatedPortalEventFlushesCurrentSocketSync();
 
 console.log(JSON.stringify({ ok: true, case: 'world-gateway-action-helper' }, null, 2));

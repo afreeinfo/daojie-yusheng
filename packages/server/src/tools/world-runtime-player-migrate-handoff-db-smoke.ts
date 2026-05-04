@@ -119,17 +119,21 @@ async function main(): Promise<void> {
   const provider = new DatabasePoolProvider();
   const playerRuntimeService = createPlayerRuntimeService();
   const flushCalls: string[] = [];
+  let localNodeRegistry: NodeRegistryService | null = null;
+  let localRouteService: PlayerSessionRouteService | null = null;
+  let remoteNodeRegistry: NodeRegistryService | null = null;
+  let remoteRouteService: PlayerSessionRouteService | null = null;
 
   try {
     process.env.SERVER_NODE_ID = localNodeId;
-    const localNodeRegistry = new NodeRegistryService(provider);
-    const localRouteService = new PlayerSessionRouteService(localNodeRegistry, provider);
+    localNodeRegistry = new NodeRegistryService(provider);
+    localRouteService = new PlayerSessionRouteService(localNodeRegistry, provider);
     await localNodeRegistry.onModuleInit();
     await localRouteService.onModuleInit();
 
     process.env.SERVER_NODE_ID = remoteNodeId;
-    const remoteNodeRegistry = new NodeRegistryService(provider);
-    const remoteRouteService = new PlayerSessionRouteService(remoteNodeRegistry, provider);
+    remoteNodeRegistry = new NodeRegistryService(provider);
+    remoteRouteService = new PlayerSessionRouteService(remoteNodeRegistry, provider);
     await remoteNodeRegistry.onModuleInit();
     await remoteRouteService.onModuleInit();
 
@@ -269,6 +273,11 @@ async function main(): Promise<void> {
   } finally {
     await cleanupRoute(pool, playerId).catch(() => undefined);
     await cleanupNodeRows(pool, [localNodeId, remoteNodeId]).catch(() => undefined);
+    await remoteRouteService?.onModuleDestroy?.().catch(() => undefined);
+    await remoteNodeRegistry?.onModuleDestroy?.().catch(() => undefined);
+    await localRouteService?.onModuleDestroy?.().catch(() => undefined);
+    await localNodeRegistry?.onModuleDestroy?.().catch(() => undefined);
+    await provider.onModuleDestroy().catch(() => undefined);
     await pool.end().catch(() => undefined);
     if (typeof previousNodeId === 'string') {
       process.env.SERVER_NODE_ID = previousNodeId;

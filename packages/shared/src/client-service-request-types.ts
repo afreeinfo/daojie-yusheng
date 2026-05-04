@@ -1,5 +1,6 @@
 import type { EquipSlot, ItemType } from './item-runtime-types';
 import type { TechniqueCategory } from './cultivation-types';
+import type { AuctionFilterCategory, AuctionHouseTab } from './market-types';
 import type { MailFilter } from './mail-types';
 import type { AlchemyIngredientSelection, CraftQueueStartMode, EnhancementTargetRef } from './crafting-types';
 
@@ -12,27 +13,56 @@ export interface RequestMarketListingsView {
  * page：page相关字段。
  */
 
-  page: number;  
+  page: number;
   /**
  * pageSize：数量或计量字段。
  */
 
-  pageSize?: number;  
+  pageSize?: number;
   /**
  * category：category相关字段。
  */
 
-  category?: ItemType | 'all';  
+  category?: ItemType | 'all';
   /**
  * equipmentSlot：装备Slot相关字段。
  */
 
-  equipmentSlot?: EquipSlot | 'all';  
+  equipmentSlot?: EquipSlot | 'all';
   /**
  * techniqueCategory：功法Category相关字段。
  */
 
   techniqueCategory?: TechniqueCategory | 'all';
+}
+
+/** 请求拍卖行分页列表。 */
+export interface RequestAuctionListingsView {
+/**
+ * tab：拍卖行分栏。
+ */
+
+  tab: AuctionHouseTab;
+  /**
+ * page：page相关字段。
+ */
+
+  page: number;
+  /**
+ * pageSize：数量或计量字段，服务端最多返回 10 条。
+ */
+
+  pageSize?: number;
+  /**
+ * category：category相关字段。
+ */
+
+  category?: AuctionFilterCategory;
+  /**
+ * query：搜索关键字。
+ */
+
+  query?: string;
 }
 
 /** 请求邮件分页。 */
@@ -41,12 +71,12 @@ export interface RequestMailPageView {
  * page：page相关字段。
  */
 
-  page: number;  
+  page: number;
   /**
  * pageSize：数量或计量字段。
  */
 
-  pageSize?: number;  
+  pageSize?: number;
   /**
  * filter：filter相关字段。
  */
@@ -81,7 +111,7 @@ export interface AcceptNpcQuestView {
  * npcId：NPCID标识。
  */
 
-  npcId: string;  
+  npcId: string;
   /**
  * questId：任务ID标识。
  */
@@ -95,7 +125,7 @@ export interface SubmitNpcQuestView {
  * npcId：NPCID标识。
  */
 
-  npcId: string;  
+  npcId: string;
   /**
  * questId：任务ID标识。
  */
@@ -109,7 +139,7 @@ export interface RequestDetailView {
  * kind：kind相关字段。
  */
 
-  kind: 'npc' | 'monster' | 'ground' | 'player' | 'portal' | 'container';  
+  kind: 'npc' | 'monster' | 'ground' | 'player' | 'portal' | 'container';
   /**
  * id：ID标识。
  */
@@ -212,12 +242,12 @@ export interface CreateMarketSellOrderView {
  * slotIndex：slotIndex相关字段。
  */
 
-  slotIndex: number;  
+  slotIndex: number;
   /**
  * quantity：quantity相关字段。
  */
 
-  quantity: number;  
+  quantity: number;
   /**
  * unitPrice：unit价格数值。
  */
@@ -231,17 +261,50 @@ export interface CreateMarketBuyOrderView {
  * itemKey：道具Key标识。
  */
 
-  itemKey: string;  
+  itemKey: string;
   /**
  * quantity：quantity相关字段。
  */
 
-  quantity: number;  
+  quantity: number;
   /**
  * unitPrice：unit价格数值。
  */
 
   unitPrice: number;
+}
+
+/** 拍卖行加价。 */
+export interface PlaceAuctionBidView {
+/**
+ * lotId：拍品 ID。
+ */
+
+  lotId: string;
+  /**
+ * itemKey：道具Key标识。
+ */
+
+  itemKey: string;
+  /**
+ * unitPrice：unit价格数值。
+ */
+
+  unitPrice: number;
+}
+
+/** 拍卖行一口价。 */
+export interface BuyoutAuctionLotView {
+/**
+ * lotId：拍品 ID。
+ */
+
+  lotId: string;
+  /**
+ * itemKey：道具Key标识。
+ */
+
+  itemKey: string;
 }
 
 /** 购买挂单。 */
@@ -250,7 +313,7 @@ export interface BuyMarketItemView {
  * itemKey：道具Key标识。
  */
 
-  itemKey: string;  
+  itemKey: string;
   /**
  * quantity：quantity相关字段。
  */
@@ -264,7 +327,7 @@ export interface SellMarketItemView {
  * slotIndex：slotIndex相关字段。
  */
 
-  slotIndex: number;  
+  slotIndex: number;
   /**
  * quantity：quantity相关字段。
  */
@@ -299,12 +362,12 @@ export interface BuyNpcShopItemView {
  * npcId：NPCID标识。
  */
 
-  npcId: string;  
+  npcId: string;
   /**
  * itemId：道具ID标识。
  */
 
-  itemId: string;  
+  itemId: string;
   /**
  * quantity：quantity相关字段。
  */
@@ -327,17 +390,17 @@ export interface SaveAlchemyPresetView {
  * presetId：presetID标识。
  */
 
-  presetId?: string;  
+  presetId?: string;
   /**
  * recipeId：recipeID标识。
  */
 
-  recipeId: string;  
+  recipeId: string;
   /**
  * name：名称名称或显示文本。
  */
 
-  name: string;  
+  name: string;
   /**
  * ingredients：ingredient相关字段。
  */
@@ -360,12 +423,12 @@ export interface StartAlchemyView {
  * recipeId：recipeID标识。
  */
 
-  recipeId: string;  
+  recipeId: string;
   /**
  * ingredients：ingredient相关字段。
  */
 
-  ingredients: AlchemyIngredientSelection[];  
+  ingredients: AlchemyIngredientSelection[];
   /**
  * quantity：quantity相关字段。
  */
@@ -390,17 +453,17 @@ export interface StartEnhancementView {
  * target：目标相关字段。
  */
 
-  target: EnhancementTargetRef;  
+  target: EnhancementTargetRef;
   /**
  * protection：protection相关字段。
  */
 
-  protection?: EnhancementTargetRef | null;  
+  protection?: EnhancementTargetRef | null;
   /**
  * targetLevel：目标等级数值。
  */
 
-  targetLevel?: number;  
+  targetLevel?: number;
   /**
  * protectionStartLevel：protectionStart等级数值。
  */
@@ -422,7 +485,7 @@ export interface UseItemView {
  * slotIndex：slotIndex相关字段。
  */
 
-  slotIndex: number;  
+  slotIndex: number;
   /**
  * count：数量或计量字段。
  */
@@ -446,7 +509,7 @@ export interface DropItemView {
  * slotIndex：slotIndex相关字段。
  */
 
-  slotIndex: number;  
+  slotIndex: number;
   /**
  * count：数量或计量字段。
  */
@@ -460,7 +523,7 @@ export interface DestroyItemView {
  * slotIndex：slotIndex相关字段。
  */
 
-  slotIndex: number;  
+  slotIndex: number;
   /**
  * count：数量或计量字段。
  */
@@ -474,12 +537,12 @@ export interface TakeLootView {
  * sourceId：来源ID标识。
  */
 
-  sourceId: string;  
+  sourceId: string;
   /**
  * itemKey：道具Key标识。
  */
 
-  itemKey?: string;  
+  itemKey?: string;
   /**
  * takeAll：takeAll相关字段。
  */
@@ -523,17 +586,17 @@ export interface CastSkillView {
  * skillId：技能ID标识。
  */
 
-  skillId: string;  
+  skillId: string;
   /**
  * targetPlayerId：目标玩家ID标识。
  */
 
-  targetPlayerId?: string | null;  
+  targetPlayerId?: string | null;
   /**
  * targetMonsterId：目标怪物ID标识。
  */
 
-  targetMonsterId?: string | null;  
+  targetMonsterId?: string | null;
   /**
  * targetRef：目标Ref相关字段。
  */

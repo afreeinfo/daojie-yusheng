@@ -34,6 +34,7 @@ interface WorldGatewayPlayerControlsDeps {
       mode: ClientToServerEventPayload<typeof C2S.UpdateAutoBattleTargetingMode>['mode'],
     ): void;
     updateTechniqueSkillAvailability(playerId: string, techId: string, enabled: boolean): void;
+    acknowledgeOfflineGainReports(playerId: string, reportIds: string[]): Promise<void>;
   };
   gatewayClientEmitHelper: {
     emitQuests(client: Socket, payload: unknown): void;
@@ -64,6 +65,21 @@ export class WorldGatewayPlayerControlsHelper {
       return;
     }
     this.gateway.worldClientEventService.acknowledgeSystemMessages(playerId, payload);
+  }
+
+  async handleAckOfflineGainReports(
+    client: Socket,
+    payload: ClientToServerEventPayload<typeof C2S.AckOfflineGainReports>,
+  ): Promise<void> {
+    const playerId = this.gateway.gatewayGuardHelper.requirePlayerId(client);
+    if (!playerId) {
+      return;
+    }
+    try {
+      await this.gateway.playerRuntimeService.acknowledgeOfflineGainReports(playerId, payload?.reportIds ?? []);
+    } catch (error) {
+      this.gateway.worldClientEventService.emitGatewayError(client, 'ACK_OFFLINE_GAIN_REPORTS_FAILED', error);
+    }
   }
 
   handleDebugResetSpawn(

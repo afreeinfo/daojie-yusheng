@@ -69,8 +69,9 @@ async function main(): Promise<void> {
       domain: 'position_checkpoint',
       latestVersion: playerRevision,
     });
-    assert.ok(wakeup.listWakeupKeys().some((key) => key.includes(playerId)));
+    assert.equal(wakeup.listWakeupKeys().some((key) => key.includes(playerId)), false);
     const processedCount = await worker.runOnce('player-anchor-checkpoint-worker-smoke');
+    assert.ok(wakeup.listWakeupKeys().some((key) => key.includes(playerId)));
 
     const ledgerRows = await ledger.listLedgerRows();
     const targetLedgerRow = ledgerRows.find((row) => row.player_id === playerId && row.domain === 'position_checkpoint');

@@ -4,11 +4,13 @@
  */
 
 import {
+  ELEMENT_KEY_LABELS,
   EquipmentEffectDef,
   GAME_TIME_PHASES,
   applyEnhancementToItemStack,
   formatBuffMaxStacks,
   ItemStack,
+  type MaterialCategory,
   parseQiResourceKey,
 } from '@mud/shared';
 import {
@@ -101,6 +103,10 @@ function resolveMedicineCategoryLabel(item: ItemStack): string | null {
 
   const tags = item.tags ?? [];
   const labels: string[] = [];
+  const materialCategoryLabel = getMaterialCategoryLabel(item.materialCategory);
+  if (materialCategoryLabel) {
+    labels.push(materialCategoryLabel);
+  }
   if (tags.includes('生命回复')) {
     labels.push('生命回复');
   }
@@ -120,6 +126,35 @@ function resolveMedicineCategoryLabel(item: ItemStack): string | null {
     labels.push('异材');
   }
   return labels.length > 0 ? labels.join(' / ') : null;
+}
+
+function getMaterialCategoryLabel(category: MaterialCategory | undefined): string | null {
+  switch (category) {
+    case 'herb':
+      return '药材';
+    case 'exotic':
+      return '异材';
+    case 'ore':
+      return '矿石';
+    default:
+      return null;
+  }
+}
+
+export function describeMaterialValueDetails(item: ItemStack): string[] {
+  const previewItem = resolvePreviewItem(item);
+  const elementValues = previewItem.materialValues?.elements;
+  if (!elementValues) {
+    return [];
+  }
+  const parts = (['metal', 'wood', 'water', 'fire', 'earth'] as const)
+    .flatMap((element) => {
+      const value = elementValues[element];
+      return typeof value === 'number' && value > 0
+        ? [`${ELEMENT_KEY_LABELS[element]} ${formatDisplayInteger(value)}`]
+        : [];
+    });
+  return parts.length > 0 ? [`五行：${parts.join(' / ')}`] : [];
 }
 
 /** normalizeBuffMark：规范化Buff Mark。 */
@@ -627,12 +662,16 @@ export function buildItemTooltipPayload(item: ItemStack, context?: ItemTooltipCo
     const techniqueBookLines = previewItem.type === 'skill_book'
       ? buildTechniqueBookTooltipLines(previewItem)
       : [];
+    const materialValueLines = previewItem.type === 'material'
+      ? describeMaterialValueDetails(previewItem)
+      : [];
     const lines = [
       ...(previewItem.type === 'skill_book'
         ? []
         : [`<span class="skill-tooltip-desc">${escapeHtml(previewItem.desc ?? '')}</span>`]),
       renderPlainLine('类型', getItemTypeLabel(previewItem.type)),
       ...(medicineCategoryLabel ? [renderPlainLine('分类', medicineCategoryLabel)] : []),
+      ...materialValueLines.map((line) => renderPlainLine('五行数值', line.replace(/^五行：/, ''))),
       ...(statusLabel ? [renderPlainLine('状态', statusLabel)] : []),
       ...techniqueBookLines,
       ...effectLines.map((line) => `<span class="skill-tooltip-detail">${escapeHtml(line)}</span>`),

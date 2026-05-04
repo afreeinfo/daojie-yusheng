@@ -1,4 +1,4 @@
-import type { PartialNumericStats } from './numeric';
+import type { PartialElementStatGroup, PartialNumericStats } from './numeric';
 import type { QiProjectionModifier } from './qi';
 import type { Attributes } from './attribute-types';
 import type { TechniqueGrade } from './cultivation-types';
@@ -9,6 +9,23 @@ export type ItemType = 'consumable' | 'equipment' | 'material' | 'quest_item' | 
 
 /** 通用阵盘品阶。 */
 export type ItemFormationDiskTier = 'mortal' | 'yellow' | 'mystic' | 'earth';
+
+/** 材料主分类。 */
+export type MaterialCategory = 'herb' | 'exotic' | 'ore';
+
+/** 材料属性值容器。 */
+export interface MaterialValues {
+/**
+ * elements：五行数值。
+ */
+
+  elements?: PartialElementStatGroup;
+  /**
+ * scalars：预留给后续材料标量属性。
+ */
+
+  scalars?: Record<string, number>;
+}
 
 /** 装备槽位。 */
 export type EquipSlot = 'weapon' | 'head' | 'body' | 'legs' | 'accessory';
@@ -605,6 +622,16 @@ export interface ItemStack {
  */
 
   level?: number;  
+  /**
+ * materialCategory：材料主分类。
+ */
+
+  materialCategory?: MaterialCategory;
+  /**
+ * materialValues：材料属性值。
+ */
+
+  materialValues?: MaterialValues;
   /**
  * equipSlot：equipSlot相关字段。
  */

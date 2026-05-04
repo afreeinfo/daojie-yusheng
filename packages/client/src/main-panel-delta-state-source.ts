@@ -587,6 +587,14 @@ export function createMainPanelDeltaStateSource(options: MainPanelDeltaStateSour
       groundLabel: item.groundLabel ?? previousSameItem?.groundLabel ?? template?.groundLabel,
       grade: item.grade ?? previousSameItem?.grade ?? template?.grade,
       level: item.level ?? previousSameItem?.level ?? template?.level,
+      materialCategory: item.materialCategory ?? previousSameItem?.materialCategory ?? template?.materialCategory,
+      materialValues: item.materialValues
+        ? cloneJson(item.materialValues)
+        : previousSameItem?.materialValues
+          ? cloneJson(previousSameItem.materialValues)
+          : template?.materialValues
+            ? cloneJson(template.materialValues)
+            : undefined,
       equipSlot: item.equipSlot ?? previousSameItem?.equipSlot ?? template?.equipSlot,
       equipAttrs: item.equipAttrs
         ? cloneJson(item.equipAttrs)
@@ -666,9 +674,23 @@ export function createMainPanelDeltaStateSource(options: MainPanelDeltaStateSour
       };
     }
 
-    const next: Inventory = previous
-      ? cloneJson(previous)
-      : { items: [], capacity: 0 };
+    if (
+      previous
+      && patch.capacity === undefined
+      && patch.size === undefined
+      && patch.cooldowns === undefined
+      && patch.serverTick === undefined
+      && (!patch.slots || patch.slots.length === 0)
+    ) {
+      return previous;
+    }
+
+    const next: Inventory = {
+      items: previous ? previous.items.slice() : [],
+      capacity: previous?.capacity ?? 0,
+      cooldowns: previous?.cooldowns,
+      serverTick: previous?.serverTick,
+    };
     if (patch.capacity !== undefined) {
       next.capacity = patch.capacity;
     }
@@ -853,7 +875,7 @@ export function createMainPanelDeltaStateSource(options: MainPanelDeltaStateSour
       ));
     }
 
-    latestActionMap = nextMap;
+    latestActionMap = new Map(merged.map((action) => [action.id, cloneJson(action)]));
     return merged;
   }  
   /**
@@ -1066,9 +1088,13 @@ export function createMainPanelDeltaStateSource(options: MainPanelDeltaStateSour
   // 关键分支按状态与边界条件处理，非法路径会被提前拦截。
 
       const player = options.getPlayer();
-      const mergedInventory = mergeInventoryUpdate(player?.inventory, data);
+      const previousInventory = player?.inventory;
+      const mergedInventory = mergeInventoryUpdate(previousInventory, data);
       if (mergedInventory.serverTick !== undefined) {
         options.syncEstimatedServerTick(mergedInventory.serverTick);
+      }
+      if (previousInventory && mergedInventory === previousInventory) {
+        return;
       }
       if (player) {
         player.inventory = mergedInventory;

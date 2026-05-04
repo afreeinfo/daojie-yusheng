@@ -1,6 +1,7 @@
 import {
   Inventory,
   PlayerState,
+  S2C_AuctionListings,
   S2C_MarketItemBook,
   S2C_MarketListings,
   S2C_MarketOrders,
@@ -25,10 +26,13 @@ type MainMarketStateSourceOptions = {
     SocketSocialEconomySender,
     | 'sendRequestMarket'
     | 'sendRequestMarketListings'
+    | 'sendRequestAuctionListings'
     | 'sendRequestMarketItemBook'
     | 'sendRequestMarketTradeHistory'
     | 'sendCreateMarketSellOrder'
     | 'sendCreateMarketBuyOrder'
+    | 'sendPlaceAuctionBid'
+    | 'sendBuyoutAuctionLot'
     | 'sendCancelMarketOrder'
     | 'sendClaimMarketStorage'
   >;
@@ -62,10 +66,13 @@ export function createMainMarketStateSource(options: MainMarketStateSourceOption
   marketPanel.setCallbacks({
     onRequestMarket: () => options.socket.sendRequestMarket(),
     onRequestListings: (payload) => options.socket.sendRequestMarketListings(payload),
+    onRequestAuctionListings: (payload) => options.socket.sendRequestAuctionListings(payload),
     onRequestItemBook: (itemKey) => options.socket.sendRequestMarketItemBook(itemKey),
     onRequestTradeHistory: (page) => options.socket.sendRequestMarketTradeHistory(page),
     onCreateSellOrder: (slotIndex, quantity, unitPrice) => options.socket.sendCreateMarketSellOrder(slotIndex, quantity, unitPrice),
     onCreateBuyOrder: (itemKey, quantity, unitPrice) => options.socket.sendCreateMarketBuyOrder(itemKey, quantity, unitPrice),
+    onPlaceAuctionBid: (lotId, itemKey, unitPrice) => options.socket.sendPlaceAuctionBid(lotId, itemKey, unitPrice),
+    onBuyoutAuctionLot: (lotId, itemKey) => options.socket.sendBuyoutAuctionLot(lotId, itemKey),
     onCancelOrder: (orderId) => options.socket.sendCancelMarketOrder(orderId),
     onClaimStorage: () => options.socket.sendClaimMarketStorage(),
   });
@@ -133,6 +140,16 @@ export function createMainMarketStateSource(options: MainMarketStateSourceOption
 
     handleMarketListings(data: S2C_MarketListings): void {
       marketPanel.updateListings(data);
+    },
+    /**
+ * handleAuctionListings：读取拍卖行Listing并返回结果。
+ * @param data S2C_AuctionListings 原始数据。
+ * @returns 无返回值，直接更新拍卖行Listing相关状态。
+ */
+
+
+    handleAuctionListings(data: S2C_AuctionListings): void {
+      marketPanel.updateAuctionListings(data);
     },
     /**
  * handleMarketOrders：处理坊市订单并更新相关状态。

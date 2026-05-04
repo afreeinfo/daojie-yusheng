@@ -124,6 +124,12 @@ function createDeps(log) {
 
         materializeNavigationCommands() { log.push('materializeNavigationCommands'); },        
         /**
+ * materializeAutoUsePills：执行materializeAuto丹药相关逻辑。
+ * @returns 无返回值，直接更新materializeAuto丹药相关状态。
+ */
+
+        materializeAutoUsePills() { log.push('materializeAutoUsePills'); },
+        /**
  * materializeAutoCombatCommands：执行materializeAuto战斗Command相关逻辑。
  * @returns 无返回值，直接更新materializeAuto战斗Command相关状态。
  */
@@ -219,6 +225,7 @@ async function verifyNormalPath() {
         'setProgress:instance:1',
         'processPendingRespawns',
         'materializeNavigationCommands',
+        'materializeAutoUsePills',
         'materializeAutoCombatCommands',
         'dispatchPendingCommands',
         'dispatchPendingSystemCommands',
@@ -274,6 +281,7 @@ async function verifyAwaitsPendingCommandsBeforeSystemAndTicks() {
         'setProgress:instance:1',
         'processPendingRespawns',
         'materializeNavigationCommands',
+        'materializeAutoUsePills',
         'materializeAutoCombatCommands',
         'dispatchPendingCommands:start',
     ]);
@@ -285,6 +293,7 @@ async function verifyAwaitsPendingCommandsBeforeSystemAndTicks() {
         'setProgress:instance:1',
         'processPendingRespawns',
         'materializeNavigationCommands',
+        'materializeAutoUsePills',
         'materializeAutoCombatCommands',
         'dispatchPendingCommands:start',
         'dispatchPendingCommands:resolved',

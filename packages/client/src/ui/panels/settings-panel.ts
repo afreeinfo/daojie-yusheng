@@ -7,6 +7,7 @@ import {
   ROLE_NAME_MAX_ASCII_LENGTH,
   ROLE_NAME_MAX_LENGTH,
 } from '@mud/shared';
+import type { OfflineGainReportView, PlayerStatisticPeriodTotalView, PlayerStatisticTotalsView } from '@mud/shared';
 import { detailModalHost } from '../detail-modal-host';
 import { validateDisplayName, validatePassword, validateRoleName } from '../account-rules';
 import {
@@ -33,8 +34,17 @@ import {
   resetMapPerformanceConfig,
   updateMapPerformanceConfig,
 } from '../performance-config';
+import { readOfflineGainReportsFromBrowser, readPlayerStatisticTotalsFromBrowser } from '../../offline-gain-storage';
+import {
+  formatOfflineGainDuration,
+  formatOfflineGainTime,
+  formatSignedAmount,
+  renderOfflineGainReport,
+} from '../offline-gain-render';
 import { patchElementChildren, patchElementHtml } from '../dom-patch';
 import { MAP_TARGET_FPS_RANGE } from '../../constants/ui/performance';
+
+type SettingsTab = 'account' | 'redeem' | 'ui' | 'performance' | 'offlineGain';
 
 /** 设置面板初始化依赖，提供账号信息读取、保存回调、兑换提交和登出回调。 */
 type SettingsPanelOptions = {
@@ -43,6 +53,11 @@ type SettingsPanelOptions = {
  */
 
   getCurrentAccountName: () => string;  
+  /**
+ * getCurrentPlayerId：Current玩家ID。
+ */
+
+  getCurrentPlayerId: () => string;
   /**
  * getCurrentDisplayName：Current显示名称名称或显示文本。
  */
@@ -78,13 +93,17 @@ type SettingsPanelOptions = {
 /** SettingsPanel：设置面板实现。 */
 export class SettingsPanel {
   /** activeTab：活跃Tab。 */
-  private activeTab: 'account' | 'redeem' | 'ui' | 'performance' = 'account';
+  private activeTab: SettingsTab = 'account';
   /** currentAccountName：当前账号名称。 */
   private currentAccountName = '';
+  /** currentPlayerId：当前玩家ID。 */
+  private currentPlayerId = '';
   /** currentDisplayName：当前显示名称。 */
   private currentDisplayName = '';
   /** currentRoleName：当前角色名称。 */
   private currentRoleName = '';
+  /** selectedOfflineGainReportId：当前收支统计历史选中记录。 */
+  private selectedOfflineGainReportId = '';
   /** displayNameCheckTimer：显示名称检查Timer。 */
   private displayNameCheckTimer: ReturnType<typeof setTimeout> | null = null;
   /** displayNameAbortController：显示名称Abort Controller。 */
@@ -119,6 +138,7 @@ export class SettingsPanel {
       return;
     }
     this.currentAccountName = this.options.getCurrentAccountName().normalize('NFC');
+    this.currentPlayerId = this.options.getCurrentPlayerId().trim();
     this.currentDisplayName = this.options.getCurrentDisplayName().normalize('NFC');
     this.currentRoleName = this.options.getCurrentRoleName().normalize('NFC');
     this.displayNameAvailable = true;
@@ -168,6 +188,12 @@ export class SettingsPanel {
               data-settings-tab="performance"
               aria-selected="${this.activeTab === 'performance' ? 'true' : 'false'}"
             >性能</button>
+            <button
+              class="settings-modal-tab ui-tabbed-modal-tab${this.activeTab === 'offlineGain' ? ' active' : ''}"
+              type="button"
+              data-settings-tab="offlineGain"
+              aria-selected="${this.activeTab === 'offlineGain' ? 'true' : 'false'}"
+            >收支统计</button>
           </div>
           <div class="settings-modal-pane ui-tabbed-modal-pane${this.activeTab === 'account' ? ' active' : ''}" data-settings-pane="account">
             ${this.renderAccountTab()}
@@ -181,6 +207,9 @@ export class SettingsPanel {
           <div class="settings-modal-pane ui-tabbed-modal-pane${this.activeTab === 'performance' ? ' active' : ''}" data-settings-pane="performance">
             ${this.renderPerformanceTab()}
           </div>
+          <div class="settings-modal-pane ui-tabbed-modal-pane${this.activeTab === 'offlineGain' ? ' active' : ''}" data-settings-pane="offlineGain">
+            ${this.renderOfflineGainTab()}
+          </div>
         </div>
       `);
   }
@@ -192,6 +221,7 @@ export class SettingsPanel {
     this.bindRedeemSettings(body, signal);
     this.bindUiSettings(body, signal);
     this.bindPerformanceSettings(body, signal);
+    this.bindOfflineGainSettings(body, signal);
   }
 
   /** bindTabs：绑定标签页。 */
@@ -199,7 +229,7 @@ export class SettingsPanel {
     body.querySelectorAll<HTMLButtonElement>('[data-settings-tab]').forEach((button) => {
       button.addEventListener('click', () => {
         const nextTab = button.dataset.settingsTab;
-        if (nextTab !== 'account' && nextTab !== 'redeem' && nextTab !== 'ui' && nextTab !== 'performance') {
+        if (!isSettingsTab(nextTab)) {
           return;
         }
         this.activeTab = nextTab;
@@ -211,6 +241,9 @@ export class SettingsPanel {
         body.querySelectorAll<HTMLElement>('[data-settings-pane]').forEach((entry) => {
           entry.classList.toggle('active', entry.dataset.settingsPane === nextTab);
         });
+        if (nextTab === 'offlineGain') {
+          this.refreshOfflineGainPane(body);
+        }
       }, { signal });
     });
   }
@@ -392,6 +425,25 @@ export class SettingsPanel {
       const nextConfig = resetMapPerformanceConfig();
       this.syncPerformanceControls(body, nextConfig);
       setStatus(statusEl, '性能已复归原本', 'success');
+    }, { signal });
+  }
+
+  /** bindOfflineGainSettings：绑定收支统计设置。 */
+  private bindOfflineGainSettings(body: HTMLElement, signal: AbortSignal): void {
+    body.querySelector<HTMLButtonElement>('#settings-offline-gain-refresh')?.addEventListener('click', () => {
+      this.refreshOfflineGainPane(body, '收支统计已刷新');
+    }, { signal });
+    body.querySelector<HTMLElement>('#settings-offline-gain-list')?.addEventListener('click', (event) => {
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      const button = target?.closest<HTMLButtonElement>('[data-offline-gain-report-id]');
+      if (!button || !body.contains(button)) {
+        return;
+      }
+      const reportId = button.dataset.offlineGainReportId ?? '';
+      if (!reportId) {
+        return;
+      }
+      this.selectOfflineGainHistoryRecord(body, reportId);
     }, { signal });
   }
 
@@ -673,6 +725,148 @@ export class SettingsPanel {
       </div>
     `;
   }  
+
+  /** renderOfflineGainTab：渲染收支统计Tab。 */
+  private renderOfflineGainTab(): string {
+    const reports = this.readCurrentOfflineGainReports();
+    const totals = this.readCurrentPlayerStatisticTotals();
+    return `
+      <div class="panel-section account-settings-section ui-surface-pane ui-surface-pane--stack settings-offline-gain-shell">
+        <div class="settings-ui-table-head">
+          <div class="panel-section-title">收支统计</div>
+          <button id="settings-offline-gain-refresh" class="small-btn ghost" type="button">刷新</button>
+        </div>
+        <div class="settings-ui-copy ui-form-copy">今日、昨日、本周总账来自服务端权威累计，包含在线与离线全部收支；下方历史只展示已存入本机的离线挂机记录。</div>
+        <div id="settings-offline-gain-summary">
+          ${this.renderOfflineGainHistorySummary(totals)}
+        </div>
+        <div id="settings-offline-gain-list" class="settings-offline-gain-list">
+          ${this.renderOfflineGainHistoryList(reports)}
+        </div>
+        <div id="settings-offline-gain-status" class="account-settings-status ui-status-text">总账为服务端下发缓存，历史为本机离线挂机归档</div>
+      </div>
+    `;
+  }
+
+  /** refreshOfflineGainPane：刷新收支统计Pane。 */
+  private refreshOfflineGainPane(body: HTMLElement, statusMessage = ''): void {
+    const reports = this.readCurrentOfflineGainReports();
+    const totals = this.readCurrentPlayerStatisticTotals();
+    const summaryEl = body.querySelector<HTMLElement>('#settings-offline-gain-summary');
+    const listEl = body.querySelector<HTMLElement>('#settings-offline-gain-list');
+    const statusEl = body.querySelector<HTMLElement>('#settings-offline-gain-status');
+    if (summaryEl) {
+      patchElementHtml(summaryEl, this.renderOfflineGainHistorySummary(totals));
+    }
+    if (listEl) {
+      patchElementHtml(listEl, this.renderOfflineGainHistoryList(reports));
+    }
+    if (statusMessage) {
+      setStatus(statusEl, statusMessage, 'success');
+    }
+  }
+
+  /** readCurrentOfflineGainReports：读取当前玩家本地收支统计。 */
+  private readCurrentOfflineGainReports(): OfflineGainReportView[] {
+    return readOfflineGainReportsFromBrowser(this.currentPlayerId || this.currentAccountName || 'anonymous');
+  }
+
+  /** readCurrentPlayerStatisticTotals：读取服务端总账的本机展示缓存。 */
+  private readCurrentPlayerStatisticTotals(): PlayerStatisticTotalsView | null {
+    return readPlayerStatisticTotalsFromBrowser(this.currentPlayerId || this.currentAccountName || 'anonymous');
+  }
+
+  /** renderOfflineGainHistorySummary：渲染收支统计汇总。 */
+  private renderOfflineGainHistorySummary(totals: PlayerStatisticTotalsView | null): string {
+    return `
+      <div class="settings-offline-gain-summary">
+        ${this.renderStatisticPeriodCard('今日总计', totals?.today)}
+        ${this.renderStatisticPeriodCard('昨日总计', totals?.yesterday)}
+        ${this.renderStatisticPeriodCard('本周总计', totals?.week)}
+      </div>
+    `;
+  }
+
+  /** renderStatisticPeriodCard：渲染统计周期卡片。 */
+  private renderStatisticPeriodCard(title: string, totalValue: PlayerStatisticPeriodTotalView | null | undefined): string {
+    const total = normalizeStatisticPeriodTotal(totalValue);
+    return `
+      <div class="settings-offline-gain-stat ui-surface-card ui-surface-card--compact">
+        <span class="settings-offline-gain-stat-title">${escapeHtml(title)}</span>
+        <div class="settings-offline-gain-stat-line">
+          <small>灵石</small>
+          <strong>${escapeHtml(formatSignedAmount(total.spiritStones.gained, total.spiritStones.lost))}</strong>
+        </div>
+        <div class="settings-offline-gain-stat-line">
+          <small>修为</small>
+          <strong>${escapeHtml(formatSignedAmount(total.progress.gained, total.progress.lost))}</strong>
+        </div>
+        <div class="settings-offline-gain-stat-line">
+          <small>功法</small>
+          <strong>${escapeHtml(formatSignedAmount(total.techniques.gained, total.techniques.lost))}</strong>
+        </div>
+        <div class="settings-offline-gain-stat-line">
+          <small>技艺</small>
+          <strong>${escapeHtml(formatSignedAmount(total.professions.gained, total.professions.lost))}</strong>
+        </div>
+      </div>
+    `;
+  }
+
+  /** renderOfflineGainHistoryList：渲染收支统计历史列表。 */
+  private renderOfflineGainHistoryList(reports: OfflineGainReportView[]): string {
+    if (reports.length === 0) {
+      return '<div class="ui-empty-hint compact settings-offline-gain-empty">本机还没有离线挂机历史</div>';
+    }
+    const selected = resolveSelectedOfflineGainReport(reports, this.selectedOfflineGainReportId) ?? reports[0];
+    return `
+      <div class="settings-offline-gain-history-layout">
+        <div class="settings-offline-gain-record-list" role="listbox" aria-label="离线挂机历史">
+          ${reports.map((report) => this.renderOfflineGainHistoryListItem(report, selected.id)).join('')}
+        </div>
+        <div id="settings-offline-gain-detail" class="settings-offline-gain-detail">
+          ${renderOfflineGainReport(selected)}
+        </div>
+      </div>
+    `;
+  }
+
+  /** renderOfflineGainHistoryListItem：渲染收支统计历史索引项。 */
+  private renderOfflineGainHistoryListItem(report: OfflineGainReportView, selectedReportId: string): string {
+    const active = report.id === selectedReportId;
+    return `
+      <button
+        class="settings-offline-gain-record-button${active ? ' active' : ''}"
+        type="button"
+        role="option"
+        aria-selected="${active ? 'true' : 'false'}"
+        data-offline-gain-report-id="${escapeHtml(report.id)}"
+      >
+        <span class="settings-offline-gain-record-date">${escapeHtml(formatOfflineGainTime(report.endedAt))}</span>
+        <span class="settings-offline-gain-record-meta">离线挂机 ${escapeHtml(formatOfflineGainDuration(report.durationMs))}</span>
+      </button>
+    `;
+  }
+
+  /** selectOfflineGainHistoryRecord：切换历史记录详情。 */
+  private selectOfflineGainHistoryRecord(body: HTMLElement, reportId: string): void {
+    const reports = this.readCurrentOfflineGainReports();
+    const selected = reports.find((report) => report.id === reportId);
+    if (!selected) {
+      return;
+    }
+    this.selectedOfflineGainReportId = selected.id;
+    body.querySelectorAll<HTMLButtonElement>('[data-offline-gain-report-id]').forEach((button) => {
+      const active = button.dataset.offlineGainReportId === selected.id;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+    const detailEl = body.querySelector<HTMLElement>('#settings-offline-gain-detail');
+    if (detailEl) {
+      patchElementHtml(detailEl, renderOfflineGainReport(selected));
+    }
+  }
+
   /**
  * handleRedeemSubmit：处理RedeemSubmit并更新相关状态。
  * @param textarea HTMLTextAreaElement 参数说明。
@@ -977,6 +1171,41 @@ function setStatus(target: HTMLElement | null, message: string, tone: '' | 'succ
   if (tone) {
     target.classList.add(tone);
   }
+}
+
+/** isSettingsTab：判断设置标签是否合法。 */
+function isSettingsTab(value: string | undefined): value is SettingsTab {
+  return value === 'account'
+    || value === 'redeem'
+    || value === 'ui'
+    || value === 'performance'
+    || value === 'offlineGain';
+}
+
+function resolveSelectedOfflineGainReport(reports: OfflineGainReportView[], selectedReportId: string): OfflineGainReportView | null {
+  if (reports.length === 0) {
+    return null;
+  }
+  return reports.find((report) => report.id === selectedReportId) ?? reports[0] ?? null;
+}
+
+function normalizeStatisticPeriodTotal(total: PlayerStatisticPeriodTotalView | null | undefined): PlayerStatisticPeriodTotalView {
+  return {
+    spiritStones: normalizeStatisticAmount(total?.spiritStones),
+    progress: normalizeStatisticAmount(total?.progress),
+    techniques: normalizeStatisticAmount(total?.techniques),
+    professions: normalizeStatisticAmount(total?.professions),
+  };
+}
+
+function normalizeStatisticAmount(value: PlayerStatisticPeriodTotalView['spiritStones'] | null | undefined): { gained: number; lost: number; net: number } {
+  const gained = Math.max(0, Math.trunc(Number(value?.gained ?? 0) || 0));
+  const lost = Math.max(0, Math.trunc(Number(value?.lost ?? 0) || 0));
+  return {
+    gained,
+    lost,
+    net: gained - lost,
+  };
 }
 
 /** escapeHtml：转义 HTML 文本中的危险字符。 */

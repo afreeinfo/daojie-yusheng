@@ -91,8 +91,16 @@ async function main(): Promise<void> {
     assert(ratTailRow);
     assert.equal(Number(ratTailRow.count ?? 0), initialRatTailCount + 2);
 
-    const snapshotRow = await fetchSingleRow(pool, 'server_player_snapshot', playerId);
-    assert.equal(Boolean(snapshotRow), true);
+    const checkpointRow = await fetchSingleRow(pool, 'player_position_checkpoint', playerId);
+    assert.equal(Boolean(checkpointRow), true);
+    assert.equal(Number(checkpointRow?.x ?? 0), 13);
+    assert.equal(Number(checkpointRow?.y ?? 0), 17);
+    assert.equal(Number(checkpointRow?.facing ?? 0), Direction.East);
+
+    const watermarkRow = await fetchSingleRow(pool, 'player_recovery_watermark', playerId);
+    assert.equal(Boolean(watermarkRow), true);
+    assert.equal(Number(watermarkRow?.inventory_version ?? 0) > 0, true);
+    assert.equal(Number(watermarkRow?.position_checkpoint_version ?? 0) > 0, true);
 
     console.log(
       JSON.stringify(
@@ -102,7 +110,9 @@ async function main(): Promise<void> {
           playerId,
           inventoryCount: Number(ratTailRow.count ?? 0),
           initialRatTailCount,
-          answers: 'player state worker 已认领 player_flush_ledger 的 snapshot 条目，并驱动现有 flush 服务完成一次非锚点玩家状态刷盘',
+          checkpointRow: Boolean(checkpointRow),
+          recoveryWatermarkRow: Boolean(watermarkRow),
+          answers: 'player state worker 已认领 player_flush_ledger 的 snapshot 条目，并驱动现有 flush 服务完成一次分域玩家状态刷盘',
           excludes: '不证明多节点 worker 竞争、独立进程调度、完整 dead-letter 或 Redis 唤醒',
           completionMapping: 'release:proof:with-db.player-state-flush-worker',
         },

@@ -35,6 +35,9 @@ const player_runtime_service_1 = require("../player/player-runtime.service");
 
 const instance_catalog_service_1 = require("../../persistence/instance-catalog.service");
 
+const AUCTION_EXTENSION_WINDOW_MS = 30 * 1000;
+const AUCTION_MAX_EXTENSION_MS = 60 * 60 * 1000;
+
 /** 坊市运行时：维护挂单、成交、仓库与交易历史。 */
 let MarketRuntimeService = MarketRuntimeService_1 = class MarketRuntimeService {
 /**
@@ -70,6 +73,10 @@ let MarketRuntimeService = MarketRuntimeService_1 = class MarketRuntimeService {
     tradeHistory = [];
     /** 每个玩家的坊市仓库缓存。 */
     storageByPlayerId = new Map();
+    /** 拍卖行独立出价态，避免拍卖出价误走坊市买单撮合。 */
+    auctionBidsByItemKey = new Map();
+    /** 拍卖行权威结束时间，前端只用投影字段本地倒计时。 */
+    auctionTimingByItemKey = new Map();
     /** 串行化坊市写操作，避免并发修改同一份内存状态。 */
     marketOperationQueue = Promise.resolve();
     /** 注入内容、玩家与坊市持久化服务。 */
@@ -114,6 +121,9 @@ let MarketRuntimeService = MarketRuntimeService_1 = class MarketRuntimeService {
         }));
         this.tradeHistory = await this.marketPersistenceService.loadTradeHistory();
         this.storageByPlayerId.clear();
+        this.auctionBidsByItemKey.clear();
+        this.auctionTimingByItemKey.clear();
+        this.hydrateAuctionStateFromOpenOrders();
         for (const entry of await this.marketPersistenceService.loadStorages()) {
             this.storageByPlayerId.set(entry.playerId, cloneStorage(entry.storage));
         }
@@ -162,6 +172,43 @@ let MarketRuntimeService = MarketRuntimeService_1 = class MarketRuntimeService {
             techniqueCategory,
             counts: this.buildMarketListingCounts(entries),
             items: groups.slice(start, start + pageSize).flatMap((entry) => entry.entries),
+        };
+    }
+    /** 构造拍卖行分页列表，服务端按 tab、筛选和页码裁剪后只返回当前页。 */
+    buildAuctionListingsPage(playerId, payload) {
+  // 关键分支按状态与边界条件处理，非法路径会被提前拦截。
+
+        const request = this.normalizeAuctionListingsRequest(payload);
+
+        const participateLots = this.buildAuctionParticipateLotEntries(playerId);
+
+        const mineLots = this.buildAuctionMineLotEntries(playerId);
+
+        const source = request.tab === 'mine' ? mineLots : participateLots;
+
+        const queryFiltered = this.filterAuctionLotEntriesByQuery(source, request.query);
+
+        const categoryFiltered = this.filterAuctionLotEntriesByCategory(queryFiltered, request.category);
+
+        const total = categoryFiltered.length;
+
+        const totalPages = Math.max(1, Math.ceil(total / request.pageSize));
+
+        const page = Math.max(1, Math.min(totalPages, request.page));
+
+        const start = (page - 1) * request.pageSize;
+        return {
+            currencyItemId: market_1.MARKET_CURRENCY_ITEM_ID,
+            currencyItemName: this.getCurrencyItemName(),
+            tab: request.tab,
+            page,
+            pageSize: request.pageSize,
+            total,
+            category: request.category,
+            query: request.query,
+            counts: this.buildAuctionListingCounts(queryFiltered),
+            summary: this.buildAuctionListingSummary(playerId, participateLots, mineLots),
+            items: categoryFiltered.slice(start, start + request.pageSize),
         };
     }
     /**
@@ -378,6 +425,7 @@ let MarketRuntimeService = MarketRuntimeService_1 = class MarketRuntimeService {
                     updatedAt: now,
                 };
                 this.openOrders.push(order);
+                this.initializeAuctionOrderState(order, context);
                 this.markOrderDirty(order.id, context);
                 this.pushNotice(result, playerId, `已挂售 ${orderItem.name} x${remaining}，单价 ${this.formatUnitPrice(unitPrice)} ${this.getCurrencyItemName()}。`, 'success');
             }
@@ -499,6 +547,9 @@ let MarketRuntimeService = MarketRuntimeService_1 = class MarketRuntimeService {
             }
 
             const itemKey = this.resolveInternalMarketItemKey(payload.itemKey);
+            if (this.getSortedAuctionBids(itemKey).some((bid) => bid.reservedCost > 0)) {
+                return this.singleMessage(playerId, '该物品已有拍卖出价，请从拍卖行一口价或等待结算。');
+            }
             const sells = this.getSortedOrders(itemKey, 'sell').filter((order) => order.ownerId !== playerId);
             if (sells.length === 0) {
                 return this.singleMessage(playerId, '当前没有可买入的挂售。');
@@ -791,9 +842,14 @@ let MarketRuntimeService = MarketRuntimeService_1 = class MarketRuntimeService {
     }
     /** 取消玩家自己的挂单。 */
     async cancelOrder(playerId, payload) {
+        const requestedOrderId = String(payload.orderId ?? '').trim();
+        const requestedOrder = this.openOrders.find((entry) => entry.id === requestedOrderId && entry.ownerId === playerId);
+        if (requestedOrder?.side === 'sell' && this.getSortedAuctionBids(this.getOrderItemKey(requestedOrder)).some((bid) => bid.reservedCost > 0)) {
+            return this.singleMessage(playerId, '这件寄拍已有出价，不能直接撤回。');
+        }
         if (this.durableOperationService?.isEnabled()) {
-            const orderId = String(payload.orderId ?? '').trim();
-            const order = this.openOrders.find((entry) => entry.id === orderId && entry.ownerId === playerId);
+            const orderId = requestedOrderId;
+            const order = requestedOrder;
             if (!order) {
                 return this.singleMessage(playerId, '未找到可取消的订单。');
             }
@@ -838,7 +894,7 @@ let MarketRuntimeService = MarketRuntimeService_1 = class MarketRuntimeService {
         }
         return this.runExclusiveMarketMutation(playerId, async (context) => {
 
-            const orderId = String(payload.orderId ?? '').trim();
+            const orderId = requestedOrderId;
 
             const order = this.openOrders.find((entry) => entry.id === orderId && entry.ownerId === playerId);
             if (!order) {
@@ -1069,6 +1125,677 @@ let MarketRuntimeService = MarketRuntimeService_1 = class MarketRuntimeService {
             buyOrderCount: entry.buyOrderCount,
             buyQuantity: entry.buyQuantity,
         }));
+    }
+    /** 构造可参与拍卖的拍品摘要，拍卖行分页会在服务端继续裁剪。 */
+    buildAuctionParticipateLotEntries(viewerId = '') {
+  // 关键分支按状态与边界条件处理，非法路径会被提前拦截。
+
+        return this.buildListedItems()
+            .filter((entry) => entry.lowestSellPrice !== undefined)
+            .map((entry) => {
+            const clientItemKey = this.buildClientMarketKey(entry.itemKey);
+            const relatedOrders = this.openOrders.filter((order) => order.status === 'open'
+                && order.remainingQuantity > 0
+                && this.getOrderItemKey(order) === entry.itemKey);
+            const createdAt = relatedOrders.reduce((min, order) => Math.min(min, Number(order.createdAt) || min), Number.MAX_SAFE_INTEGER);
+            const seed = this.buildAuctionStableNumber(clientItemKey || entry.itemKey);
+            const timing = this.buildAuctionTiming(entry.itemKey, seed, createdAt === Number.MAX_SAFE_INTEGER ? Date.now() : createdAt);
+            if (timing.ended) {
+                return null;
+            }
+            const lowestSell = entry.lowestSellPrice;
+            const bids = this.getAuctionBidViews(entry.itemKey, viewerId);
+            const highestBid = bids[0]?.unitPrice;
+            const currentPrice = Math.max(1, Math.floor(highestBid ?? lowestSell ?? 1));
+            return {
+                id: clientItemKey,
+                itemKey: clientItemKey,
+                item: this.toAuctionPreviewItem(entry.item),
+                itemId: entry.item.itemId,
+                itemType: entry.item.type ?? 'material',
+                itemSubType: this.buildMarketListingSubType(entry.item),
+                enhanceLevel: Number.isFinite(Number(entry.item.enhanceLevel))
+                    ? Math.max(0, Math.trunc(Number(entry.item.enhanceLevel)))
+                    : undefined,
+                currentPrice,
+                buyoutPrice: lowestSell !== undefined ? Math.max(currentPrice, Math.floor(lowestSell)) : null,
+                bidCount: bids.length,
+                bids,
+                startAtMs: timing.startAtMs,
+                durationSeconds: timing.durationSeconds,
+                status: 'active',
+                statusLabel: '正在拍卖',
+                sellerLabel: `${entry.sellOrderCount} 位寄拍`,
+                lotNo: `#${1000 + (seed % 9000)}`,
+                heat: entry.sellOrderCount * 3 + bids.length * 2,
+                remainingQuantity: entry.sellQuantity || entry.buyQuantity,
+            };
+        })
+            .filter((entry) => Boolean(entry))
+            .sort((left, right) => {
+            if (right.heat !== left.heat) {
+                return right.heat - left.heat;
+            }
+            return String(left.item?.name ?? left.itemId).localeCompare(String(right.item?.name ?? right.itemId), 'zh-Hans-CN');
+        });
+    }
+    /** 构造我的寄拍拍品摘要。 */
+    buildAuctionMineLotEntries(playerId) {
+        return this.openOrders
+            .filter((order) => order.ownerId === playerId
+            && order.side === 'sell'
+            && order.status === 'open'
+            && order.remainingQuantity > 0
+            && this.canTradeItemOnMarket(order.item))
+            .sort((left, right) => right.createdAt - left.createdAt || left.id.localeCompare(right.id))
+            .map((order) => {
+            const clientItemKey = this.buildClientMarketKey(this.getOrderItemKey(order));
+            const seed = this.buildAuctionStableNumber(order.id);
+            const timing = this.buildAuctionTiming(this.getOrderItemKey(order), seed, order.createdAt);
+            const bids = this.getAuctionBidViews(this.getOrderItemKey(order), playerId);
+            const highestBid = bids[0]?.unitPrice;
+            const status = timing.ended ? (bids.length > 0 ? 'sold' : 'failed') : 'consigning';
+            const statusLabel = status === 'sold' ? '已成交' : status === 'failed' ? '流拍' : '寄拍中';
+            return {
+                id: order.id,
+                itemKey: clientItemKey,
+                item: this.toAuctionPreviewItem(order.item),
+                itemId: order.item.itemId,
+                itemType: order.item.type ?? 'material',
+                itemSubType: this.buildMarketListingSubType(order.item),
+                enhanceLevel: Number.isFinite(Number(order.item.enhanceLevel))
+                    ? Math.max(0, Math.trunc(Number(order.item.enhanceLevel)))
+                    : undefined,
+                currentPrice: Math.max(1, Math.floor(highestBid ?? order.unitPrice)),
+                buyoutPrice: order.unitPrice,
+                bidCount: bids.length,
+                bids,
+                startAtMs: timing.startAtMs,
+                durationSeconds: timing.durationSeconds,
+                status,
+                statusLabel,
+                sellerLabel: '我的寄拍',
+                lotNo: `#${1000 + (seed % 9000)}`,
+                heat: order.remainingQuantity,
+                remainingQuantity: order.remainingQuantity,
+                orderId: order.id,
+                orderSide: order.side,
+            };
+        });
+    }
+    /** 提交拍卖行加价，只写拍卖出价态，不进入坊市买单撮合。 */
+    async placeAuctionBid(playerId, payload) {
+        return this.runExclusiveMarketMutation(playerId, async (context) => {
+            const requestedKey = String(payload?.itemKey ?? payload?.lotId ?? '').trim();
+            const itemKey = this.resolveInternalMarketItemKey(requestedKey);
+            if (!itemKey) {
+                return this.singleMessage(playerId, '拍品不存在或已结束。');
+            }
+            const sellOrders = this.getSortedOrders(itemKey, 'sell').filter((order) => order.ownerId !== playerId);
+            if (sellOrders.length === 0) {
+                return this.singleMessage(playerId, '拍品不存在、已结束，或不能对自己的寄拍出价。');
+            }
+            const lot = this.buildAuctionParticipateLotEntries(playerId).find((entry) => this.resolveInternalMarketItemKey(entry.itemKey) === itemKey);
+            if (!lot) {
+                return this.singleMessage(playerId, '拍品不存在或已结束。');
+            }
+            const timing = this.auctionTimingByItemKey.get(itemKey);
+            if (!timing || timing.endAtMs <= Date.now()) {
+                return this.singleMessage(playerId, '拍品已经结束，不能继续出价。');
+            }
+            const unitPrice = this.normalizeUnitPrice(payload?.unitPrice);
+            if (!unitPrice) {
+                return this.singleMessage(playerId, '拍卖出价无效。');
+            }
+            const minBidPrice = this.getAuctionMinimumBidPrice(lot.currentPrice);
+            if (unitPrice < minBidPrice) {
+                return this.singleMessage(playerId, `最低加价为 ${this.formatUnitPrice(minBidPrice)} ${this.getCurrencyItemName()}。`);
+            }
+            const quantity = (0, shared_1.getMarketMinimumTradeQuantity)(unitPrice);
+            const totalCost = (0, shared_1.calculateMarketTradeTotalCost)(quantity, unitPrice);
+            if (totalCost === null) {
+                return this.singleMessage(playerId, `${this.getCurrencyItemName()}不足，无法出价。`);
+            }
+            const existingBids = this.getSortedAuctionBids(itemKey);
+            const previousHighest = existingBids[0] ?? null;
+            const previousBid = existingBids.find((entry) => entry.bidderId === playerId) ?? null;
+            if (previousBid && unitPrice <= previousBid.unitPrice) {
+                return this.singleMessage(playerId, '新的出价必须高于你当前的拍卖出价。');
+            }
+            const now = Date.now();
+            const previousReservedCost = previousBid?.reservedCost && previousHighest?.bidderId === playerId
+                ? Math.max(0, Math.trunc(Number(previousBid.reservedCost) || 0))
+                : 0;
+            const debitCost = Math.max(0, totalCost - previousReservedCost);
+            if (!this.canAffordMarketCurrency(playerId, debitCost)) {
+                return this.singleMessage(playerId, `${this.getCurrencyItemName()}不足，无法出价。`);
+            }
+            if (debitCost > 0) {
+                this.captureOnlinePlayerState(playerId, context);
+                if (!this.consumeMarketCurrencyFromInventory(playerId, debitCost)) {
+                    return this.singleMessage(playerId, `${this.getCurrencyItemName()}不足，无法出价。`);
+                }
+            }
+            const result = this.createEmptyResult(playerId);
+            if (previousHighest && previousHighest.bidderId !== playerId && previousHighest.reservedCost > 0) {
+                this.deliverMarketCurrencyToPlayer(previousHighest.bidderId, previousHighest.reservedCost, context);
+                this.pushNotice(result, previousHighest.bidderId, `你在拍卖行的 ${lot.item?.name ?? lot.itemId} 出价已被超过，冻结灵石已退回。`, 'info');
+            }
+            const extension = this.extendAuctionIfEndingSoon(itemKey, now);
+            const bids = existingBids
+                .filter((entry) => entry.bidderId !== playerId)
+                .map((entry) => entry.bidderId === previousHighest?.bidderId
+                ? { ...entry, reservedCost: 0 }
+                : { ...entry });
+            bids.push({
+                bidderId: playerId,
+                unitPrice,
+                createdAt: now,
+                reservedCost: totalCost,
+            });
+            bids.sort((left, right) => right.unitPrice - left.unitPrice || left.createdAt - right.createdAt || left.bidderId.localeCompare(right.bidderId));
+            this.auctionBidsByItemKey.set(itemKey, bids);
+            this.persistAuctionStateToCarrier(itemKey, context);
+            const extensionText = extension.extended ? '，剩余时间已延长至 30 秒' : '';
+            this.pushNotice(result, playerId, `你在拍卖行出价 ${lot.item?.name ?? lot.itemId}，当前价 ${this.formatUnitPrice(unitPrice)} ${this.getCurrencyItemName()}${extensionText}。`, 'success');
+            return result;
+        });
+    }
+    /** 拍卖行一口价入口，避免客户端误走坊市买入事件。 */
+    async buyoutAuctionLot(playerId, payload) {
+        return this.runExclusiveMarketMutation(playerId, async (context) => {
+            const requestedKey = String(payload?.itemKey ?? payload?.lotId ?? '').trim();
+            const itemKey = this.resolveInternalMarketItemKey(requestedKey);
+            if (!itemKey) {
+                return this.singleMessage(playerId, '拍品不存在或已结束。');
+            }
+            const timing = this.auctionTimingByItemKey.get(itemKey);
+            if (timing && timing.endAtMs <= Date.now()) {
+                return this.singleMessage(playerId, '拍品已经结束，不能一口价。');
+            }
+            const sellOrder = this.getSortedOrders(itemKey, 'sell').find((order) => order.ownerId !== playerId);
+            if (!sellOrder) {
+                return this.singleMessage(playerId, '拍品不存在、已结束，或不能一口价自己的寄拍。');
+            }
+            const bids = this.getSortedAuctionBids(itemKey);
+            const buyoutUnitPrice = Math.max(sellOrder.unitPrice, bids[0]?.unitPrice ?? sellOrder.unitPrice);
+            const totalCost = (0, shared_1.calculateMarketTradeTotalCost)(1, buyoutUnitPrice);
+            if (totalCost === null) {
+                return this.singleMessage(playerId, this.buildTradeQuantityError(buyoutUnitPrice));
+            }
+            const buyerBid = bids.find((entry) => entry.bidderId === playerId) ?? null;
+            const buyerReservedCost = Math.max(0, Math.trunc(Number(buyerBid?.reservedCost ?? 0)));
+            const additionalCost = Math.max(0, totalCost - buyerReservedCost);
+            if (!this.canAffordMarketCurrency(playerId, additionalCost)) {
+                return this.singleMessage(playerId, `${this.getCurrencyItemName()}不足，无法一口价。`);
+            }
+            this.captureOnlinePlayerState(playerId, context);
+            if (additionalCost > 0 && !this.consumeMarketCurrencyFromInventory(playerId, additionalCost)) {
+                return this.singleMessage(playerId, `${this.getCurrencyItemName()}不足，无法一口价。`);
+            }
+            const result = this.createEmptyResult(playerId);
+            for (const bid of bids) {
+                const reservedCost = Math.max(0, Math.trunc(Number(bid.reservedCost ?? 0)));
+                if (reservedCost <= 0) {
+                    continue;
+                }
+                if (bid.bidderId === playerId) {
+                    const refund = Math.max(0, reservedCost - totalCost);
+                    if (refund > 0) {
+                        this.deliverMarketCurrencyToPlayer(playerId, refund, context);
+                    }
+                    continue;
+                }
+                this.deliverMarketCurrencyToPlayer(bid.bidderId, reservedCost, context);
+                this.pushNotice(result, bid.bidderId, `拍卖行 ${sellOrder.item.name ?? sellOrder.item.itemId} 已被一口价，冻结灵石已退回。`, 'info');
+            }
+            this.deliverItemToPlayer(playerId, { ...sellOrder.item, count: 1 }, context);
+            this.deliverMarketCurrencyToPlayer(sellOrder.ownerId, totalCost, context);
+            this.recordTrade({
+                buyerId: playerId,
+                sellerId: sellOrder.ownerId,
+                itemId: sellOrder.item.itemId,
+                quantity: 1,
+                unitPrice: buyoutUnitPrice,
+            }, context);
+            sellOrder.remainingQuantity -= 1;
+            sellOrder.updatedAt = Date.now();
+            this.markOrderDirty(sellOrder.id, context);
+            this.touchAffectedPlayer(result, sellOrder.ownerId);
+            this.pushNotice(result, playerId, `你在拍卖行一口价竞得了 ${sellOrder.item.name ?? sellOrder.item.itemId} x1，一口价支付 ${this.getCurrencyItemName()} x${totalCost}。`, 'success');
+            this.pushNotice(result, sellOrder.ownerId, `你的寄拍已被一口价拍下：${sellOrder.item.name ?? sellOrder.item.itemId} x1，入账 ${this.getCurrencyItemName()} x${totalCost}。`, 'success');
+            if (sellOrder.remainingQuantity <= 0) {
+                sellOrder.status = 'filled';
+                this.deleteOrder(sellOrder.id, context);
+            }
+            this.clearAuctionStateForItemKey(itemKey, context);
+            this.compactOpenOrders();
+            this.reopenAuctionStateIfActive(itemKey, context);
+            return result;
+        });
+    }
+    /** 读取拍卖出价记录，按当前观看者做轻量匿名标签。 */
+    getAuctionBidViews(itemKey, viewerId = '') {
+        const normalizedItemKey = this.resolveInternalMarketItemKey(itemKey);
+        const bids = this.getSortedAuctionBids(normalizedItemKey);
+        return bids
+            .slice(0, 6)
+            .map((bid, index) => ({
+            bidderLabel: bid.bidderId === viewerId ? '我的出价' : `匿名修士 ${index + 1}`,
+            unitPrice: bid.unitPrice,
+            createdAtMs: bid.createdAt,
+        }));
+    }
+    /** 读取拍卖出价内部排序，最高价排在最前。 */
+    getSortedAuctionBids(itemKey) {
+        const normalizedItemKey = this.resolveInternalMarketItemKey(itemKey) || String(itemKey ?? '');
+        const bids = this.auctionBidsByItemKey.get(normalizedItemKey) ?? [];
+        return bids
+            .map((entry) => ({
+            bidderId: String(entry?.bidderId ?? ''),
+            unitPrice: this.normalizeUnitPrice(entry?.unitPrice),
+            createdAt: Number.isFinite(Number(entry?.createdAt)) ? Math.max(0, Math.trunc(Number(entry.createdAt))) : Date.now(),
+            reservedCost: Math.max(0, Math.trunc(Number(entry?.reservedCost ?? 0))),
+        }))
+            .filter((entry) => entry.bidderId.length > 0 && entry.unitPrice > 0)
+            .sort((left, right) => right.unitPrice - left.unitPrice || left.createdAt - right.createdAt || left.bidderId.localeCompare(right.bidderId));
+    }
+    /** 启动恢复时从订单 raw_payload 中恢复拍卖状态。 */
+    hydrateAuctionStateFromOpenOrders() {
+        for (const order of this.openOrders) {
+            if (order.side !== 'sell' || order.status !== 'open' || order.remainingQuantity <= 0) {
+                continue;
+            }
+            const itemKey = this.getOrderItemKey(order);
+            const auction = this.normalizeAuctionOrderState(order.auction);
+            if (!auction) {
+                continue;
+            }
+            if (!this.auctionTimingByItemKey.has(itemKey)) {
+                this.auctionTimingByItemKey.set(itemKey, {
+                    startAtMs: auction.startAtMs,
+                    normalDurationSeconds: auction.normalDurationSeconds,
+                    endAtMs: auction.endAtMs,
+                    maxEndAtMs: auction.maxEndAtMs,
+                });
+            }
+            if (!this.auctionBidsByItemKey.has(itemKey) && auction.bids.length > 0) {
+                this.auctionBidsByItemKey.set(itemKey, auction.bids);
+            }
+        }
+    }
+    /** 初始化新寄拍的拍卖状态，并写回承载订单用于持久化。 */
+    initializeAuctionOrderState(order, context) {
+        if (!order || order.side !== 'sell') {
+            return;
+        }
+        const itemKey = this.getOrderItemKey(order);
+        if (!itemKey) {
+            return;
+        }
+        if (!this.auctionTimingByItemKey.has(itemKey)) {
+            const seed = this.buildAuctionStableNumber(this.buildClientMarketKey(itemKey) || itemKey);
+            const base = this.buildAuctionBaseTiming(seed, order.createdAt, false);
+            const normalEndAtMs = base.startAtMs + base.durationSeconds * 1000;
+            this.auctionTimingByItemKey.set(itemKey, {
+                startAtMs: base.startAtMs,
+                normalDurationSeconds: base.durationSeconds,
+                endAtMs: normalEndAtMs,
+                maxEndAtMs: normalEndAtMs + AUCTION_MAX_EXTENSION_MS,
+            });
+        }
+        if (!this.auctionBidsByItemKey.has(itemKey)) {
+            this.auctionBidsByItemKey.set(itemKey, []);
+        }
+        this.persistAuctionStateToCarrier(itemKey, context);
+    }
+    /** 规范化订单内拍卖状态。 */
+    normalizeAuctionOrderState(raw) {
+        if (!raw || typeof raw !== 'object') {
+            return null;
+        }
+        const startAtMs = Number.isFinite(Number(raw.startAtMs)) ? Math.max(0, Math.trunc(Number(raw.startAtMs))) : 0;
+        const normalDurationSeconds = Number.isFinite(Number(raw.normalDurationSeconds))
+            ? Math.max(1, Math.trunc(Number(raw.normalDurationSeconds)))
+            : 1;
+        const normalEndAtMs = startAtMs + normalDurationSeconds * 1000;
+        const endAtMs = Number.isFinite(Number(raw.endAtMs)) ? Math.max(normalEndAtMs, Math.trunc(Number(raw.endAtMs))) : normalEndAtMs;
+        const maxEndAtMs = Number.isFinite(Number(raw.maxEndAtMs)) ? Math.max(endAtMs, Math.trunc(Number(raw.maxEndAtMs))) : normalEndAtMs + AUCTION_MAX_EXTENSION_MS;
+        const bids = Array.isArray(raw.bids)
+            ? raw.bids.map((entry) => ({
+                bidderId: String(entry?.bidderId ?? '').trim(),
+                unitPrice: this.normalizeUnitPrice(entry?.unitPrice),
+                createdAt: Number.isFinite(Number(entry?.createdAt)) ? Math.max(0, Math.trunc(Number(entry.createdAt))) : Date.now(),
+                reservedCost: Math.max(0, Math.trunc(Number(entry?.reservedCost ?? 0))),
+            })).filter((entry) => entry.bidderId.length > 0 && entry.unitPrice > 0)
+            : [];
+        bids.sort((left, right) => right.unitPrice - left.unitPrice || left.createdAt - right.createdAt || left.bidderId.localeCompare(right.bidderId));
+        return {
+            version: 1,
+            startAtMs,
+            normalDurationSeconds,
+            endAtMs,
+            maxEndAtMs,
+            bids,
+        };
+    }
+    /** 把当前拍卖状态写回同 itemKey 的最早有效卖单，复用市场订单持久化。 */
+    persistAuctionStateToCarrier(itemKey, context) {
+        const normalizedItemKey = this.resolveInternalMarketItemKey(itemKey) || String(itemKey ?? '');
+        const timing = this.auctionTimingByItemKey.get(normalizedItemKey);
+        if (!timing) {
+            return;
+        }
+        const carrier = this.getSortedOrders(normalizedItemKey, 'sell')
+            .find((order) => !context || !context.deletedOrderIds.has(order.id));
+        if (!carrier) {
+            return;
+        }
+        carrier.auction = {
+            version: 1,
+            startAtMs: timing.startAtMs,
+            normalDurationSeconds: timing.normalDurationSeconds,
+            endAtMs: timing.endAtMs,
+            maxEndAtMs: timing.maxEndAtMs,
+            bids: this.getSortedAuctionBids(normalizedItemKey),
+        };
+        carrier.updatedAt = Date.now();
+        if (context) {
+            this.markOrderDirty(carrier.id, context);
+        }
+    }
+    /** 清理指定拍品的拍卖状态，并同步清掉承载订单字段。 */
+    clearAuctionStateForItemKey(itemKey, context) {
+        const normalizedItemKey = this.resolveInternalMarketItemKey(itemKey) || String(itemKey ?? '');
+        this.auctionBidsByItemKey.delete(normalizedItemKey);
+        this.auctionTimingByItemKey.delete(normalizedItemKey);
+        for (const order of this.openOrders) {
+            if (this.getOrderItemKey(order) !== normalizedItemKey || !order.auction) {
+                continue;
+            }
+            delete order.auction;
+            order.updatedAt = Date.now();
+            if (context && !context.deletedOrderIds.has(order.id)) {
+                this.markOrderDirty(order.id, context);
+            }
+        }
+    }
+    /** 若同一物品仍有寄拍库存，成交后为下一件重新开一个拍卖窗口。 */
+    reopenAuctionStateIfActive(itemKey, context) {
+        const normalizedItemKey = this.resolveInternalMarketItemKey(itemKey) || String(itemKey ?? '');
+        const nextOrder = this.getSortedOrders(normalizedItemKey, 'sell')
+            .find((order) => !context || !context.deletedOrderIds.has(order.id));
+        if (!nextOrder) {
+            return;
+        }
+        this.initializeAuctionOrderState({ ...nextOrder, createdAt: Date.now() }, context);
+    }
+    /** 惰性结算已经到期且存在有效最高出价的拍品。 */
+    async settleExpiredAuctionLots() {
+        return this.runExclusiveMarketMutation('', async (context) => {
+            const result = { affectedPlayerIds: [], notices: [] };
+            const now = Date.now();
+            let changed = false;
+            for (const itemKey of Array.from(this.auctionTimingByItemKey.keys())) {
+                changed = this.settleExpiredAuctionLot(itemKey, now, context, result) || changed;
+            }
+            if (!changed) {
+                context.skipPersistence = true;
+                return null;
+            }
+            this.compactOpenOrders();
+            return result;
+        });
+    }
+    /** 结算单个到期拍品。 */
+    settleExpiredAuctionLot(itemKey, now, context, result) {
+        const normalizedItemKey = this.resolveInternalMarketItemKey(itemKey) || String(itemKey ?? '');
+        const timing = this.auctionTimingByItemKey.get(normalizedItemKey);
+        if (!timing || timing.endAtMs > now) {
+            return false;
+        }
+        const bids = this.getSortedAuctionBids(normalizedItemKey);
+        const highestBid = bids[0] ?? null;
+        if (!highestBid) {
+            this.persistAuctionStateToCarrier(normalizedItemKey, context);
+            return false;
+        }
+        const sellOrder = this.getSortedOrders(normalizedItemKey, 'sell')
+            .find((order) => order.ownerId !== highestBid.bidderId && !context.deletedOrderIds.has(order.id));
+        if (!sellOrder) {
+            this.refundAuctionBidReserves(normalizedItemKey, context, result, `拍卖行拍品已失效，冻结灵石已退回。`);
+            this.clearAuctionStateForItemKey(normalizedItemKey, context);
+            return true;
+        }
+        const totalCost = (0, shared_1.calculateMarketTradeTotalCost)(1, highestBid.unitPrice);
+        if (totalCost === null || highestBid.reservedCost < totalCost) {
+            this.refundAuctionBidReserves(normalizedItemKey, context, result, `拍卖行拍品结算失败，冻结灵石已退回。`);
+            this.clearAuctionStateForItemKey(normalizedItemKey, context);
+            this.reopenAuctionStateIfActive(normalizedItemKey, context);
+            return true;
+        }
+        for (const bid of bids) {
+            const reservedCost = Math.max(0, Math.trunc(Number(bid.reservedCost ?? 0)));
+            if (reservedCost <= 0 || bid.bidderId === highestBid.bidderId) {
+                continue;
+            }
+            this.deliverMarketCurrencyToPlayer(bid.bidderId, reservedCost, context);
+            this.pushNotice(result, bid.bidderId, `拍卖行 ${sellOrder.item.name ?? sellOrder.item.itemId} 已成交，冻结灵石已退回。`, 'info');
+        }
+        const overpayRefund = Math.max(0, highestBid.reservedCost - totalCost);
+        if (overpayRefund > 0) {
+            this.deliverMarketCurrencyToPlayer(highestBid.bidderId, overpayRefund, context);
+        }
+        this.deliverItemToPlayer(highestBid.bidderId, { ...sellOrder.item, count: 1 }, context);
+        this.deliverMarketCurrencyToPlayer(sellOrder.ownerId, totalCost, context);
+        this.recordTrade({
+            buyerId: highestBid.bidderId,
+            sellerId: sellOrder.ownerId,
+            itemId: sellOrder.item.itemId,
+            quantity: 1,
+            unitPrice: highestBid.unitPrice,
+        }, context);
+        sellOrder.remainingQuantity -= 1;
+        sellOrder.updatedAt = now;
+        this.markOrderDirty(sellOrder.id, context);
+        this.pushNotice(result, highestBid.bidderId, `你竞得了 ${sellOrder.item.name ?? sellOrder.item.itemId} x1，成交价 ${this.formatUnitPrice(highestBid.unitPrice)} ${this.getCurrencyItemName()}。`, 'success');
+        this.pushNotice(result, sellOrder.ownerId, `你的寄拍已成交：${sellOrder.item.name ?? sellOrder.item.itemId} x1，入账 ${this.getCurrencyItemName()} x${totalCost}。`, 'success');
+        if (sellOrder.remainingQuantity <= 0) {
+            sellOrder.status = 'filled';
+            this.deleteOrder(sellOrder.id, context);
+        }
+        this.clearAuctionStateForItemKey(normalizedItemKey, context);
+        this.reopenAuctionStateIfActive(normalizedItemKey, context);
+        return true;
+    }
+    /** 退回指定拍品全部仍冻结的拍卖出价。 */
+    refundAuctionBidReserves(itemKey, context, result, text) {
+        for (const bid of this.getSortedAuctionBids(itemKey)) {
+            const reservedCost = Math.max(0, Math.trunc(Number(bid.reservedCost ?? 0)));
+            if (reservedCost <= 0) {
+                continue;
+            }
+            this.deliverMarketCurrencyToPlayer(bid.bidderId, reservedCost, context);
+            this.pushNotice(result, bid.bidderId, text, 'info');
+        }
+    }
+    /** 当前价向上走一档得到拍卖最低加价。 */
+    getAuctionMinimumBidPrice(currentPrice) {
+        if (currentPrice >= shared_1.MARKET_MAX_UNIT_PRICE) {
+            return shared_1.MARKET_MAX_UNIT_PRICE;
+        }
+        return (0, shared_1.normalizeMarketPriceUp)(currentPrice + (0, shared_1.getMarketPriceStep)(currentPrice));
+    }
+    /** 把内部买入结算结果改写成拍卖一口价提示。 */
+    rewriteAuctionBuyoutNotices(result, playerId) {
+        if (!result || !Array.isArray(result.notices)) {
+            return;
+        }
+        for (const notice of result.notices) {
+            if (notice.playerId === playerId) {
+                if (typeof notice.text === 'string' && notice.text.includes('你买入了')) {
+                    notice.text = notice.text.replace('你买入了', '你在拍卖行一口价竞得了').replace('共花费', '一口价支付');
+                    notice.kind = 'success';
+                }
+                else if (typeof notice.text === 'string' && notice.text.includes('当前没有可买入的挂售')) {
+                    notice.text = '拍品不存在或已结束。';
+                }
+                else if (typeof notice.text === 'string' && notice.text.includes('不足，无法完成买入')) {
+                    notice.text = `${this.getCurrencyItemName()}不足，无法一口价。`;
+                }
+                continue;
+            }
+            if (typeof notice.text === 'string' && notice.text.includes('你的挂售已成交')) {
+                notice.text = notice.text.replace('你的挂售已成交', '你的寄拍已被一口价拍下');
+                notice.kind = 'success';
+            }
+        }
+    }
+    /** 规范化拍卖行分页请求，服务端硬限制每页最多 10 条。 */
+    normalizeAuctionListingsRequest(payload) {
+        const page = Number.isFinite(payload?.page) ? Math.max(1, Math.trunc(payload.page)) : 1;
+        const requestedPageSize = Number.isFinite(payload?.pageSize) ? Math.max(1, Math.trunc(payload.pageSize)) : 10;
+        const category = typeof payload?.category === 'string' && (payload.category === 'all' || shared_1.ITEM_TYPES.includes(payload.category))
+            ? payload.category
+            : 'all';
+        return {
+            tab: payload?.tab === 'mine' ? 'mine' : 'participate',
+            page,
+            pageSize: Math.min(10, requestedPageSize),
+            category,
+            query: typeof payload?.query === 'string' ? payload.query.trim().slice(0, 32) : '',
+        };
+    }
+    /** 按拍卖行主分类筛选。 */
+    filterAuctionLotEntriesByCategory(entries, category) {
+        if (category === 'all') {
+            return entries;
+        }
+        return entries.filter((entry) => entry.itemType === category);
+    }
+    /** 按拍卖行搜索关键字筛选。 */
+    filterAuctionLotEntriesByQuery(entries, query) {
+        const keyword = typeof query === 'string' ? query.trim().toLowerCase() : '';
+        if (!keyword) {
+            return entries;
+        }
+        return entries.filter((entry) => {
+            const itemName = String(entry.item?.name ?? entry.itemId ?? '').toLowerCase();
+            const itemId = String(entry.itemId ?? '').toLowerCase();
+            const status = String(entry.statusLabel ?? '').toLowerCase();
+            return itemName.includes(keyword) || itemId.includes(keyword) || status.includes(keyword);
+        });
+    }
+    /** 构造拍卖行分类计数。 */
+    buildAuctionListingCounts(entries) {
+        const categoryCounts = { all: entries.length };
+        for (const itemType of shared_1.ITEM_TYPES) {
+            categoryCounts[itemType] = entries.filter((entry) => entry.itemType === itemType).length;
+        }
+        return { categoryCounts };
+    }
+    /** 构造拍卖行摘要统计。 */
+    buildAuctionListingSummary(playerId, participateLots, mineLots) {
+        return {
+            activeLots: participateLots.length,
+            buyoutLots: participateLots.filter((lot) => lot.buyoutPrice !== null && lot.buyoutPrice !== undefined).length,
+            totalCurrentPrice: participateLots.reduce((sum, lot) => sum + Math.max(0, Math.floor(Number(lot.currentPrice) || 0)), 0),
+            myBidCount: Array.from(this.auctionBidsByItemKey.values()).flat().filter((bid) => bid.bidderId === playerId).length,
+            myConsignments: mineLots.length,
+            consigningLots: mineLots.filter((lot) => lot.status === 'consigning').length,
+            soldLots: mineLots.filter((lot) => lot.status === 'sold').length,
+            failedLots: mineLots.filter((lot) => lot.status === 'failed').length,
+            storageCount: this.getStorage(playerId).items.reduce((sum, item) => sum + Math.max(0, Math.floor(Number(item.count) || 0)), 0),
+        };
+    }
+    /** 拍卖行只需要当前页展示字段，避免把完整物品详情塞进分页包。 */
+    toAuctionPreviewItem(item) {
+        return {
+            itemId: item.itemId,
+            count: 1,
+            name: item.name ?? item.itemId,
+            type: item.type ?? 'material',
+            grade: item.grade,
+            level: item.level,
+            groundLabel: item.groundLabel,
+            equipSlot: item.equipSlot,
+            enhanceLevel: Number.isFinite(Number(item.enhanceLevel))
+                ? Math.max(0, Math.trunc(Number(item.enhanceLevel)))
+                : undefined,
+        };
+    }
+    /** 从订单创建时间派生当前拍卖窗口，客户端只按 startAtMs + durationSeconds 本地倒计时。 */
+    buildAuctionTiming(itemKey, seed, createdAt) {
+        const base = this.buildAuctionBaseTiming(seed, createdAt);
+        return this.getAuctionTimingState(itemKey, base.startAtMs, base.durationSeconds, Date.now());
+    }
+    /** 生成没有延时修正的基础拍卖窗口。 */
+    buildAuctionBaseTiming(seed, createdAt, refreshExpiredLegacy = true) {
+        const durationSeconds = 21600 + (Math.max(0, Math.trunc(seed)) % 21600);
+        const durationMs = durationSeconds * 1000;
+        const now = Date.now();
+        const anchor = Number.isFinite(Number(createdAt)) ? Math.max(0, Math.trunc(Number(createdAt))) : now;
+        if (anchor >= now) {
+            return { startAtMs: anchor, durationSeconds };
+        }
+        if (refreshExpiredLegacy && anchor + durationMs <= now) {
+            return { startAtMs: now, durationSeconds };
+        }
+        return { startAtMs: anchor, durationSeconds };
+    }
+    /** 读取或初始化拍卖结束时间状态；延时时通过 durationSeconds 投影给前端。 */
+    getAuctionTimingState(itemKey, startAtMs, normalDurationSeconds, now = Date.now()) {
+        const normalizedItemKey = this.resolveInternalMarketItemKey(itemKey) || String(itemKey ?? '');
+        const normalEndAtMs = startAtMs + normalDurationSeconds * 1000;
+        const maxEndAtMs = normalEndAtMs + AUCTION_MAX_EXTENSION_MS;
+        const existing = this.auctionTimingByItemKey.get(normalizedItemKey);
+        if (existing && Number(existing.maxEndAtMs) >= Number(existing.endAtMs)) {
+            return this.projectAuctionTiming(existing);
+        }
+        const next = {
+            startAtMs,
+            normalDurationSeconds,
+            endAtMs: normalEndAtMs,
+            maxEndAtMs,
+        };
+        this.auctionTimingByItemKey.set(normalizedItemKey, next);
+        return this.projectAuctionTiming(next);
+    }
+    /** 把权威结束时间投影成兼容前端的开始时间和持续秒数。 */
+    projectAuctionTiming(state) {
+        return {
+            startAtMs: state.startAtMs,
+            durationSeconds: Math.max(1, Math.ceil((state.endAtMs - state.startAtMs) / 1000)),
+            endAtMs: state.endAtMs,
+            ended: state.endAtMs <= Date.now(),
+        };
+    }
+    /** 最后 30 秒内出价时，把结束时间直接调整到 now + 30 秒，不累加。 */
+    extendAuctionIfEndingSoon(itemKey, now = Date.now()) {
+        const normalizedItemKey = this.resolveInternalMarketItemKey(itemKey) || String(itemKey ?? '');
+        const timing = this.auctionTimingByItemKey.get(normalizedItemKey);
+        if (!timing) {
+            return { extended: false };
+        }
+        const remainingMs = timing.endAtMs - now;
+        if (remainingMs <= 0 || remainingMs > AUCTION_EXTENSION_WINDOW_MS) {
+            return { extended: false };
+        }
+        const nextEndAtMs = Math.min(now + AUCTION_EXTENSION_WINDOW_MS, timing.maxEndAtMs);
+        if (nextEndAtMs <= timing.endAtMs) {
+            return { extended: false };
+        }
+        timing.endAtMs = nextEndAtMs;
+        return { extended: true, endAtMs: timing.endAtMs };
+    }
+    /** 稳定哈希用于拍卖编号和展示窗口。 */
+    buildAuctionStableNumber(value) {
+        const text = String(value ?? '');
+        let hash = 0;
+        for (let index = 0; index < text.length; index += 1) {
+            hash = ((hash << 5) - hash + text.charCodeAt(index)) | 0;
+        }
+        return Math.abs(hash);
     }
     /**
  * groupMarketListingEntriesForPage：按正式市场列表口径聚合分页条目。
@@ -1868,6 +2595,19 @@ let MarketRuntimeService = MarketRuntimeService_1 = class MarketRuntimeService {
 
     compactOpenOrders() {
         this.openOrders = this.openOrders.filter((order) => order.status === 'open' && order.remainingQuantity > 0);
+        const activeAuctionItemKeys = new Set(this.openOrders
+            .filter((order) => order.side === 'sell' && this.canTradeItemOnMarket(order.item))
+            .map((order) => this.getOrderItemKey(order)));
+        for (const itemKey of Array.from(this.auctionBidsByItemKey.keys())) {
+            if (!activeAuctionItemKeys.has(itemKey)) {
+                this.auctionBidsByItemKey.delete(itemKey);
+            }
+        }
+        for (const itemKey of Array.from(this.auctionTimingByItemKey.keys())) {
+            if (!activeAuctionItemKeys.has(itemKey)) {
+                this.auctionTimingByItemKey.delete(itemKey);
+            }
+        }
     }
     /**
  * captureOnlinePlayerState：执行captureOnline玩家状态相关逻辑。
@@ -1956,7 +2696,10 @@ let MarketRuntimeService = MarketRuntimeService_1 = class MarketRuntimeService {
             openOrdersSnapshot: this.openOrders.map((entry) => ({
                 ...entry,
                 item: { ...entry.item },
+                auction: entry.auction ? this.normalizeAuctionOrderState(entry.auction) : undefined,
             })),
+            auctionBidsSnapshotByItemKey: cloneAuctionBidsMap(this.auctionBidsByItemKey),
+            auctionTimingSnapshotByItemKey: cloneAuctionTimingMap(this.auctionTimingByItemKey),
             storageSnapshotByPlayerId: new Map(),
             onlinePlayerSnapshots: new Map(),
             dirtyOrderIds: new Set(),
@@ -1978,7 +2721,10 @@ let MarketRuntimeService = MarketRuntimeService_1 = class MarketRuntimeService {
         this.openOrders = context.openOrdersSnapshot.map((entry) => ({
             ...entry,
             item: { ...entry.item },
+            auction: entry.auction ? this.normalizeAuctionOrderState(entry.auction) : undefined,
         }));
+        this.auctionBidsByItemKey = cloneAuctionBidsMap(context.auctionBidsSnapshotByItemKey);
+        this.auctionTimingByItemKey = cloneAuctionTimingMap(context.auctionTimingSnapshotByItemKey);
         for (const [playerId, storage] of context.storageSnapshotByPlayerId.entries()) {
             if (storage.items.length > 0) {
                 this.storageByPlayerId.set(playerId, cloneStorage(storage));
@@ -2088,6 +2834,22 @@ function cloneStorage(storage) {
     return {
         items: (storage?.items ?? []).map((item) => ({ ...item })),
     };
+}
+
+function cloneAuctionBidsMap(source) {
+    const next = new Map();
+    for (const [itemKey, bids] of source.entries()) {
+        next.set(itemKey, Array.isArray(bids) ? bids.map((entry) => ({ ...entry })) : []);
+    }
+    return next;
+}
+
+function cloneAuctionTimingMap(source) {
+    const next = new Map();
+    for (const [itemKey, timing] of source.entries()) {
+        next.set(itemKey, { ...timing });
+    }
+    return next;
 }
 
 function cloneInventoryItems(items) {

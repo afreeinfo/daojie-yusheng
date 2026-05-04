@@ -837,6 +837,9 @@ let WorldRuntimeService = WorldRuntimeService_1 = class WorldRuntimeService {
         materializeAutoCombatCommands() {
         this.worldRuntimeTickDispatchService.materializeAutoCombatCommands(this);
     }
+        materializeAutoUsePills() {
+        this.worldRuntimeTickDispatchService.materializeAutoUsePills(this);
+    }
         buildAutoCombatCommand(instance, player, options = undefined) {
         return this.worldRuntimeTickDispatchService.buildAutoCombatCommand(instance, player, this, options);
     }

@@ -100,7 +100,7 @@ let WorldClientEventService = class WorldClientEventService {
     /** 会话管理入口，用于把 playerId 映射回在线 socket。 */
     worldSessionService;
     /** 复用 quest / loot 同步服务里的拾取窗口推送。 */
-    worldSyncQuestLootService;    
+    worldSyncQuestLootService;
     /**
  * 构造器：初始化 当前 实例并建立基础状态。
  * @param mailRuntimeService 参数说明。
@@ -369,6 +369,10 @@ let WorldClientEventService = class WorldClientEventService {
     emitMarketListings(client, payload) {
         this.emit(client, shared_1.S2C.MarketListings, payload);
     }
+    /** 推送拍卖行分页列表。 */
+    emitAuctionListings(client, payload) {
+        this.emit(client, shared_1.S2C.AuctionListings, payload);
+    }
     /** 推送坊市订单。 */
     emitMarketOrders(client, payload) {
         this.emit(client, shared_1.S2C.MarketOrders, payload);
@@ -388,7 +392,7 @@ let WorldClientEventService = class WorldClientEventService {
     /** 推送 NPC 商店数据。 */
     emitNpcShop(client, payload) {
         this.emit(client, shared_1.S2C.NpcShop, payload);
-    }    
+    }
     /**
  * normalizePlayerIds：规范化或转换玩家ID。
  * @param playerIds player ID 集合。
@@ -402,7 +406,7 @@ let WorldClientEventService = class WorldClientEventService {
             return [];
         }
         return Array.from(new Set(playerIds.filter((entry) => typeof entry === 'string' && entry.trim().length > 0).map((entry) => entry.trim())));
-    }    
+    }
     /**
  * resolveMarketListingsRequest：读取坊市ListingRequest并返回结果。
  * @param playerId 玩家 ID。
@@ -420,7 +424,25 @@ let WorldClientEventService = class WorldClientEventService {
             }
         }
         return { page: 1 };
-    }    
+    }
+    /**
+ * resolveAuctionListingsRequest：读取拍卖行ListingRequest并返回结果。
+ * @param playerId 玩家 ID。
+ * @param listingRequests 参数说明。
+ * @returns 无返回值，直接更新拍卖行ListingRequest相关状态。
+ */
+
+    resolveAuctionListingsRequest(playerId, listingRequests) {
+  // 关键分支按状态与边界条件处理，非法路径会被提前拦截。
+
+        if (listingRequests instanceof Map) {
+            const request = listingRequests.get(playerId);
+            if (request && typeof request === 'object') {
+                return request;
+            }
+        }
+        return { tab: 'participate', page: 1, pageSize: 10, category: 'all', query: '' };
+    }
     /**
  * resolveMarketTradeHistoryPage：判断坊市Trade历史Page是否满足条件。
  * @param playerId 玩家 ID。
@@ -438,7 +460,7 @@ let WorldClientEventService = class WorldClientEventService {
             }
         }
         return null;
-    }    
+    }
     /**
  * flushMarketResult：处理刷新坊市结果并更新相关状态。
  * @param subscriberPlayerIds subscriberPlayer ID 集合。
@@ -478,10 +500,15 @@ let WorldClientEventService = class WorldClientEventService {
                 if (options?.marketTradeHistoryRequests instanceof Map) {
                     options.marketTradeHistoryRequests.delete(subscriberPlayerId);
                 }
+                if (options?.auctionListingRequests instanceof Map) {
+                    options.auctionListingRequests.delete(subscriberPlayerId);
+                }
                 continue;
             }
             const listingRequest = this.resolveMarketListingsRequest(subscriberPlayerId, options?.marketListingRequests);
             this.emitMarketListings(socket, this.marketRuntimeService.buildMarketListingsPage(listingRequest));
+            const auctionListingRequest = this.resolveAuctionListingsRequest(subscriberPlayerId, options?.auctionListingRequests);
+            this.emitAuctionListings(socket, this.marketRuntimeService.buildAuctionListingsPage(subscriberPlayerId, auctionListingRequest));
             this.emitMarketUpdate(socket, this.marketRuntimeService.buildMarketUpdate(subscriberPlayerId));
         }
         for (const tradeHistoryPlayerId of tradeHistoryPlayerIds) {
@@ -498,7 +525,7 @@ let WorldClientEventService = class WorldClientEventService {
             }
             this.emitMarketTradeHistory(socket, this.marketRuntimeService.buildTradeHistoryPage(tradeHistoryPlayerId, page));
         }
-    }    
+    }
     /**
  * broadcastSuggestionUpdate：处理broadcastSuggestionUpdate并更新相关状态。
  * @returns 无返回值，直接更新broadcastSuggestionUpdate相关状态。

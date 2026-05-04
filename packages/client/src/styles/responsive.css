@@ -793,14 +793,24 @@
       .market-book-columns {
         grid-template-columns: minmax(0, 1fr);
       }
+      .auction-pane-cards,
+      .auction-house-summary,
+      .auction-price-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
   .market-board,
-  .market-my-orders {
+  .market-my-orders,
+  .auction-house-board,
+  .auction-house-board--mine {
     min-height: 0;
   }
   .detail-modal-card.detail-modal--market {
     width: calc(100vw - 8px);
     height: min(84dvh, calc(100dvh - 8px));
     padding: 12px 10px 10px;
+  }
+  .detail-modal-card.detail-modal--auction-house {
+    height: min(88dvh, calc(100dvh - 8px));
   }
   .market-modal-shell--wide {
     grid-template-columns: 42px minmax(0, 1fr);
@@ -834,9 +844,83 @@
   }
   .market-market-tab,
   .market-my-orders,
-  .market-trade-history {
+  .market-trade-history,
+  .auction-house-shell {
     gap: 8px;
     min-height: 0;
+  }
+  .auction-house-tabs {
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+  .auction-house-tab {
+    flex: 0 0 132px;
+    min-height: 34px;
+    padding: 6px 10px;
+    font-size: var(--font-size-12);
+  }
+  .auction-house-board,
+  .auction-house-board--mine {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) minmax(220px, 0.92fr);
+    gap: 8px;
+    overflow: hidden;
+  }
+  .auction-filter-rail {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    max-height: 132px;
+    overflow: auto;
+    padding: 8px;
+  }
+  .auction-filter-buttons {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    max-height: 74px;
+  }
+  .auction-filter-note {
+    display: none;
+  }
+  .auction-consign-overview {
+    padding: 8px;
+  }
+  .auction-status-strip {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .auction-list-panel,
+  .auction-detail-panel {
+    padding: 8px;
+  }
+  .auction-list-head {
+    display: none;
+  }
+  .auction-lot-row,
+  .auction-house-board--mine .auction-lot-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    min-height: 62px;
+    gap: 6px;
+  }
+  .auction-lot-row:not(.auction-lot-row--mine) > span:nth-child(3),
+  .auction-lot-row:not(.auction-lot-row--mine) > span:nth-child(4),
+  .auction-lot-row--mine > span:nth-of-type(4) {
+    display: none;
+  }
+  .auction-detail-head {
+    grid-template-columns: 48px minmax(0, 1fr);
+  }
+  .auction-item-icon {
+    width: 48px;
+    height: 48px;
+    font-size: var(--font-size-20);
+  }
+  .auction-countdown {
+    grid-column: 1 / -1;
+    min-width: 0;
+  }
+  .auction-bid-actions {
+    justify-content: stretch;
+  }
+  .auction-bid-actions .small-btn {
+    flex: 1 1 0;
   }
   .market-category-tabs {
     flex-wrap: nowrap;

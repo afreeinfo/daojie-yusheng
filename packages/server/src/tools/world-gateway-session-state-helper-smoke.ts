@@ -26,15 +26,18 @@ function testSessionStateHelper() {
     });
     helper.subscribeMarket('player:1');
     helper.setMarketListingsRequest('player:1', { page: 2 });
+    helper.setAuctionListingsRequest('player:1', { tab: 'mine', page: 2 });
     helper.setMarketTradeHistoryRequest('player:1', 3);
     assert.equal(helper.getMarketSubscribers().has('player:1'), true);
     assert.deepEqual(helper.getMarketListingsRequest('player:1'), { page: 2 });
+    assert.deepEqual(helper.getAuctionListingsRequest('player:1'), { tab: 'mine', page: 2 });
     assert.equal(helper.getMarketTradeHistoryRequests().get('player:1'), 3);
     helper.clearDisconnectedPlayerState({ playerId: 'player:1', connected: true });
     assert.equal(helper.getMarketSubscribers().has('player:1'), true);
     helper.clearDisconnectedPlayerState({ playerId: 'player:1', connected: false });
     assert.equal(helper.getMarketSubscribers().has('player:1'), false);
     assert.equal(helper.getMarketListingsRequest('player:1'), undefined);
+    assert.equal(helper.getAuctionListingsRequest('player:1'), undefined);
     assert.equal(helper.getMarketTradeHistoryRequests().get('player:1'), undefined);
     assert.deepEqual(log, [['detachSession', 'player:1']]);
 }

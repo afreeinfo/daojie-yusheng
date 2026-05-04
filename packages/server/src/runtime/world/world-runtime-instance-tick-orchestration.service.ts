@@ -61,6 +61,7 @@ let WorldRuntimeInstanceTickOrchestrationService = class WorldRuntimeInstanceTic
         }
         deps.processPendingRespawns();
         deps.materializeNavigationCommands();
+        deps.materializeAutoUsePills?.();
         deps.materializeAutoCombatCommands();
         const pendingCommandsStartedAt = performance.now();
         await deps.dispatchPendingCommands();

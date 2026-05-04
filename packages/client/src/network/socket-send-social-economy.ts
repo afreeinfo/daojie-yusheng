@@ -20,7 +20,7 @@ type SocialEconomySenderDeps = {
 
 
 export function createSocketSocialEconomySender(deps: SocialEconomySenderDeps) {
-  return {  
+  return {
   /**
  * sendRequestSuggestions：执行sendRequestSuggestion相关逻辑。
  * @returns 无返回值，直接更新sendRequestSuggestion相关状态。
@@ -28,7 +28,7 @@ export function createSocketSocialEconomySender(deps: SocialEconomySenderDeps) {
 
     sendRequestSuggestions(): void {
       deps.emitEvent(C2S.RequestSuggestions, {});
-    },    
+    },
     /**
  * sendCreateSuggestion：构建sendCreateSuggestion。
  * @param title string 参数说明。
@@ -39,7 +39,7 @@ export function createSocketSocialEconomySender(deps: SocialEconomySenderDeps) {
 
     sendCreateSuggestion(title: string, description: string): void {
       deps.emitEvent(C2S.CreateSuggestion, { title, description });
-    },    
+    },
     /**
  * sendReplySuggestion：执行sendReplySuggestion相关逻辑。
  * @param suggestionId string suggestion ID。
@@ -50,7 +50,7 @@ export function createSocketSocialEconomySender(deps: SocialEconomySenderDeps) {
 
     sendReplySuggestion(suggestionId: string, content: string): void {
       deps.emitEvent(C2S.ReplySuggestion, { suggestionId, content });
-    },    
+    },
     /**
  * sendVoteSuggestion：执行sendVoteSuggestion相关逻辑。
  * @param suggestionId string suggestion ID。
@@ -61,7 +61,7 @@ export function createSocketSocialEconomySender(deps: SocialEconomySenderDeps) {
 
     sendVoteSuggestion(suggestionId: string, vote: 'up' | 'down'): void {
       deps.emitEvent(C2S.VoteSuggestion, { suggestionId, vote });
-    },    
+    },
     /**
  * sendMarkSuggestionRepliesRead：读取sendMarkSuggestionReplyRead并返回结果。
  * @param suggestionId string suggestion ID。
@@ -71,7 +71,7 @@ export function createSocketSocialEconomySender(deps: SocialEconomySenderDeps) {
 
     sendMarkSuggestionRepliesRead(suggestionId: string): void {
       deps.emitEvent(C2S.MarkSuggestionRepliesRead, { suggestionId });
-    },    
+    },
     /**
  * sendRequestMailSummary：执行sendRequest邮件摘要相关逻辑。
  * @returns 无返回值，直接更新sendRequest邮件摘要相关状态。
@@ -80,7 +80,7 @@ export function createSocketSocialEconomySender(deps: SocialEconomySenderDeps) {
 
     sendRequestMailSummary(): void {
       deps.emitEvent(C2S.RequestMailSummary, {});
-    },    
+    },
     /**
  * sendRequestMailPage：执行sendRequest邮件Page相关逻辑。
  * @param page number 参数说明。
@@ -96,7 +96,7 @@ export function createSocketSocialEconomySender(deps: SocialEconomySenderDeps) {
       filter?: ClientToServerEventPayload<typeof C2S.RequestMailPage>['filter'],
     ): void {
       deps.emitEvent(C2S.RequestMailPage, { page, pageSize, filter });
-    },    
+    },
     /**
  * sendRequestMailDetail：执行sendRequest邮件详情相关逻辑。
  * @param mailId string mail ID。
@@ -106,7 +106,7 @@ export function createSocketSocialEconomySender(deps: SocialEconomySenderDeps) {
 
     sendRequestMailDetail(mailId: string): void {
       deps.emitEvent(C2S.RequestMailDetail, { mailId });
-    },    
+    },
     /**
  * sendRedeemCodes：执行sendRedeemCode相关逻辑。
  * @param codes string[] 参数说明。
@@ -116,7 +116,7 @@ export function createSocketSocialEconomySender(deps: SocialEconomySenderDeps) {
 
     sendRedeemCodes(codes: string[]): void {
       deps.emitEvent(C2S.RedeemCodes, { codes });
-    },    
+    },
     /**
  * sendMarkMailRead：读取sendMark邮件Read并返回结果。
  * @param mailIds string[] mail ID 集合。
@@ -126,7 +126,7 @@ export function createSocketSocialEconomySender(deps: SocialEconomySenderDeps) {
 
     sendMarkMailRead(mailIds: string[]): void {
       deps.emitEvent(C2S.MarkMailRead, { mailIds });
-    },    
+    },
     /**
  * sendClaimMailAttachments：执行sendClaim邮件Attachment相关逻辑。
  * @param mailIds string[] mail ID 集合。
@@ -136,7 +136,7 @@ export function createSocketSocialEconomySender(deps: SocialEconomySenderDeps) {
 
     sendClaimMailAttachments(mailIds: string[]): void {
       deps.emitEvent(C2S.ClaimMailAttachments, { mailIds });
-    },    
+    },
     /**
  * sendDeleteMail：处理sendDelete邮件并更新相关状态。
  * @param mailIds string[] mail ID 集合。
@@ -146,7 +146,7 @@ export function createSocketSocialEconomySender(deps: SocialEconomySenderDeps) {
 
     sendDeleteMail(mailIds: string[]): void {
       deps.emitEvent(C2S.DeleteMail, { mailIds });
-    },    
+    },
     /**
  * sendRequestMarket：处理sendRequest坊市并更新相关状态。
  * @returns 无返回值，直接更新sendRequest坊市相关状态。
@@ -155,7 +155,7 @@ export function createSocketSocialEconomySender(deps: SocialEconomySenderDeps) {
 
     sendRequestMarket(): void {
       deps.emitEvent(C2S.RequestMarket, {});
-    },    
+    },
     /**
  * sendRequestMarketListings：读取sendRequest坊市Listing并返回结果。
  * @param payload ClientToServerEventPayload<typeof C2S.RequestMarketListings> 载荷参数。
@@ -167,7 +167,19 @@ export function createSocketSocialEconomySender(deps: SocialEconomySenderDeps) {
       payload: ClientToServerEventPayload<typeof C2S.RequestMarketListings>,
     ): void {
       deps.emitEvent(C2S.RequestMarketListings, payload);
-    },    
+    },
+    /**
+ * sendRequestAuctionListings：读取sendRequest拍卖行Listing并返回结果。
+ * @param payload ClientToServerEventPayload<typeof C2S.RequestAuctionListings> 载荷参数。
+ * @returns 无返回值，直接更新sendRequest拍卖行Listing相关状态。
+ */
+
+
+    sendRequestAuctionListings(
+      payload: ClientToServerEventPayload<typeof C2S.RequestAuctionListings>,
+    ): void {
+      deps.emitEvent(C2S.RequestAuctionListings, payload);
+    },
     /**
  * sendRequestMarketItemBook：处理sendRequest坊市道具Book并更新相关状态。
  * @param itemKey string 参数说明。
@@ -177,7 +189,7 @@ export function createSocketSocialEconomySender(deps: SocialEconomySenderDeps) {
 
     sendRequestMarketItemBook(itemKey: string): void {
       deps.emitEvent(C2S.RequestMarketItemBook, { itemKey });
-    },    
+    },
     /**
  * sendRequestMarketTradeHistory：判断sendRequest坊市Trade历史是否满足条件。
  * @param page number 参数说明。
@@ -187,7 +199,7 @@ export function createSocketSocialEconomySender(deps: SocialEconomySenderDeps) {
 
     sendRequestMarketTradeHistory(page: number): void {
       deps.emitEvent(C2S.RequestMarketTradeHistory, { page });
-    },    
+    },
     /**
  * sendCreateMarketSellOrder：构建sendCreate坊市Sell订单。
  * @param slotIndex number 参数说明。
@@ -199,7 +211,7 @@ export function createSocketSocialEconomySender(deps: SocialEconomySenderDeps) {
 
     sendCreateMarketSellOrder(slotIndex: number, quantity: number, unitPrice: number): void {
       deps.emitEvent(C2S.CreateMarketSellOrder, { slotIndex, quantity, unitPrice });
-    },    
+    },
     /**
  * sendCreateMarketBuyOrder：构建sendCreate坊市Buy订单。
  * @param itemKey string 参数说明。
@@ -211,7 +223,30 @@ export function createSocketSocialEconomySender(deps: SocialEconomySenderDeps) {
 
     sendCreateMarketBuyOrder(itemKey: string, quantity: number, unitPrice: number): void {
       deps.emitEvent(C2S.CreateMarketBuyOrder, { itemKey, quantity, unitPrice });
-    },    
+    },
+    /**
+ * sendPlaceAuctionBid：提交拍卖行加价。
+ * @param lotId string 拍品 ID。
+ * @param itemKey string 道具Key标识。
+ * @param unitPrice number 出价价格。
+ * @returns 无返回值，直接提交拍卖行加价意图。
+ */
+
+
+    sendPlaceAuctionBid(lotId: string, itemKey: string, unitPrice: number): void {
+      deps.emitEvent(C2S.PlaceAuctionBid, { lotId, itemKey, unitPrice });
+    },
+    /**
+ * sendBuyoutAuctionLot：提交拍卖行一口价。
+ * @param lotId string 拍品 ID。
+ * @param itemKey string 道具Key标识。
+ * @returns 无返回值，直接提交拍卖行一口价意图。
+ */
+
+
+    sendBuyoutAuctionLot(lotId: string, itemKey: string): void {
+      deps.emitEvent(C2S.BuyoutAuctionLot, { lotId, itemKey });
+    },
     /**
  * sendBuyMarketItem：处理sendBuy坊市道具并更新相关状态。
  * @param itemKey string 参数说明。
@@ -222,7 +257,7 @@ export function createSocketSocialEconomySender(deps: SocialEconomySenderDeps) {
 
     sendBuyMarketItem(itemKey: string, quantity: number): void {
       deps.emitEvent(C2S.BuyMarketItem, { itemKey, quantity });
-    },    
+    },
     /**
  * sendSellMarketItem：处理sendSell坊市道具并更新相关状态。
  * @param slotIndex number 参数说明。
@@ -233,7 +268,7 @@ export function createSocketSocialEconomySender(deps: SocialEconomySenderDeps) {
 
     sendSellMarketItem(slotIndex: number, quantity: number): void {
       deps.emitEvent(C2S.SellMarketItem, { slotIndex, quantity });
-    },    
+    },
     /**
  * sendCancelMarketOrder：判断sendCancel坊市订单是否满足条件。
  * @param orderId string order ID。
@@ -243,7 +278,7 @@ export function createSocketSocialEconomySender(deps: SocialEconomySenderDeps) {
 
     sendCancelMarketOrder(orderId: string): void {
       deps.emitEvent(C2S.CancelMarketOrder, { orderId });
-    },    
+    },
     /**
  * sendClaimMarketStorage：处理sendClaim坊市Storage并更新相关状态。
  * @returns 无返回值，直接更新sendClaim坊市Storage相关状态。
@@ -252,7 +287,7 @@ export function createSocketSocialEconomySender(deps: SocialEconomySenderDeps) {
 
     sendClaimMarketStorage(): void {
       deps.emitEvent(C2S.ClaimMarketStorage, {});
-    },    
+    },
     /**
  * sendChat：执行sendChat相关逻辑。
  * @param message string 参数说明。
@@ -262,7 +297,7 @@ export function createSocketSocialEconomySender(deps: SocialEconomySenderDeps) {
 
     sendChat(message: string): void {
       deps.emitEvent(C2S.Chat, { message });
-    },    
+    },
     /**
  * ackSystemMessages：执行ackSystemMessage相关逻辑。
  * @param ids string[] 参数说明。
@@ -277,6 +312,14 @@ export function createSocketSocialEconomySender(deps: SocialEconomySenderDeps) {
         return;
       }
       deps.emitEvent(C2S.AckSystemMessages, { ids });
+    },
+    ackOfflineGainReports(reportIds: string[]): void {
+  // 关键分支按状态与边界条件处理，非法路径会被提前拦截。
+
+      if (reportIds.length === 0) {
+        return;
+      }
+      deps.emitEvent(C2S.AckOfflineGainReports, { reportIds });
     },
   };
 }

@@ -1,5 +1,3 @@
-// @ts-nocheck
-
 import {
   DEFAULT_PLAYER_QI_RESOURCE_KEYS,
   DEFAULT_QI_EFFICIENCY_BP,
@@ -8,15 +6,55 @@ import {
   parseQiResourceKey,
   projectQiValue,
   stackQiEfficiencyBp,
+  type QiProjectionModifier,
+  type QiResourceDescriptor,
+  type QiVisibilityLevel,
+  type TechniqueLayerDef,
 } from '@mud/shared';
 
-const QI_VISIBILITY_RANK = {
+const QI_VISIBILITY_RANK: Record<QiVisibilityLevel, number> = {
   hidden: 0,
   observable: 1,
   absorbable: 2,
 };
 
-export function projectPlayerQiResourceValue(player, resourceKey, rawValue) {
+interface QiProjectionTechniqueState {
+  level?: number;
+  layers?: TechniqueLayerDef[];
+}
+
+interface QiProjectionBuffState {
+  remainingTicks?: number;
+  stacks?: number;
+  qiProjection?: QiProjectionModifier[];
+}
+
+interface QiProjectionBonusState {
+  qiProjection?: QiProjectionModifier[];
+}
+
+interface QiProjectionPlayerView {
+  techniques?: {
+    techniques?: QiProjectionTechniqueState[];
+  };
+  buffs?: {
+    buffs?: QiProjectionBuffState[];
+  };
+  attrBonuses?: QiProjectionBonusState[];
+  runtimeBonuses?: QiProjectionBonusState[];
+}
+
+export interface PlayerQiResourceProjection {
+  descriptor: QiResourceDescriptor;
+  visibility: QiVisibilityLevel;
+  efficiencyBp: number;
+}
+
+export function projectPlayerQiResourceValue(
+  player: QiProjectionPlayerView | null | undefined,
+  resourceKey: string,
+  rawValue: number,
+): number {
   const projection = resolvePlayerQiResourceProjection(player, resourceKey);
   if (!projection || projection.visibility !== 'absorbable') {
     return 0;
@@ -24,13 +62,16 @@ export function projectPlayerQiResourceValue(player, resourceKey, rawValue) {
   return projectQiValue(rawValue, projection.efficiencyBp);
 }
 
-export function resolvePlayerQiResourceProjection(player, resourceKey) {
+export function resolvePlayerQiResourceProjection(
+  player: QiProjectionPlayerView | null | undefined,
+  resourceKey: string,
+): PlayerQiResourceProjection | null {
   const descriptor = parseQiResourceKey(resourceKey);
   if (!descriptor) {
     return null;
   }
   const defaultVisible = DEFAULT_PLAYER_QI_RESOURCE_KEYS.includes(resourceKey);
-  let visibility = defaultVisible ? 'absorbable' : 'hidden';
+  let visibility: QiVisibilityLevel = defaultVisible ? 'absorbable' : 'hidden';
   let efficiencyBp = defaultVisible ? DEFAULT_QI_EFFICIENCY_BP : 0;
   for (const modifier of collectPlayerQiProjectionModifiers(player)) {
     if (!matchesQiProjectionSelector(descriptor, resourceKey, modifier.selector)) {
@@ -52,8 +93,8 @@ export function resolvePlayerQiResourceProjection(player, resourceKey) {
   };
 }
 
-function collectPlayerQiProjectionModifiers(player) {
-  const modifiers = [];
+function collectPlayerQiProjectionModifiers(player: QiProjectionPlayerView | null | undefined): QiProjectionModifier[] {
+  const modifiers: QiProjectionModifier[] = [];
   for (const technique of player?.techniques?.techniques ?? []) {
     modifiers.push(...calcTechniqueQiProjectionModifiers(technique.level ?? 1, technique.layers ?? undefined));
   }

@@ -481,6 +481,66 @@ async function testAutoCombatInvalidTargetStaysServerInternal() {
     assert.equal(skillService.getPendingCommandCount(), 0);
 }
 
+async function testAutoCombatRetaliateFailurePreservesDifferentLockedTarget() {
+    const service = new WorldRuntimePendingCommandService();
+    const log = [];
+    service.enqueuePendingCommand('player:1', {
+        kind: 'basicAttack',
+        targetPlayerId: 'attacker',
+        targetMonsterId: null,
+        targetX: null,
+        targetY: null,
+        autoCombat: true,
+    });
+    await service.dispatchPendingCommands({
+        dispatchInstanceCommand() {
+            throw new Error('unexpected dispatchInstanceCommand');
+        },
+        dispatchPlayerCommand() {
+            throw new Error('该目标无法被攻击');
+        },
+        buildAutoCombatCommand() {
+            return null;
+        },
+        getInstanceRuntime() {
+            return null;
+        },
+        playerRuntimeService: {
+            getPlayer(playerId) {
+                return {
+                    playerId,
+                    instanceId: 'public:yunlai_town',
+                    hp: 100,
+                    combat: {
+                        autoBattle: true,
+                        combatTargetId: 'tile:2:1',
+                        combatTargetLocked: true,
+                    },
+                };
+            },
+            clearManualEngagePending(playerId) {
+                log.push(['clearManualEngagePending', playerId]);
+            },
+            clearCombatTarget(playerId, currentTick) {
+                log.push(['clearCombatTarget', playerId, currentTick]);
+            },
+        },
+        logger: {
+            warn(message) {
+                log.push(['warn', message]);
+            },
+        },
+        queuePlayerNotice(playerId, message, tone) {
+            log.push(['queuePlayerNotice', playerId, message, tone]);
+        },
+    });
+    assert.deepEqual(log, [
+        ['clearManualEngagePending', 'player:1'],
+        ['warn', '处理玩家 player:1 的待执行指令失败：basicAttack（该目标无法被攻击）'],
+    ]);
+    assert.equal(service.getPendingCommandCount(), 0);
+}
+
 async function testSkillOutOfRangeStaysServerInternal() {
     const service = new WorldRuntimePendingCommandService();
     const log = [];
@@ -554,6 +614,7 @@ Promise.resolve()
     .then(() => testManualEngageAttackClearsServerOnlyEngageState())
     .then(() => testInvalidAttackNoticeUsesTargetReason())
     .then(() => testAutoCombatInvalidTargetStaysServerInternal())
+    .then(() => testAutoCombatRetaliateFailurePreservesDifferentLockedTarget())
     .then(() => testSkillOutOfRangeStaysServerInternal())
     .then(() => testInternalSliceErrorStaysServerInternal())
     .then(() => {

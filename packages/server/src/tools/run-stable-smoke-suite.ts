@@ -7,10 +7,12 @@
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { createStableDistSnapshot, resolveToolPackageRoot } from './stable-dist';
+import { resolveServerGmPassword } from '../config/env-alias';
 
 async function main() {
   const packageRoot = resolveToolPackageRoot(__dirname);
   const repoRoot = path.resolve(packageRoot, '..', '..');
+  const gmPassword = resolveServerGmPassword('admin123');
   const snapshot = createStableDistSnapshot({
     label: 'smoke-suite',
     packageRoot,
@@ -27,10 +29,7 @@ async function main() {
         process.env.SERVER_ALLOW_INSECURE_LOCAL_GM_PASSWORD
         || process.env.GM_ALLOW_INSECURE_LOCAL_GM_PASSWORD
         || '1',
-      SERVER_GM_PASSWORD:
-        process.env.SERVER_GM_PASSWORD
-        || process.env.GM_PASSWORD
-        || 'admin123',
+      SERVER_GM_PASSWORD: gmPassword,
     },
     stdio: 'inherit',
   });

@@ -187,7 +187,7 @@ let WorldRuntimeNavigationService = class WorldRuntimeNavigationService {
         deps.getPlayerLocationOrThrow(playerId);
         this.clearNavigationIntent(playerId);
         this.interruptManualNavigation(playerId, deps);
-        deps.enqueuePendingCommand(playerId, { kind: 'portal' });
+        deps.dispatchInstanceCommand(playerId, { kind: 'portal' });
         return deps.getPlayerViewOrThrow(playerId);
     }    
     /**

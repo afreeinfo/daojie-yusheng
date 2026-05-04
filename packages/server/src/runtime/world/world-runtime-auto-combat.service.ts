@@ -41,8 +41,13 @@ function resolveAutoCombatPlayerPriority(resolution) {
     return 0;
 }
 
+function isPlayerTargetRef(targetRef) {
+    return typeof targetRef === 'string' && targetRef.trim().startsWith('player:');
+}
+
 const AUTO_TARGETING_PREFERENCE_MULTIPLIER = 5;
 const AUTO_COMBAT_ACTION_COMMAND_KINDS = new Set(['basicAttack', 'castSkill']);
+const AUTO_USE_PILL_SLOT_LIMIT = 12;
 
 function resolveActionsPerTurn(player) {
     const rawValue = Number(player?.attrs?.numericStats?.actionsPerTurn ?? 1);
@@ -73,6 +78,83 @@ function hasCombatActionBudget(player, currentTick) {
 
 function isAutoCombatActionCommand(command) {
     return AUTO_COMBAT_ACTION_COMMAND_KINDS.has(command?.kind);
+}
+
+function isAutoUsePillCandidate(item) {
+    return (item?.healAmount ?? 0) > 0
+        || (item?.healPercent ?? 0) > 0
+        || (item?.qiPercent ?? 0) > 0
+        || (Array.isArray(item?.consumeBuffs) && item.consumeBuffs.length > 0);
+}
+
+function resolveResourceRatio(player, resource) {
+    const current = resource === 'qi' ? player.qi : player.hp;
+    const max = resource === 'qi' ? player.maxQi : player.maxHp;
+    if (!Number.isFinite(current) || !Number.isFinite(max) || max <= 0) {
+        return null;
+    }
+    return Math.max(0, Math.min(1, current / max));
+}
+
+function isBuffActive(player, buffId) {
+    if (typeof buffId !== 'string' || !buffId.trim()) {
+        return false;
+    }
+    return Array.isArray(player?.buffs?.buffs)
+        && player.buffs.buffs.some((buff) => buff?.buffId === buffId
+            && Math.max(0, Math.round(Number(buff?.remainingTicks ?? 0))) > 0
+            && Math.max(0, Math.round(Number(buff?.stacks ?? 0))) > 0);
+}
+
+function hasMissingConsumableBuff(player, item) {
+    const buffs = Array.isArray(item?.consumeBuffs) ? item.consumeBuffs : [];
+    if (buffs.length === 0) {
+        return false;
+    }
+    return buffs.some((buff) => !isBuffActive(player, buff?.buffId));
+}
+
+function isAutoUsePillConditionMet(player, item, condition) {
+    if (condition?.type === 'buff_missing') {
+        return hasMissingConsumableBuff(player, item);
+    }
+    if (condition?.type !== 'resource_ratio') {
+        return false;
+    }
+    const ratio = resolveResourceRatio(player, condition.resource);
+    if (ratio === null) {
+        return false;
+    }
+    const threshold = Math.max(0, Math.min(100, Number(condition.thresholdPct ?? 0))) / 100;
+    return condition.op === 'gt'
+        ? ratio > threshold
+        : ratio < threshold;
+}
+
+function shouldAutoUsePill(player, item, conditions) {
+    if (!Array.isArray(conditions) || conditions.length === 0) {
+        return false;
+    }
+    return conditions.every((condition) => isAutoUsePillConditionMet(player, item, condition));
+}
+
+function findAutoUsePillInventorySlot(player, itemId) {
+    const normalizedItemId = typeof itemId === 'string' ? itemId.trim() : '';
+    if (!normalizedItemId || !Array.isArray(player?.inventory?.items)) {
+        return null;
+    }
+    for (let index = 0; index < player.inventory.items.length; index += 1) {
+        const item = player.inventory.items[index];
+        if (item?.itemId !== normalizedItemId) {
+            continue;
+        }
+        const count = Math.max(0, Math.trunc(Number(item.count ?? 0)));
+        if (count <= 0 || !isAutoUsePillCandidate(item)) {
+            continue;
+        }
+        return { item, slotIndex: index };
+    }
+    return null;
 }
 
 function getAutoTargetHpRatio(candidate) {
@@ -123,6 +205,48 @@ let WorldRuntimeAutoCombatService = class WorldRuntimeAutoCombatService {
 
     constructor(playerRuntimeService) {
         this.playerRuntimeService = playerRuntimeService;
+    }
+    /**
+ * materializeAutoUsePills：按玩家配置在 tick 受控流程内自动使用一枚丹药。
+ * @param deps 运行时依赖。
+ * @returns 无返回值，直接更新玩家背包、气血、真气或 Buff。
+ */
+
+    materializeAutoUsePills(deps) {
+        for (const playerId of deps.listConnectedPlayerIds()) {
+            if (typeof deps.hasPendingCommand === 'function' && deps.hasPendingCommand(playerId)) {
+                continue;
+            }
+            const player = this.playerRuntimeService.getPlayer(playerId);
+            if (!player || player.hp <= 0) {
+                continue;
+            }
+            const configs = Array.isArray(player.combat?.autoUsePills)
+                ? player.combat.autoUsePills.slice(0, AUTO_USE_PILL_SLOT_LIMIT)
+                : [];
+            if (configs.length === 0) {
+                continue;
+            }
+            for (const config of configs) {
+                const match = findAutoUsePillInventorySlot(player, config?.itemId);
+                if (!match || !shouldAutoUsePill(player, match.item, config?.conditions)) {
+                    continue;
+                }
+                try {
+                    this.playerRuntimeService.useItem(playerId, match.slotIndex);
+                    if (typeof deps.refreshQuestStates === 'function') {
+                        deps.refreshQuestStates(playerId);
+                    }
+                    if (typeof deps.queuePlayerNotice === 'function') {
+                        deps.queuePlayerNotice(playerId, `自动使用 ${match.item.name ?? match.item.itemId}`, 'success');
+                    }
+                }
+                catch (_error) {
+                    continue;
+                }
+                break;
+            }
+        }
     }
     /**
  * materializeAutoCombatCommands：执行materializeAuto战斗Command相关逻辑。
@@ -283,6 +407,10 @@ let WorldRuntimeAutoCombatService = class WorldRuntimeAutoCombatService {
     selectAutoCombatTarget(instance, player, view, deps) {
   // 关键分支按状态与边界条件处理，非法路径会被提前拦截。
 
+        const retaliateTarget = this.resolveRetaliatePlayerOverrideTarget(instance, player, deps);
+        if (retaliateTarget) {
+            return retaliateTarget;
+        }
         if (player.combat.autoBattle || player.combat.manualEngagePending === true) {
             const trackedTarget = this.resolveTrackedAutoCombatTarget(instance, player, view, deps);
             if (trackedTarget) {
@@ -362,6 +490,36 @@ let WorldRuntimeAutoCombatService = class WorldRuntimeAutoCombatService {
             this.playerRuntimeService.setCombatTarget(player.playerId, bestCandidate.target.targetRef, false, deps.resolveCurrentTickForPlayerId(player.playerId));
         }
         return bestCandidate.target;
+    }
+    /** 被玩家攻击时，临时抢占非玩家锁定目标，但不改写原锁定目标。 */
+    resolveRetaliatePlayerOverrideTarget(instance, player, deps) {
+        if (player?.combat?.autoRetaliate === false) {
+            return null;
+        }
+        const retaliatePlayerId = typeof player?.combat?.retaliatePlayerTargetId === 'string'
+            ? player.combat.retaliatePlayerTargetId.trim()
+            : '';
+        if (!retaliatePlayerId) {
+            return null;
+        }
+        const currentTargetId = typeof player?.combat?.combatTargetId === 'string'
+            ? player.combat.combatTargetId.trim()
+            : '';
+        if (isPlayerTargetRef(currentTargetId)) {
+            return null;
+        }
+        const radius = Math.max(1, Math.round(player.attrs.numericStats.viewRange));
+        return (0, world_runtime_attack_target_helpers_1.resolveAttackableTargetRef)(
+            instance,
+            this.playerRuntimeService,
+            player,
+            `player:${retaliatePlayerId}`,
+            deps,
+            {
+                currentTick: deps.resolveCurrentTickForPlayerId(player.playerId),
+                maxDistance: radius,
+            },
+        );
     }
     /**
  * resolveTrackedAutoCombatTarget：读取TrackedAuto战斗目标并返回结果。

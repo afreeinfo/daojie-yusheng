@@ -962,7 +962,7 @@ function buildFullActionDelta(player: ProjectorPlayerLike): S2C_PanelActionDelta
         r: player.actions.revision,
         full: 1,
         actions: player.actions.actions.map((entry) => ({ ...entry })),
-        actionOrder: player.actions.actions.map((entry) => entry.id),
+        actionOrder: buildActionOrder(player.actions.actions),
         autoBattle: player.combat.autoBattle,
         autoUsePills: cloneAutoUsePillList(player.combat.autoUsePills),
         combatTargetingRules: cloneCombatTargetingRules(player.combat.combatTargetingRules),
@@ -1119,6 +1119,7 @@ function buildPanelDelta(previous: PlayerStateSlice, player: ProjectorPlayerLike
     if (previousAttr.revision !== player.attrs.revision || attrMetaChanged) {
         delta.attr = buildAttrDelta(previousAttr, player);
     }
+    const actionOrderChanged = !isSameActionOrder(previousAction.actions, player.actions.actions);
     if (previousAction.revision !== player.actions.revision) {
         const actionPatch = diffActionEntries(previousAction.actions, player.actions.actions);
         const removedActionIds = diffRemovedActionIds(previousAction.actions, player.actions.actions);
@@ -1126,6 +1127,7 @@ function buildPanelDelta(previous: PlayerStateSlice, player: ProjectorPlayerLike
             r: player.actions.revision,
             actions: actionPatch,
             removeActionIds: removedActionIds.length > 0 ? removedActionIds : undefined,
+            actionOrder: actionOrderChanged ? buildActionOrder(player.actions.actions) : undefined,
         };
     }
     const actionTopLevelChanged = previousAction.autoBattle !== player.combat.autoBattle
@@ -1146,7 +1148,7 @@ function buildPanelDelta(previous: PlayerStateSlice, player: ProjectorPlayerLike
         const actionDeltaBase = delta.act ?? { r: player.actions.revision };
         delta.act = {
             ...actionDeltaBase,
-            actionOrder: player.actions.actions.map((entry) => entry.id),
+            actionOrder: buildActionOrder(player.actions.actions),
             autoBattle: player.combat.autoBattle,
             autoUsePills: cloneAutoUsePillList(player.combat.autoUsePills),
             combatTargetingRules: cloneCombatTargetingRules(player.combat.combatTargetingRules),
@@ -1663,6 +1665,20 @@ function diffActionEntries(previous: ProjectedActionEntry[], current: ProjectedA
         .filter((entry) => !isSameActionEntry(previousById.get(entry.id) ?? null, entry))
         .map((entry) => ({ ...entry }));
 }
+function buildActionOrder(actions: ProjectedActionEntry[]): string[] {
+    return actions.map((entry) => entry.id);
+}
+function isSameActionOrder(previous: ProjectedActionEntry[], current: ProjectedActionEntry[]): boolean {
+    if (previous.length !== current.length) {
+        return false;
+    }
+    for (let index = 0; index < previous.length; index += 1) {
+        if (previous[index]?.id !== current[index]?.id) {
+            return false;
+        }
+    }
+    return true;
+}
 function diffRemovedActionIds(previous: ProjectedActionEntry[], current: ProjectedActionEntry[]): string[] {
     const currentIds = new Set(current.map((entry) => entry.id));
     return previous
@@ -1779,6 +1795,8 @@ function isSameItem(left: SyncedItemStack | null | undefined, right: SyncedItemS
         && left.groundLabel === right.groundLabel
         && left.grade === right.grade
         && left.level === right.level
+        && left.materialCategory === right.materialCategory
+        && isSameMaterialValues(left.materialValues, right.materialValues)
         && left.enhanceLevel === right.enhanceLevel
         && left.equipSlot === right.equipSlot
         && isSameAttributes(left.equipAttrs, right.equipAttrs)
@@ -1808,6 +1826,7 @@ function cloneSyncedItemStack(source: SyncedItemStack): SyncedItemStack {
         equipAttrs: source.equipAttrs ? clonePartialAttributes(source.equipAttrs) : undefined,
         equipStats: clonePartialNumericStats(source.equipStats),
         equipValueStats: clonePartialNumericStats(source.equipValueStats),
+        materialValues: cloneMaterialValues(source.materialValues),
         effects: source.effects?.map((entry) => cloneEquipmentEffectDef(entry)),
         consumeBuffs: source.consumeBuffs?.map((entry) => cloneConsumableBuffDef(entry)),
         tags: source.tags?.slice(),
@@ -1831,6 +1850,48 @@ function isSameTileResourceGainList(
         }
     }
     return true;
+}
+function isSameMaterialValues(
+    left: SyncedItemStack['materialValues'],
+    right: SyncedItemStack['materialValues'],
+) {
+    if (left === right) {
+        return true;
+    }
+    if (!left || !right) {
+        return false;
+    }
+    return isSamePartialElementGroup(left.elements, right.elements)
+        && isSameNumberRecord(left.scalars, right.scalars);
+}
+function isSameNumberRecord(left: Record<string, number> | null | undefined, right: Record<string, number> | null | undefined) {
+    if (left === right) {
+        return true;
+    }
+    if (!left || !right) {
+        return false;
+    }
+    const leftKeys = Object.keys(left).sort();
+    const rightKeys = Object.keys(right).sort();
+    if (leftKeys.length !== rightKeys.length) {
+        return false;
+    }
+    for (let index = 0; index < leftKeys.length; index += 1) {
+        const key = leftKeys[index];
+        if (key !== rightKeys[index] || left[key] !== right[key]) {
+            return false;
+        }
+    }
+    return true;
+}
+function cloneMaterialValues(source: SyncedItemStack['materialValues']): SyncedItemStack['materialValues'] {
+    if (!source) {
+        return undefined;
+    }
+    return {
+        elements: source.elements ? { ...source.elements } : undefined,
+        scalars: source.scalars ? { ...source.scalars } : undefined,
+    };
 }
 function cloneEquipmentEffectDef(source: NonNullable<SyncedItemStack['effects']>[number]) {
     switch (source.type) {

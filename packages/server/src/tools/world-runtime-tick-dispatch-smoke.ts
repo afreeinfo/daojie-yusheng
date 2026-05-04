@@ -108,6 +108,12 @@ async function testTickDispatchFacade() {
 
             materializeAutoCombatCommands() { log.push(['materializeAutoCombatCommands']); },            
             /**
+ * materializeAutoUsePills：执行materializeAuto丹药相关逻辑。
+ * @returns 无返回值，直接更新materializeAuto丹药相关状态。
+ */
+
+            materializeAutoUsePills() { log.push(['materializeAutoUsePills']); },
+            /**
  * buildAutoCombatCommand：构建并返回目标对象。
  * @param instance 地图实例。
  * @param player 玩家对象。
@@ -277,6 +283,7 @@ async function testTickDispatchFacade() {
     service.materializeNavigationCommands(deps);
     assert.deepEqual(service.resolveNavigationStep('player:1', { type: 'quest' }, deps), { playerId: 'player:1', intent: { type: 'quest' } });
     assert.deepEqual(service.resolveNavigationDestination('player:1', { type: 'quest' }, deps), { mapId: 'yunlai_town', intent: { type: 'quest' } });
+    service.materializeAutoUsePills(deps);
     service.materializeAutoCombatCommands(deps);
     assert.deepEqual(
         service.buildAutoCombatCommand({ meta: { instanceId: 'public:yunlai_town' } }, { playerId: 'player:1' }, deps),

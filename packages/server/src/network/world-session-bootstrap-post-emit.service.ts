@@ -1,6 +1,8 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
+import { S2C } from '@mud/shared';
 
 import { SuggestionRuntimeService } from '../runtime/suggestion/suggestion-runtime.service';
+import { PlayerRuntimeService } from '../runtime/player/player-runtime.service';
 import { WorldClientEventService } from './world-client-event.service';
 import type { BootstrapClientLike } from './world-session-bootstrap-context.helper';
 import {
@@ -19,6 +21,11 @@ interface WorldClientEventPort {
     emitPendingLogbookMessages(client: BootstrapClientLike, playerId: string): void;
 }
 
+interface PlayerRuntimePort {
+    loadPendingOfflineGainReports(playerId: string): Promise<unknown[]>;
+    loadPlayerStatisticTotals?(playerId: string): Promise<unknown>;
+}
+
 /** 负责 bootstrap 初始同步后的 notice、建议、邮件与日志书下发。 */
 @Injectable()
 export class WorldSessionBootstrapPostEmitService {
@@ -32,6 +39,9 @@ export class WorldSessionBootstrapPostEmitService {
         @Optional()
         @Inject(WorldClientEventService)
         private readonly worldClientEventService: WorldClientEventPort | null = null,
+        @Optional()
+        @Inject(PlayerRuntimeService)
+        private readonly playerRuntimeService: PlayerRuntimePort | null = null,
     ) {}
 
     async emitPostBootstrapState(client: BootstrapClientLike, playerId: string): Promise<BootstrapRecoveryNoticeResult | null> {
@@ -49,6 +59,14 @@ export class WorldSessionBootstrapPostEmitService {
         this.worldClientEventService?.emitSuggestionUpdate(client, this.suggestionRuntimeService?.getAll() ?? []);
         await this.worldClientEventService?.emitMailSummaryForPlayer(client, playerId);
         this.worldClientEventService?.emitPendingLogbookMessages(client, playerId);
+        const offlineGainReports = await this.playerRuntimeService?.loadPendingOfflineGainReports(playerId) ?? [];
+        const statisticTotals = await this.playerRuntimeService?.loadPlayerStatisticTotals?.(playerId) ?? null;
+        if ((offlineGainReports.length > 0 || statisticTotals) && typeof (client as BootstrapClientLike & { emit?: (event: string, payload: unknown) => void }).emit === 'function') {
+            (client as BootstrapClientLike & { emit: (event: string, payload: unknown) => void }).emit(S2C.OfflineGainReports, {
+                reports: offlineGainReports,
+                ...(statisticTotals ? { totals: statisticTotals } : {}),
+            });
+        }
         return bootstrapRecovery;
     }
 }

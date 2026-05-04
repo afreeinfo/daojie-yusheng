@@ -26,19 +26,6 @@ function assertInstanceSupportsPlayerCombat(instance) {
     throw new common_1.BadRequestException('当前实例不允许玩家互攻');
 }
 
-function assertInstanceSupportsTileDamage(instance, player, targetX, targetY, deps) {
-    if (instance?.meta?.canDamageTile === true) {
-        return;
-    }
-    const attackableTile = typeof deps.worldRuntimeFormationService?.getAttackableTileCombatState === 'function'
-        ? deps.worldRuntimeFormationService.getAttackableTileCombatState(player.instanceId, targetX, targetY)
-        : null;
-    if (attackableTile) {
-        return;
-    }
-    throw new common_1.BadRequestException('当前实例不允许攻击地块');
-}
-
 function dispatchAutoCombatCommand(playerId, command, locked, deps) {
     const resolvedCommand = locked ? command : {
         ...command,
@@ -93,9 +80,6 @@ let WorldRuntimeBattleEngageService = class WorldRuntimeBattleEngageService {
                 : (targetX !== null && targetY !== null ? `tile:${targetX}:${targetY}` : null);
             if (targetPlayerId) {
                 assertInstanceSupportsPlayerCombat(instance);
-            }
-            if (targetX !== null && targetY !== null) {
-                assertInstanceSupportsTileDamage(instance, currentPlayer, targetX, targetY, deps);
             }
             const resolvedTarget = targetRef
                 ? (0, world_runtime_attack_target_helpers_1.resolveAttackableTargetRef)(

@@ -50,7 +50,8 @@ async function verifyHookWiring(): Promise<{
   const registerCalls: Array<{ playerId: string; sessionEpoch: number }> = [];
   const bootstrapPersistedCalls: string[] = [];
   const clearCalls: string[] = [];
-  const disconnectPersistedCalls: string[] = [];
+  const disconnectPresenceCalls: string[] = [];
+  const flushCalls: string[] = [];
 
   const bootstrapService = new WorldSessionBootstrapPlayerInitService(
     {
@@ -116,12 +117,14 @@ async function verifyHookWiring(): Promise<{
       isEnabled() {
         return true;
       },
-      async savePlayerPresence() {
+      async savePlayerPresence(playerId: string) {
+        disconnectPresenceCalls.push(playerId);
         return undefined;
       },
     } as never,
     {
-      async flushPlayer() {
+      async flushPlayer(playerId: string) {
+        flushCalls.push(playerId);
         return undefined;
       },
     } as never,
@@ -139,9 +142,6 @@ async function verifyHookWiring(): Promise<{
           transferTargetNodeId: null,
           versionSeed: 123,
         };
-      },
-      markPersisted(playerId: string) {
-        disconnectPersistedCalls.push(playerId);
       },
     } as never,
     {} as never,
@@ -174,13 +174,19 @@ async function verifyHookWiring(): Promise<{
   );
 
   await gateway.handleDisconnect({ id: 'socket:route-smoke' } as never);
+  await flushMicrotasks();
   assert.deepEqual(clearCalls, []);
-  assert.deepEqual(disconnectPersistedCalls, ['route_smoke_player']);
+  assert.deepEqual(disconnectPresenceCalls, ['route_smoke_player']);
+  assert.deepEqual(flushCalls, ['route_smoke_player']);
 
   return {
     bootstrapRegistered: true,
     disconnectPreservedRoute: true,
   };
+}
+
+async function flushMicrotasks(): Promise<void> {
+  await new Promise((resolve) => setImmediate(resolve));
 }
 
 async function verifyGatewayRouteDecision(): Promise<{

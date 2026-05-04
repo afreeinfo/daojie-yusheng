@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 
+import { encodeTileTargetRef } from '@mud/shared';
 import { WorldRuntimeBattleEngageService } from '../runtime/world/world-runtime-battle-engage.service';
+import { resolveAttackableTargetRef } from '../runtime/world/world-runtime.attack-target.helpers';
 
 function createDeferred() {
   let resolve!: () => void;
@@ -249,6 +251,157 @@ async function testLockedMissingMonsterEngageClearsTargetWithoutRawWarning(): Pr
   assert.equal(attacker.combat.autoBattle, true);
 }
 
+function testForceAttackTileTargetSelectionPriority(): void {
+  const attacker = {
+    playerId: 'player:attacker',
+    instanceId: 'public:overlap_map',
+    hp: 100,
+    x: 10,
+    y: 10,
+    combat: {
+      allowAoePlayerHit: true,
+      autoBattle: false,
+      manualEngagePending: false,
+      combatTargetId: null,
+      combatTargetLocked: false,
+      retaliatePlayerTargetId: null,
+      combatTargetingRules: undefined,
+    },
+  };
+  const targetPlayer = {
+    playerId: 'player:target',
+    instanceId: 'public:overlap_map',
+    hp: 100,
+    x: 11,
+    y: 10,
+    combat: {},
+  };
+  const playerRuntimeService = {
+    getPlayer(playerId: string) {
+      if (playerId === attacker.playerId) {
+        return attacker;
+      }
+      if (playerId === targetPlayer.playerId) {
+        return targetPlayer;
+      }
+      return null;
+    },
+    listPlayerSnapshots() {
+      return [attacker, targetPlayer];
+    },
+  };
+  const tileRef = encodeTileTargetRef({ x: 11, y: 10 });
+  function resolveCandidate(options: {
+    monster?: boolean;
+    player?: boolean;
+    boundary?: boolean;
+    tile?: boolean;
+    eye?: boolean;
+  }) {
+    const instance = {
+      meta: {
+        instanceId: 'public:overlap_map',
+        supportsPvp: true,
+        canDamageTile: options.tile === true,
+      },
+      listMonsters() {
+        return options.monster === true ? [{
+          runtimeId: 'monster:1',
+          alive: true,
+          x: 11,
+          y: 10,
+          hp: 80,
+        }] : [];
+      },
+      getPlayersAtTile(x: number, y: number) {
+        assert.deepEqual([x, y], [11, 10]);
+        return options.player === true ? [targetPlayer] : [];
+      },
+      getTileCombatState(x: number, y: number) {
+        assert.deepEqual([x, y], [11, 10]);
+        return options.tile === true ? {
+          x,
+          y,
+          hp: 70,
+          maxHp: 100,
+          destroyed: false,
+        } : null;
+      },
+      getContainerAtTile() {
+        return null;
+      },
+    };
+    const deps = {
+      resolveCurrentTickForPlayerId() {
+        return 18;
+      },
+      worldRuntimeFormationService: {
+        getAttackableTileCombatState(instanceId: string, x: number, y: number) {
+          assert.equal(instanceId, 'public:overlap_map');
+          assert.deepEqual([x, y], [11, 10]);
+          return options.boundary === true ? {
+            kind: 'formation_boundary',
+            id: 'formation-boundary:1',
+            name: '封界阵',
+            x,
+            y,
+            hp: 60,
+            supportsSkill: true,
+          } : null;
+        },
+        getAttackableFormationEyeCombatStateAtTile(instanceId: string, x: number, y: number) {
+          assert.equal(instanceId, 'public:overlap_map');
+          assert.deepEqual([x, y], [11, 10]);
+          return options.eye === true ? {
+            kind: 'formation',
+            id: 'formation:eye:1',
+            targetRef: 'formation:eye:1',
+            targetMonsterId: 'formation:eye:1',
+            name: '护宗大阵阵眼',
+            x,
+            y,
+            hp: 50,
+            supportsSkill: true,
+          } : null;
+        },
+      },
+    };
+    return resolveAttackableTargetRef(instance as never, playerRuntimeService as never, attacker as never, tileRef, deps as never, { currentTick: 18 });
+  }
+
+  assert.equal(resolveCandidate({
+    monster: true,
+    player: true,
+    boundary: true,
+    tile: true,
+    eye: true,
+  })?.targetMonsterId, 'monster:1');
+  assert.equal(resolveCandidate({
+    player: true,
+    boundary: true,
+    tile: true,
+    eye: true,
+  })?.targetPlayerId, 'player:target');
+  const boundaryTarget = resolveCandidate({
+    boundary: true,
+    tile: true,
+    eye: true,
+  });
+  assert.equal(boundaryTarget?.kind, 'formation_boundary');
+  assert.equal(boundaryTarget?.targetX, 11);
+  assert.equal(boundaryTarget?.targetY, 10);
+  const tileTarget = resolveCandidate({
+    tile: true,
+    eye: true,
+  });
+  assert.equal(tileTarget?.kind, 'tile');
+  assert.equal(tileTarget?.targetX, 11);
+  assert.equal(tileTarget?.targetY, 10);
+  assert.equal(resolveCandidate({
+    eye: true,
+  })?.targetMonsterId, 'formation:eye:1');
+}
+
 async function testUnlockedMonsterEngageUsesManualEngageInsteadOfPersistentAutoBattle(): Promise<void> {
   const attacker = {
     playerId: 'player:attacker',
@@ -364,6 +517,7 @@ async function main(): Promise<void> {
   await testTileEngageAwaitsImmediateAutoCombatCommand();
   await testMonsterEngageAwaitsImmediateAutoCombatCommand();
   await testLockedMissingMonsterEngageClearsTargetWithoutRawWarning();
+  testForceAttackTileTargetSelectionPriority();
   await testUnlockedMonsterEngageUsesManualEngageInsteadOfPersistentAutoBattle();
   console.log(JSON.stringify({
     ok: true,

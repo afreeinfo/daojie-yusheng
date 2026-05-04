@@ -147,7 +147,7 @@ let WorldGateway = WorldGateway_1 = class WorldGateway {
         if (!binding) {
             return;
         }
-        this.gatewaySessionStateHelper.clearDisconnectedPlayerState(binding);
+        await this.gatewaySessionStateHelper.clearDisconnectedPlayerState(binding);
         if (binding.connected) {
             return;
         }
@@ -159,13 +159,13 @@ let WorldGateway = WorldGateway_1 = class WorldGateway {
     }
         async handleHello(client, payload) {
         return this.gatewayBootstrapHelper.handleHello(client, payload);
-    }    
+    }
     handleHeartbeat(client, _payload) {
         if (!this.gatewayGuardHelper.requirePlayerId(client)) {
             return;
         }
         return this.gatewayPresenceHelper.handleHeartbeat(client);
-    }    
+    }
     shouldPersistHeartbeatPresence(playerId, now = Date.now()) {
         return this.gatewayPresenceHelper.shouldPersistHeartbeatPresence(playerId, now);
     }
@@ -174,169 +174,171 @@ let WorldGateway = WorldGateway_1 = class WorldGateway {
     }
     handleSocketGmGetState(client, _payload) {
         return this.gatewayGmCommandHelper.handleGmGetState(client, _payload);
-    }    
+    }
     handleSocketGmSpawnBots(client, payload) {
         return this.gatewayGmCommandHelper.handleGmSpawnBots(client, payload);
-    }    
+    }
     handleSocketGmRemoveBots(client, payload) {
         return this.gatewayGmCommandHelper.handleGmRemoveBots(client, payload);
-    }    
+    }
     handleSocketGmUpdatePlayer(client, payload) {
         return this.gatewayGmCommandHelper.handleGmUpdatePlayer(client, payload);
-    }    
+    }
     handleSocketGmResetPlayer(client, payload) {
         return this.gatewayGmCommandHelper.handleGmResetPlayer(client, payload);
-    }    
+    }
     handleMoveTo(client, payload) {
         return this.gatewayMovementHelper.handleMoveTo(client, payload);
-    }    
+    }
     handleNavigateQuest(client, payload) {
         return this.gatewayMovementHelper.handleNavigateQuest(client, payload);
-    }    
+    }
     handleMove(client, payload) {
         return this.gatewayMovementHelper.handleMove(client, payload);
-    }    
+    }
     handleDestroyItem(client, payload) {
         return this.gatewayInventoryHelper.handleDestroyItem(client, payload);
-    }    
+    }
     handleSortInventory(client, _payload) {
         return this.gatewayInventoryHelper.handleSortInventory(client, _payload);
-    }    
+    }
     handleChat(client, payload) {
         return this.gatewayPlayerControlsHelper.handleChat(client, payload);
-    }    
+    }
     handleAckSystemMessages(client, payload) {
         return this.gatewayPlayerControlsHelper.handleAckSystemMessages(client, payload);
-    }    
+    }
+    async handleAckOfflineGainReports(client, payload) { return this.gatewayPlayerControlsHelper.handleAckOfflineGainReports(client, payload); }
     handleDebugResetSpawn(client, _payload) {
         return this.gatewayPlayerControlsHelper.handleDebugResetSpawn(client, _payload);
-    }    
+    }
     handleUpdateAutoBattleSkills(client, payload) {
         return this.gatewayPlayerControlsHelper.handleUpdateAutoBattleSkills(client, payload);
-    }    
+    }
     handleUpdateAutoUsePills(client, payload) {
         return this.gatewayPlayerControlsHelper.handleUpdateAutoUsePills(client, payload);
-    }    
+    }
     handleUpdateCombatTargetingRules(client, payload) {
         return this.gatewayPlayerControlsHelper.handleUpdateCombatTargetingRules(client, payload);
-    }    
+    }
     handleUpdateAutoBattleTargetingMode(client, payload) {
         return this.gatewayPlayerControlsHelper.handleUpdateAutoBattleTargetingMode(client, payload);
-    }    
+    }
     handleUpdateTechniqueSkillAvailability(client, payload) {
         return this.gatewayPlayerControlsHelper.handleUpdateTechniqueSkillAvailability(client, payload);
-    }    
+    }
     handleHeavenGateAction(client, payload) {
         return this.gatewayPlayerControlsHelper.handleHeavenGateAction(client, payload);
-    }    
+    }
     handleUseAction(client, payload) {
         return this.gatewayActionHelper.handleUseAction(client, payload);
-    }    
+    }
     handleRequestQuests(client, _payload) {
         return this.gatewayPlayerControlsHelper.handleRequestQuests(client, _payload);
-    }    
+    }
     async handleRequestMailSummary(client, payload) {
         return this.gatewayMailHelper.handleRequestMailSummary(client, payload);
-    }    
+    }
     handleRequestSuggestions(client, payload) {
         return this.gatewaySuggestionHelper.handleRequestSuggestions(client, payload);
-    }    
+    }
     async handleRequestMailPage(client, payload) {
         return this.gatewayMailHelper.handleRequestMailPage(client, payload);
-    }    
+    }
     async handleRequestMailDetail(client, payload) {
         return this.gatewayMailHelper.handleRequestMailDetail(client, payload);
-    }    
+    }
     handleRedeemCodes(client, payload) {
         return this.gatewayActionHelper.handleRedeemCodes(client, payload);
-    }    
+    }
     handleRequestMarket(client, payload) {
         return this.gatewayMarketHelper.handleRequestMarket(client, payload);
-    }    
+    }
     handleRequestMarketListings(client, payload) {
         return this.gatewayMarketHelper.handleRequestMarketListings(client, payload);
-    }    
+    }
+    handleRequestAuctionListings(client, payload) { return this.gatewayMarketHelper.handleRequestAuctionListings(client, payload); }
     async handleMarkMailRead(client, payload) {
         return this.gatewayMailHelper.handleMarkMailRead(client, payload);
-    }    
+    }
     async handleCreateSuggestion(client, payload) {
         await this.gatewaySuggestionHelper.handleCreateSuggestion(client, payload);
-    }    
+    }
     async handleVoteSuggestion(client, payload) {
         await this.gatewaySuggestionHelper.handleVoteSuggestion(client, payload);
-    }    
+    }
     async handleReplySuggestion(client, payload) {
         await this.gatewaySuggestionHelper.handleReplySuggestion(client, payload);
-    }    
+    }
     async handleMarkSuggestionRepliesRead(client, payload) {
         await this.gatewaySuggestionHelper.handleMarkSuggestionRepliesRead(client, payload);
-    }    
+    }
     async handleGmMarkSuggestionCompleted(client, payload) {
         await this.gatewayGmSuggestionHelper.handleGmMarkSuggestionCompleted(client, payload);
-    }    
+    }
     async handleGmRemoveSuggestion(client, payload) {
         await this.gatewayGmSuggestionHelper.handleGmRemoveSuggestion(client, payload);
-    }    
+    }
     async handleClaimMailAttachments(client, payload) {
         return this.gatewayMailHelper.handleClaimMailAttachments(client, payload);
-    }    
+    }
     async handleDeleteMail(client, payload) {
         return this.gatewayMailHelper.handleDeleteMail(client, payload);
-    }    
+    }
     handleRequestMarketItemBook(client, payload) {
         return this.gatewayMarketHelper.handleRequestMarketItemBook(client, payload);
-    }    
+    }
     handleRequestMarketTradeHistory(client, payload) {
         return this.gatewayMarketHelper.handleRequestMarketTradeHistory(client, payload);
-    }    
+    }
     handleRequestAttrDetail(client, _payload) {
         return this.gatewayReadModelHelper.handleRequestAttrDetail(client, _payload);
-    }    
+    }
     handleRequestAlchemyPanel(client, payload) {
         return this.gatewayCraftHelper.handleRequestAlchemyPanel(client, payload);
-    }    
+    }
     handleRequestEnhancementPanel(client, _payload) {
         return this.gatewayCraftHelper.handleRequestEnhancementPanel(client, _payload);
-    }    
+    }
     handleStartAlchemy(client, payload) {
         return this.gatewayCraftHelper.handleStartAlchemy(client, payload);
-    }    
+    }
     handleCancelAlchemy(client, _payload) {
         return this.gatewayCraftHelper.handleCancelAlchemy(client, _payload);
-    }    
+    }
     handleSaveAlchemyPreset(client, payload) {
         return this.gatewayCraftHelper.handleSaveAlchemyPreset(client, payload);
-    }    
+    }
     handleDeleteAlchemyPreset(client, payload) {
         return this.gatewayCraftHelper.handleDeleteAlchemyPreset(client, payload);
-    }    
+    }
     handleStartEnhancement(client, payload) {
         return this.gatewayCraftHelper.handleStartEnhancement(client, payload);
-    }    
+    }
     handleCancelEnhancement(client, _payload) {
         return this.gatewayCraftHelper.handleCancelEnhancement(client, _payload);
-    }    
+    }
     handleRequestLeaderboard(client, payload) {
         return this.gatewayReadModelHelper.handleRequestLeaderboard(client, payload);
-    }    
+    }
     handleRequestLeaderboardPlayerLocations(client, payload) {
         return this.gatewayReadModelHelper.handleRequestLeaderboardPlayerLocations(client, payload);
-    }    
+    }
     handleRequestWorldSummary(client, _payload) {
         return this.gatewayReadModelHelper.handleRequestWorldSummary(client, _payload);
-    }    
+    }
     handleRequestDetail(client, payload) {
         return this.gatewayReadModelHelper.handleRequestDetail(client, payload);
-    }    
+    }
     handleRequestTileDetail(client, payload) {
         return this.gatewayReadModelHelper.handleRequestTileDetail(client, payload);
-    }    
+    }
     handleUsePortal(client) {
         return this.gatewayActionHelper.handleUsePortal(client);
-    }    
+    }
     handleUseItem(client, payload) {
         return this.gatewayInventoryHelper.handleUseItem(client, payload);
-    }    
+    }
     handleCreateFormation(client, payload) {
         return this.gatewayInventoryHelper.handleCreateFormation(client, payload);
     }
@@ -348,64 +350,54 @@ let WorldGateway = WorldGateway_1 = class WorldGateway {
     }
     handleDropItem(client, payload) {
         return this.gatewayInventoryHelper.handleDropItem(client, payload);
-    }    
+    }
     handleTakeGround(client, payload) {
         return this.gatewayInventoryHelper.handleTakeGround(client, payload);
-    }    
+    }
     handleStartGather(client, payload) {
         return this.gatewayInventoryHelper.handleStartGather(client, payload);
-    }    
+    }
     handleCancelGather(client, payload) {
         return this.gatewayInventoryHelper.handleCancelGather(client, payload);
-    }    
+    }
     handleStopLootHarvest(client, payload) {
         return this.gatewayInventoryHelper.handleStopLootHarvest(client, payload);
-    }    
+    }
     handleEquip(client, payload) {
         return this.gatewayInventoryHelper.handleEquip(client, payload);
-    }    
+    }
     handleUnequip(client, payload) {
         return this.gatewayInventoryHelper.handleUnequip(client, payload);
-    }    
+    }
     handleCultivate(client, payload) {
         return this.gatewayActionHelper.handleCultivate(client, payload);
-    }    
+    }
     handleCastSkill(client, payload) {
         return this.gatewayActionHelper.handleCastSkill(client, payload);
-    }    
+    }
     handleRequestNpcShop(client, payload) {
         return this.gatewayNpcHelper.handleRequestNpcShop(client, payload);
-    }    
-    async handleCreateMarketSellOrder(client, payload) {
-        return this.gatewayMarketHelper.handleCreateMarketSellOrder(client, payload);
-    }    
-    async handleCreateMarketBuyOrder(client, payload) {
-        return this.gatewayMarketHelper.handleCreateMarketBuyOrder(client, payload);
-    }    
-    async handleBuyMarketItem(client, payload) {
-        return this.gatewayMarketHelper.handleBuyMarketItem(client, payload);
-    }    
-    async handleSellMarketItem(client, payload) {
-        return this.gatewayMarketHelper.handleSellMarketItem(client, payload);
-    }    
-    async handleCancelMarketOrder(client, payload) {
-        return this.gatewayMarketHelper.handleCancelMarketOrder(client, payload);
-    }    
-    async handleClaimMarketStorage(client, payload) {
-        return this.gatewayMarketHelper.handleClaimMarketStorage(client, payload);
-    }    
+    }
+    async handleCreateMarketSellOrder(client, payload) { return this.gatewayMarketHelper.handleCreateMarketSellOrder(client, payload); }
+    async handleCreateMarketBuyOrder(client, payload) { return this.gatewayMarketHelper.handleCreateMarketBuyOrder(client, payload); }
+    async handlePlaceAuctionBid(client, payload) { return this.gatewayMarketHelper.handlePlaceAuctionBid(client, payload); }
+    async handleBuyoutAuctionLot(client, payload) { return this.gatewayMarketHelper.handleBuyoutAuctionLot(client, payload); }
+    async handleBuyMarketItem(client, payload) { return this.gatewayMarketHelper.handleBuyMarketItem(client, payload); }
+    async handleSellMarketItem(client, payload) { return this.gatewayMarketHelper.handleSellMarketItem(client, payload); }
+    async handleCancelMarketOrder(client, payload) { return this.gatewayMarketHelper.handleCancelMarketOrder(client, payload); }
+    async handleClaimMarketStorage(client, payload) { return this.gatewayMarketHelper.handleClaimMarketStorage(client, payload); }
     handleRequestNpcQuests(client, payload) {
         return this.gatewayNpcHelper.handleRequestNpcQuests(client, payload);
-    }    
+    }
     handleAcceptNpcQuest(client, payload) {
         return this.gatewayNpcHelper.handleAcceptNpcQuest(client, payload);
-    }    
+    }
     handleSubmitNpcQuest(client, payload) {
         return this.gatewayNpcHelper.handleSubmitNpcQuest(client, payload);
-    }    
+    }
     handleBuyNpcShopItem(client, payload) {
         return this.gatewayNpcHelper.handleBuyNpcShopItem(client, payload);
-    }    
+    }
     handlePing(client, payload) {
         this.worldClientEventService.emitPong(client, payload);
     }
@@ -527,6 +519,7 @@ __decorate([
     __metadata("design:paramtypes", [socket_io_1.Socket, Object]),
     __metadata("design:returntype", void 0)
 ], WorldGateway.prototype, "handleAckSystemMessages", null);
+__decorate([(0, websockets_1.SubscribeMessage)(shared_1.C2S.AckOfflineGainReports), __param(0, (0, websockets_1.ConnectedSocket)()), __param(1, (0, websockets_1.MessageBody)()), __metadata("design:type", Function), __metadata("design:paramtypes", [socket_io_1.Socket, Object]), __metadata("design:returntype", Promise)], WorldGateway.prototype, "handleAckOfflineGainReports", null);
 __decorate([
     (0, websockets_1.SubscribeMessage)(shared_1.C2S.DebugResetSpawn),
     __param(0, (0, websockets_1.ConnectedSocket)()),
@@ -655,6 +648,7 @@ __decorate([
     __metadata("design:paramtypes", [socket_io_1.Socket, Object]),
     __metadata("design:returntype", void 0)
 ], WorldGateway.prototype, "handleRequestMarketListings", null);
+__decorate([(0, websockets_1.SubscribeMessage)(shared_1.C2S.RequestAuctionListings), __param(0, (0, websockets_1.ConnectedSocket)()), __param(1, (0, websockets_1.MessageBody)()), __metadata("design:type", Function), __metadata("design:paramtypes", [socket_io_1.Socket, Object]), __metadata("design:returntype", void 0)], WorldGateway.prototype, "handleRequestAuctionListings", null);
 __decorate([
     (0, websockets_1.SubscribeMessage)(shared_1.C2S.MarkMailRead),
     __param(0, (0, websockets_1.ConnectedSocket)()),
@@ -974,22 +968,10 @@ __decorate([
     __metadata("design:paramtypes", [socket_io_1.Socket, Object]),
     __metadata("design:returntype", void 0)
 ], WorldGateway.prototype, "handleRequestNpcShop", null);
-__decorate([
-    (0, websockets_1.SubscribeMessage)(shared_1.C2S.CreateMarketSellOrder),
-    __param(0, (0, websockets_1.ConnectedSocket)()),
-    __param(1, (0, websockets_1.MessageBody)()),
-    __metadata("design:type", Function),
-    __metadata("design:paramtypes", [socket_io_1.Socket, Object]),
-    __metadata("design:returntype", Promise)
-], WorldGateway.prototype, "handleCreateMarketSellOrder", null);
-__decorate([
-    (0, websockets_1.SubscribeMessage)(shared_1.C2S.CreateMarketBuyOrder),
-    __param(0, (0, websockets_1.ConnectedSocket)()),
-    __param(1, (0, websockets_1.MessageBody)()),
-    __metadata("design:type", Function),
-    __metadata("design:paramtypes", [socket_io_1.Socket, Object]),
-    __metadata("design:returntype", Promise)
-], WorldGateway.prototype, "handleCreateMarketBuyOrder", null);
+__decorate([(0, websockets_1.SubscribeMessage)(shared_1.C2S.CreateMarketSellOrder), __param(0, (0, websockets_1.ConnectedSocket)()), __param(1, (0, websockets_1.MessageBody)()), __metadata("design:type", Function), __metadata("design:paramtypes", [socket_io_1.Socket, Object]), __metadata("design:returntype", Promise)], WorldGateway.prototype, "handleCreateMarketSellOrder", null);
+__decorate([(0, websockets_1.SubscribeMessage)(shared_1.C2S.CreateMarketBuyOrder), __param(0, (0, websockets_1.ConnectedSocket)()), __param(1, (0, websockets_1.MessageBody)()), __metadata("design:type", Function), __metadata("design:paramtypes", [socket_io_1.Socket, Object]), __metadata("design:returntype", Promise)], WorldGateway.prototype, "handleCreateMarketBuyOrder", null);
+__decorate([(0, websockets_1.SubscribeMessage)(shared_1.C2S.PlaceAuctionBid), __param(0, (0, websockets_1.ConnectedSocket)()), __param(1, (0, websockets_1.MessageBody)()), __metadata("design:type", Function), __metadata("design:paramtypes", [socket_io_1.Socket, Object]), __metadata("design:returntype", Promise)], WorldGateway.prototype, "handlePlaceAuctionBid", null);
+__decorate([(0, websockets_1.SubscribeMessage)(shared_1.C2S.BuyoutAuctionLot), __param(0, (0, websockets_1.ConnectedSocket)()), __param(1, (0, websockets_1.MessageBody)()), __metadata("design:type", Function), __metadata("design:paramtypes", [socket_io_1.Socket, Object]), __metadata("design:returntype", Promise)], WorldGateway.prototype, "handleBuyoutAuctionLot", null);
 __decorate([
     (0, websockets_1.SubscribeMessage)(shared_1.C2S.BuyMarketItem),
     __param(0, (0, websockets_1.ConnectedSocket)()),

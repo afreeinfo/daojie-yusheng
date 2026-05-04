@@ -463,9 +463,40 @@ function normalizeMarketOrder(raw) {
         unitPrice: normalizeUnitPrice(candidate.unitPrice),
         createdAt: Number.isFinite(candidate.createdAt) ? Math.trunc(Number(candidate.createdAt ?? Date.now())) : Date.now(),
         updatedAt: Number.isFinite(candidate.updatedAt) ? Math.trunc(Number(candidate.updatedAt ?? Date.now())) : Date.now(),
+        auction: normalizeAuctionPayload(candidate.auction),
     };
 }
 export { MarketPersistenceService };
+/** 规范化订单 raw_payload 中的拍卖状态。 */
+function normalizeAuctionPayload(raw) {
+    if (!raw || typeof raw !== 'object') {
+        return undefined;
+    }
+    const startAtMs = Number.isFinite(Number(raw.startAtMs)) ? Math.max(0, Math.trunc(Number(raw.startAtMs))) : 0;
+    const normalDurationSeconds = Number.isFinite(Number(raw.normalDurationSeconds))
+        ? Math.max(1, Math.trunc(Number(raw.normalDurationSeconds)))
+        : 1;
+    const normalEndAtMs = startAtMs + normalDurationSeconds * 1000;
+    const endAtMs = Number.isFinite(Number(raw.endAtMs)) ? Math.max(normalEndAtMs, Math.trunc(Number(raw.endAtMs))) : normalEndAtMs;
+    const maxEndAtMs = Number.isFinite(Number(raw.maxEndAtMs)) ? Math.max(endAtMs, Math.trunc(Number(raw.maxEndAtMs))) : endAtMs;
+    const bids = Array.isArray(raw.bids)
+        ? raw.bids.map((entry) => ({
+            bidderId: typeof entry?.bidderId === 'string' ? entry.bidderId.trim() : '',
+            unitPrice: normalizeUnitPrice(entry?.unitPrice),
+            createdAt: Number.isFinite(Number(entry?.createdAt)) ? Math.max(0, Math.trunc(Number(entry.createdAt))) : Date.now(),
+            reservedCost: Math.max(0, Math.trunc(Number(entry?.reservedCost ?? 0))),
+        })).filter((entry) => entry.bidderId.length > 0)
+        : [];
+    bids.sort((left, right) => right.unitPrice - left.unitPrice || left.createdAt - right.createdAt || left.bidderId.localeCompare(right.bidderId));
+    return {
+        version: 1,
+        startAtMs,
+        normalDurationSeconds,
+        endAtMs,
+        maxEndAtMs,
+        bids,
+    };
+}
 /**
  * normalizeTradeRecord：规范化或转换TradeRecord。
  * @param raw 参数说明。

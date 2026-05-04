@@ -16,10 +16,16 @@ const smoke_player_auth_1 = require("./smoke-player-auth");
  */
 const SERVER_URL = (0, env_alias_1.resolveServerUrl)() || 'http://127.0.0.1:3111';
 const PROGRESSION_WAIT_MS = 15_000;
+const PROGRESSION_RESOURCE_MAP_ID = 'bamboo_forest';
+const PROGRESSION_RESOURCE_TILE = Object.freeze({
+    x: 12,
+    y: 8,
+});
 /**
  * 记录玩家ID。
  */
 let playerId = '';
+let sessionId = '';
 /**
  * 串联执行脚本主流程。
  */
@@ -64,6 +70,7 @@ async function main() {
     });
     socket.on(shared_1.S2C.InitSession, (payload) => {
         playerId = String(payload?.pid ?? '');
+        sessionId = String(payload?.sid ?? '');
     });
     await onceConnected(socket);
     socket.emit(shared_1.C2S.Hello, {
@@ -210,6 +217,7 @@ async function main() {
             && state.player?.inventory?.items?.every((entry) => entry.itemId !== 'map.bamboo_forest')
             && panelEvents.some(hasBambooMapConsumePatch);
     }, PROGRESSION_WAIT_MS);
+    await ensureProgressionResourceTile();
     await postJson(`/runtime/players/${playerId}/grant-item`, {
         itemId: 'spirit_stone',
         count: 1,
@@ -370,6 +378,30 @@ function hasSpiritStoneInventoryPatch(payload) {
  */
 function hasSpiritStoneConsumePatch(payload) {
     return payload.inv?.slots?.some((entry) => entry.item === null || entry.item?.itemId !== 'spirit_stone') ?? false;
+}
+/**
+ * 确保地块资源道具在非保护地块上验证。
+ */
+async function ensureProgressionResourceTile() {
+  // 关键分支按状态与边界条件处理，非法路径会被提前拦截。
+
+    await postJson('/runtime/players/connect', {
+        playerId,
+        sessionId: sessionId || undefined,
+        mapId: PROGRESSION_RESOURCE_MAP_ID,
+        preferredX: PROGRESSION_RESOURCE_TILE.x,
+        preferredY: PROGRESSION_RESOURCE_TILE.y,
+    });
+    await waitFor(async () => {
+/**
+ * 记录状态。
+ */
+        const state = await fetchState();
+        const instanceId = String(state.player?.instanceId ?? '');
+        return instanceId.endsWith(`:${PROGRESSION_RESOURCE_MAP_ID}`)
+            && state.player?.x === PROGRESSION_RESOURCE_TILE.x
+            && state.player?.y === PROGRESSION_RESOURCE_TILE.y;
+    }, PROGRESSION_WAIT_MS);
 }
 /**
  * 处理fetch状态。

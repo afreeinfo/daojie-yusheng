@@ -50,6 +50,16 @@ export interface SyncedItemStack {
 
   level?: number;
   /**
+ * materialCategory：材料主分类。
+ */
+
+  materialCategory?: ItemStack['materialCategory'];
+  /**
+ * materialValues：材料属性值。
+ */
+
+  materialValues?: ItemStack['materialValues'];
+  /**
  * equipSlot：equipSlot相关字段。
  */
 

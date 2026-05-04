@@ -173,7 +173,12 @@ function main() {
   assertIncludes(
     acceptanceScript,
     /SERVER_SKIP_LOCAL_ENV_AUTOLOAD: '1'/,
-    'acceptance 脚本必须继续显式跳过 local gate 的本地 env 自动补齐',
+    'acceptance 脚本必须继续显式跳过本地 env 自动补齐',
+  );
+  assertIncludes(
+    acceptanceScript,
+    /label: 'gm'[\s\S]*extraEnv: \{[\s\S]*DATABASE_URL: ''[\s\S]*SERVER_DATABASE_URL: ''[\s\S]*SERVER_SKIP_LOCAL_ENV_AUTOLOAD: '1'[\s\S]*SERVER_URL: shadowUrl/,
+    'acceptance 的 GM shadow 步骤必须同时屏蔽 DB 并跳过本地 env 自动补齐',
   );
   assertIncludes(
     acceptanceScript,

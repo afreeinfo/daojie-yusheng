@@ -1112,6 +1112,7 @@ async function cleanup(gmToken, playerId) {
         }).catch(() => undefined);
     }
     await deletePlayer(playerId).catch(() => undefined);
+    await resetLocalGmPasswordRecordIfNeeded().catch(() => undefined);
 }
 /**
  * 计算用于状态变更验证的目标血量。
@@ -1285,7 +1286,8 @@ async function ensureNativeDocsForAccessToken(token) {
         if (!tokenPlayerId || !tokenUsername || !tokenDisplayName || !tokenPlayerName) {
             return;
         }
-        await pool.query(`
+        try {
+            await pool.query(`
       INSERT INTO persistent_documents(scope, key, payload, "updatedAt")
       VALUES ($1, $2, $3::jsonb, now())
       ON CONFLICT (scope, key)
@@ -1300,7 +1302,7 @@ async function ensureNativeDocsForAccessToken(token) {
                 persistedSource: 'token_seed',
                 updatedAt: Date.now(),
             })]);
-        await pool.query(`
+            await pool.query(`
       INSERT INTO persistent_documents(scope, key, payload, "updatedAt")
       VALUES ($1, $2, $3::jsonb, now())
       ON CONFLICT (scope, key)
@@ -1373,10 +1375,19 @@ async function ensureNativeDocsForAccessToken(token) {
                     seededAt: Date.now(),
                 },
             })]);
+        } catch (error) {
+            if (isMissingPersistentDocumentsTableError(error)) {
+                return;
+            }
+            throw error;
+        }
     }
     finally {
         await pool.end().catch(() => undefined);
     }
+}
+function isMissingPersistentDocumentsTableError(error) {
+    return typeof error?.code === 'string' && error.code === '42P01';
 }
 /**
  * 登录 GM 接口并获取后续请求所需令牌。

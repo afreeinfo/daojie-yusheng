@@ -10,7 +10,7 @@ class WorldGatewayMarketHelper {
  * gateway：gateway相关字段。
  */
 
-    gateway;    
+    gateway;
     /**
  * 构造器：初始化 当前 实例并建立基础状态。
  * @param gateway 参数说明。
@@ -19,7 +19,7 @@ class WorldGatewayMarketHelper {
 
     constructor(gateway) {
         this.gateway = gateway;
-    }    
+    }
     /**
  * handleRequestMarket：处理NextRequest坊市并更新相关状态。
  * @param client 参数说明。
@@ -27,7 +27,7 @@ class WorldGatewayMarketHelper {
  * @returns 无返回值，直接更新NextRequest坊市相关状态。
  */
 
-    handleRequestMarket(client, _payload) {
+    async handleRequestMarket(client, _payload) {
   // 关键分支按状态与边界条件处理，非法路径会被提前拦截。
 
         const playerId = this.gateway.gatewayGuardHelper.requirePlayerId(client);
@@ -37,16 +37,22 @@ class WorldGatewayMarketHelper {
         try {
             this.gateway.gatewaySessionStateHelper.subscribeMarket(playerId);
             this.gateway.gatewaySessionStateHelper.setMarketListingsRequest(playerId, { page: 1 });
+            this.gateway.gatewaySessionStateHelper.setAuctionListingsRequest(playerId, { tab: 'participate', page: 1, pageSize: 10, category: 'all', query: '' });
+            const settlement = await this.gateway.marketRuntimeService.settleExpiredAuctionLots();
+            if (settlement) {
+                this.gateway.gatewayClientEmitHelper.flushMarketResult(settlement);
+            }
             const response = this.gateway.marketRuntimeService.buildMarketUpdate(playerId);
             this.gateway.gatewayClientEmitHelper.emitMarketUpdate(client, response);
             this.gateway.gatewayClientEmitHelper.emitMarketListings(client, this.gateway.marketRuntimeService.buildMarketListingsPage(this.gateway.gatewaySessionStateHelper.getMarketListingsRequest(playerId)));
+            this.gateway.gatewayClientEmitHelper.emitAuctionListings(client, this.gateway.marketRuntimeService.buildAuctionListingsPage(playerId, this.gateway.gatewaySessionStateHelper.getAuctionListingsRequest(playerId)));
             this.gateway.gatewayClientEmitHelper.emitMarketOrders(client, this.gateway.marketRuntimeService.buildMarketOrders(playerId));
             this.gateway.gatewayClientEmitHelper.emitMarketStorage(client, this.gateway.marketRuntimeService.buildMarketStorage(playerId));
         }
         catch (error) {
             this.gateway.worldClientEventService.emitGatewayError(client, 'REQUEST_MARKET_FAILED', error);
         }
-    }    
+    }
     /**
  * handleRequestMarketListings：读取NextRequest坊市Listing并返回结果。
  * @param client 参数说明。
@@ -70,7 +76,35 @@ class WorldGatewayMarketHelper {
         catch (error) {
             this.gateway.worldClientEventService.emitGatewayError(client, 'REQUEST_MARKET_LISTINGS_FAILED', error);
         }
-    }    
+    }
+    /**
+ * handleRequestAuctionListings：读取NextRequest拍卖行Listing并返回结果。
+ * @param client 参数说明。
+ * @param payload 载荷参数。
+ * @returns 无返回值，直接更新NextRequest拍卖行Listing相关状态。
+ */
+
+    async handleRequestAuctionListings(client, payload) {
+  // 关键分支按状态与边界条件处理，非法路径会被提前拦截。
+
+        const playerId = this.gateway.gatewayGuardHelper.requirePlayerId(client);
+        if (!playerId) {
+            return;
+        }
+        try {
+            this.gateway.gatewaySessionStateHelper.subscribeMarket(playerId);
+            this.gateway.gatewaySessionStateHelper.setAuctionListingsRequest(playerId, payload ?? {});
+            this.gateway.worldClientEventService.markProtocol(client, 'mainline');
+            const settlement = await this.gateway.marketRuntimeService.settleExpiredAuctionLots();
+            if (settlement) {
+                this.gateway.gatewayClientEmitHelper.flushMarketResult(settlement);
+            }
+            this.gateway.worldClientEventService.emitAuctionListings(client, this.gateway.marketRuntimeService.buildAuctionListingsPage(playerId, payload));
+        }
+        catch (error) {
+            this.gateway.worldClientEventService.emitGatewayError(client, 'REQUEST_AUCTION_LISTINGS_FAILED', error);
+        }
+    }
     /**
  * handleRequestMarketItemBook：处理NextRequest坊市道具Book并更新相关状态。
  * @param client 参数说明。
@@ -80,7 +114,7 @@ class WorldGatewayMarketHelper {
 
     handleRequestMarketItemBook(client, payload) {
         this.executeRequestMarketItemBook(client, payload);
-    }    
+    }
     /**
  * executeRequestMarketItemBook：处理executeRequest坊市道具Book并更新相关状态。
  * @param client 参数说明。
@@ -102,7 +136,7 @@ class WorldGatewayMarketHelper {
         catch (error) {
             this.gateway.worldClientEventService.emitGatewayError(client, 'REQUEST_MARKET_ITEM_BOOK_FAILED', error);
         }
-    }    
+    }
     /**
  * handleRequestMarketTradeHistory：判断NextRequest坊市Trade历史是否满足条件。
  * @param client 参数说明。
@@ -112,7 +146,7 @@ class WorldGatewayMarketHelper {
 
     handleRequestMarketTradeHistory(client, payload) {
         this.executeRequestMarketTradeHistory(client, payload);
-    }    
+    }
     /**
  * executeRequestMarketTradeHistory：判断executeRequest坊市Trade历史是否满足条件。
  * @param client 参数说明。
@@ -135,7 +169,7 @@ class WorldGatewayMarketHelper {
         catch (error) {
             this.gateway.worldClientEventService.emitGatewayError(client, 'REQUEST_MARKET_TRADE_HISTORY_FAILED', error);
         }
-    }    
+    }
     /**
  * executeCreateMarketSellOrder：构建executeCreate坊市Sell订单。
  * @param client 参数说明。
@@ -161,7 +195,7 @@ class WorldGatewayMarketHelper {
         catch (error) {
             this.gateway.worldClientEventService.emitGatewayError(client, 'CREATE_MARKET_SELL_ORDER_FAILED', error);
         }
-    }    
+    }
     /**
  * handleCreateMarketSellOrder：构建NextCreate坊市Sell订单。
  * @param client 参数说明。
@@ -171,7 +205,7 @@ class WorldGatewayMarketHelper {
 
     async handleCreateMarketSellOrder(client, payload) {
         await this.executeCreateMarketSellOrder(client, payload);
-    }    
+    }
     /**
  * executeCreateMarketBuyOrder：构建executeCreate坊市Buy订单。
  * @param client 参数说明。
@@ -198,7 +232,7 @@ class WorldGatewayMarketHelper {
         catch (error) {
             this.gateway.worldClientEventService.emitGatewayError(client, 'CREATE_MARKET_BUY_ORDER_FAILED', error);
         }
-    }    
+    }
     /**
  * handleCreateMarketBuyOrder：构建NextCreate坊市Buy订单。
  * @param client 参数说明。
@@ -208,7 +242,42 @@ class WorldGatewayMarketHelper {
 
     async handleCreateMarketBuyOrder(client, payload) {
         await this.executeCreateMarketBuyOrder(client, payload);
-    }    
+    }
+    /** 处理拍卖行加价，避免拍卖按钮误走坊市买单。 */
+    async handlePlaceAuctionBid(client, payload) {
+        const playerId = this.gateway.gatewayGuardHelper.requirePlayerId(client);
+        if (!playerId) {
+            return;
+        }
+        try {
+            const result = await this.gateway.marketRuntimeService.placeAuctionBid(playerId, {
+                lotId: payload?.lotId ?? '',
+                itemKey: payload?.itemKey ?? '',
+                unitPrice: payload?.unitPrice,
+            });
+            this.gateway.gatewayClientEmitHelper.flushMarketResult(result);
+        }
+        catch (error) {
+            this.gateway.worldClientEventService.emitGatewayError(client, 'PLACE_AUCTION_BID_FAILED', error);
+        }
+    }
+    /** 处理拍卖行一口价，入口和提示都归属拍卖行。 */
+    async handleBuyoutAuctionLot(client, payload) {
+        const playerId = this.gateway.gatewayGuardHelper.requirePlayerId(client);
+        if (!playerId) {
+            return;
+        }
+        try {
+            const result = await this.gateway.marketRuntimeService.buyoutAuctionLot(playerId, {
+                lotId: payload?.lotId ?? '',
+                itemKey: payload?.itemKey ?? '',
+            });
+            this.gateway.gatewayClientEmitHelper.flushMarketResult(result);
+        }
+        catch (error) {
+            this.gateway.worldClientEventService.emitGatewayError(client, 'BUYOUT_AUCTION_LOT_FAILED', error);
+        }
+    }
     /**
  * executeBuyMarketItem：处理executeBuy坊市道具并更新相关状态。
  * @param client 参数说明。
@@ -233,7 +302,7 @@ class WorldGatewayMarketHelper {
         catch (error) {
             this.gateway.worldClientEventService.emitGatewayError(client, 'BUY_MARKET_ITEM_FAILED', error);
         }
-    }    
+    }
     /**
  * handleBuyMarketItem：处理NextBuy坊市道具并更新相关状态。
  * @param client 参数说明。
@@ -243,7 +312,7 @@ class WorldGatewayMarketHelper {
 
     async handleBuyMarketItem(client, payload) {
         await this.executeBuyMarketItem(client, payload);
-    }    
+    }
     /**
  * executeSellMarketItem：处理executeSell坊市道具并更新相关状态。
  * @param client 参数说明。
@@ -268,7 +337,7 @@ class WorldGatewayMarketHelper {
         catch (error) {
             this.gateway.worldClientEventService.emitGatewayError(client, 'SELL_MARKET_ITEM_FAILED', error);
         }
-    }    
+    }
     /**
  * handleSellMarketItem：处理NextSell坊市道具并更新相关状态。
  * @param client 参数说明。
@@ -278,7 +347,7 @@ class WorldGatewayMarketHelper {
 
     async handleSellMarketItem(client, payload) {
         await this.executeSellMarketItem(client, payload);
-    }    
+    }
     /**
  * executeCancelMarketOrder：判断executeCancel坊市订单是否满足条件。
  * @param client 参数说明。
@@ -302,7 +371,7 @@ class WorldGatewayMarketHelper {
         catch (error) {
             this.gateway.worldClientEventService.emitGatewayError(client, 'CANCEL_MARKET_ORDER_FAILED', error);
         }
-    }    
+    }
     /**
  * handleCancelMarketOrder：判断NextCancel坊市订单是否满足条件。
  * @param client 参数说明。
@@ -312,7 +381,7 @@ class WorldGatewayMarketHelper {
 
     async handleCancelMarketOrder(client, payload) {
         await this.executeCancelMarketOrder(client, payload);
-    }    
+    }
     /**
  * executeClaimMarketStorage：处理executeClaim坊市Storage并更新相关状态。
  * @param client 参数说明。
@@ -333,7 +402,7 @@ class WorldGatewayMarketHelper {
         catch (error) {
             this.gateway.worldClientEventService.emitGatewayError(client, 'CLAIM_MARKET_STORAGE_FAILED', error);
         }
-    }    
+    }
     /**
  * handleClaimMarketStorage：处理NextClaim坊市Storage并更新相关状态。
  * @param client 参数说明。

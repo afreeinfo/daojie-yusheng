@@ -195,6 +195,15 @@ export interface AckSystemMessagesRequestView {
   ids: string[];
 }
 
+/** 离线收益报告已落入浏览器本地后的回执。 */
+export interface AckOfflineGainReportsRequestView {
+/**
+ * reportIds：报告 ID 集合。
+ */
+
+  reportIds: string[];
+}
+
 /** 请求触发当前位置传送点。 */
 export interface UsePortalRequestView {}
 

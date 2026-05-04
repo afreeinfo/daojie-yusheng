@@ -60,6 +60,11 @@ const SPIRIT_STONE_ITEM_ID = 'spirit_stone';
  * 记录玩家战斗血精奖励物品ID。
  */
 const BLOOD_ESSENCE_ITEM_ID = 'stone.blood_essence';
+const MATERIAL_CATEGORY_TAGS = {
+  herb: ['药材'],
+  exotic: ['异材'],
+  ore: ['矿石', '矿材'],
+};
 /**
  * 记录怪物equipmentslots。
  */
@@ -169,6 +174,14 @@ function matchesTagGroups(itemTags, tagGroups) {
   return tagGroups.every((group) => group.some((tag) => tagSet.has(tag)));
 }
 
+function getItemTags(item) {
+  const tags = new Set(Array.isArray(item.tags) ? item.tags.filter((tag) => typeof tag === 'string' && tag.trim()).map((tag) => tag.trim()) : []);
+  for (const tag of MATERIAL_CATEGORY_TAGS[item.materialCategory] ?? []) {
+    tags.add(tag);
+  }
+  return [...tags];
+}
+
 /**
  * 判断是否品阶withinrange。
  */
@@ -219,7 +232,7 @@ function resolveLootPoolItemIds(items, pool) {
       if (!isGradeWithinRange(getItemGrade(item), maxGrade)) {
         return false;
       }
-      return matchesTagGroups(item.tags, tagGroups);
+      return matchesTagGroups(getItemTags(item), tagGroups);
     })
     .map((item) => item.itemId)
     .sort((left, right) => left.localeCompare(right, 'zh-CN'));
@@ -266,6 +279,59 @@ function isMiningLandmark(landmark, resourceNode) {
   }
   return /(开凿|撬取|撬下|剥开过|露出成片玄铁|嵌着零散灵石)/.test(desc)
     && !/(木箱|工具架|箱|架)/.test(name);
+}
+
+function resolveResourceNodeGroupSourceKind(group, resourceNode) {
+  const id = typeof group?.resourceNodeId === 'string' ? group.resourceNodeId : '';
+  if (id.startsWith('landmark.herb.')) {
+    return 'search';
+  }
+  const name = `${typeof group?.name === 'string' ? group.name : ''}${typeof resourceNode?.name === 'string' ? resourceNode.name : ''}${typeof resourceNode?.sourceLabel === 'string' ? resourceNode.sourceLabel : ''}`;
+  return /ore|vein|mine/.test(id) || /(矿|石|砂|晶|金|铁|尘)/.test(name) ? 'mining' : 'search';
+}
+
+function pushResourceNodeContainerKnownSources(sourceByItemId, invalidRefs, items, map, resourceNode, sourceInfo) {
+  if (resourceNode?.kind === 'landmark_marker') {
+    pushKnownSource(sourceByItemId, invalidRefs, resourceNode.itemId, {
+      kind: sourceInfo.sourceKind,
+      mapId: map.id,
+      mapName: map.name,
+      landmarkId: sourceInfo.landmarkId,
+      landmarkName: sourceInfo.landmarkName,
+      mode: 'direct',
+    });
+    return;
+  }
+  const container = resourceNode?.kind === 'landmark_container' ? resourceNode.container : undefined;
+  if (!container) {
+    return;
+  }
+  const lootPools = Array.isArray(container.lootPools) ? container.lootPools : [];
+  if (lootPools.length > 0) {
+    for (const pool of lootPools) {
+      for (const itemId of resolveLootPoolItemIds(items, pool)) {
+        pushKnownSource(sourceByItemId, invalidRefs, itemId, {
+          kind: sourceInfo.sourceKind,
+          mapId: map.id,
+          mapName: map.name,
+          landmarkId: sourceInfo.landmarkId,
+          landmarkName: sourceInfo.landmarkName,
+          mode: 'pool',
+        });
+      }
+    }
+    return;
+  }
+  for (const drop of container.drops ?? []) {
+    pushKnownSource(sourceByItemId, invalidRefs, drop?.itemId, {
+      kind: sourceInfo.sourceKind,
+      mapId: map.id,
+      mapName: map.name,
+      landmarkId: sourceInfo.landmarkId,
+      landmarkName: sourceInfo.landmarkName,
+      mode: 'direct',
+    });
+  }
 }
 
 /**
@@ -1032,6 +1098,24 @@ function main() {
           mode: 'direct',
         });
       }
+    }
+
+    for (const group of map.resourceNodeGroups ?? []) {
+      const resourceNode = typeof group?.resourceNodeId === 'string'
+        ? landmarkNodesById.get(group.resourceNodeId)
+        : undefined;
+      if (!resourceNode) {
+        continue;
+      }
+      pushResourceNodeContainerKnownSources(sourceByItemId, invalidRefs, items, map, resourceNode, {
+        sourceKind: resolveResourceNodeGroupSourceKind(group, resourceNode),
+        landmarkId: typeof group.idPrefix === 'string' && group.idPrefix.trim()
+          ? group.idPrefix.trim()
+          : group.resourceNodeId,
+        landmarkName: typeof group.name === 'string' && group.name.trim()
+          ? group.name.trim()
+          : (resourceNode.sourceLabel ?? resourceNode.name ?? group.resourceNodeId),
+      });
     }
   }
 

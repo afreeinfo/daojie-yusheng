@@ -144,10 +144,13 @@ var EXPECTED_C2S = [
   C2S.DeleteMail,
   C2S.RequestMarket,
   C2S.RequestMarketListings,
+  C2S.RequestAuctionListings,
   C2S.RequestMarketItemBook,
   C2S.RequestMarketTradeHistory,
   C2S.CreateMarketSellOrder,
   C2S.CreateMarketBuyOrder,
+  C2S.PlaceAuctionBid,
+  C2S.BuyoutAuctionLot,
   C2S.BuyMarketItem,
   C2S.SellMarketItem,
   C2S.CancelMarketOrder,
@@ -192,6 +195,7 @@ var EXPECTED_S2C = [
   S2C.MailDetail,
   S2C.MailOpResult,
   S2C.MarketUpdate,
+  S2C.AuctionListings,
   S2C.MarketItemBook,
   S2C.MarketTradeHistory,
   S2C.Detail,
@@ -234,6 +238,7 @@ var STATIC_S2C_SURFACE_CHECKS = [
       'MailOpResult',
       'MailPage',
       'MailSummary',
+      'AuctionListings',
       'MarketItemBook',
       'MarketListings',
       'MarketOrders',
@@ -2421,9 +2426,10 @@ async function marketCase(runtime) {
 /**
  * 记录审计隔离物品ID。
  */
-  var unusedMarketItemIds = await findUnusedMarketItemIds(runtime, sellerId, 3);
+  var unusedMarketItemIds = await findUnusedMarketItemIds(runtime, sellerId, 4);
   var tradeItemId = unusedMarketItemIds[0];
   var cancelItemId = unusedMarketItemIds[1];
+  var auctionItemId = unusedMarketItemIds[3];
 /**
  * 记录storage物品ID。
  */
@@ -2434,7 +2440,11 @@ async function marketCase(runtime) {
   await emitAndWait(buyer, C2S.RequestMarketListings, { page: 1, pageSize: 20, category: 'all', equipmentSlot: 'all', techniqueCategory: 'all' }, S2C.MarketListings, function (payload) {
     return payload && payload.page === 1 && Array.isArray(payload.items);
   }, 5000);
+  await emitAndWait(buyer, C2S.RequestAuctionListings, { tab: 'participate', page: 1, pageSize: 10, category: 'all', query: '' }, S2C.AuctionListings, function (payload) {
+    return payload && payload.tab === "participate" && payload.page === 1 && payload.pageSize <= 10 && Array.isArray(payload.items);
+  }, 5000);
   await runtime.api.grantItem(sellerId, tradeItemId, 4);
+  await runtime.api.grantItem(sellerId, auctionItemId, 1);
   await runtime.api.grantItem(buyerId, "spirit_stone", 40);
 /**
  * 记录seller状态。
@@ -2472,6 +2482,19 @@ async function marketCase(runtime) {
  * 记录物品key。
  */
   var itemKey = listed.myOrders.find(function (entry) { return entry.side === "sell" && entry.item && entry.item.itemId === tradeItemId; }).itemKey;
+  sellerState = (await runtime.api.fetchState(sellerId)).player;
+  var auctionListed = await emitAndWait(seller, C2S.CreateMarketSellOrder, { slotIndex: slot(sellerState, auctionItemId), quantity: 1, unitPrice: 1 }, S2C.MarketUpdate, function (payload) {
+    return payload && payload.myOrders && payload.myOrders.some(function (entry) { return entry.side === "sell" && entry.item && entry.item.itemId === auctionItemId; });
+  }, 5000);
+  var auctionItemKey = auctionListed.myOrders.find(function (entry) { return entry.side === "sell" && entry.item && entry.item.itemId === auctionItemId; }).itemKey;
+  await emitAndWait(buyer, C2S.RequestAuctionListings, { tab: 'participate', page: 1, pageSize: 10, category: 'all', query: '' }, S2C.AuctionListings, function (payload) {
+    return payload && Array.isArray(payload.items) && payload.items.some(function (entry) { return entry.itemKey === auctionItemKey; });
+  }, 5000);
+  await emitAndWait(buyer, C2S.PlaceAuctionBid, { lotId: auctionItemKey, itemKey: auctionItemKey, unitPrice: 2 }, S2C.AuctionListings, function (payload) {
+    return payload && Array.isArray(payload.items) && payload.items.some(function (entry) { return entry.itemKey === auctionItemKey && entry.currentPrice >= 2 && entry.bidCount >= 1; });
+  }, 5000);
+  await emitAndWait(buyer, C2S.BuyoutAuctionLot, { lotId: auctionItemKey, itemKey: auctionItemKey }, S2C.MarketUpdate, function () { return true; }, 5000);
+  await lib.waitForState(runtime.api, buyerId, function (player) { return count(player, auctionItemId) >= 1; }, 5000, "auctionBuyout");
   await emitAndWait(buyer, C2S.RequestMarketItemBook, { itemKey: itemKey }, S2C.MarketItemBook, function (payload) {
     return payload && payload.itemKey === itemKey;
   }, 5000);

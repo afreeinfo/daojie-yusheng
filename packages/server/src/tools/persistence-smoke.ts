@@ -58,6 +58,10 @@ const PERSISTENCE_SMOKE_CONTRACT = Object.freeze({
     excludes: 'shadow destructive、维护窗口 backup/restore、真实运营取证与跨环境灾备演练',
     completionMapping: 'release:proof:with-db.persistence',
 });
+const PERSISTENCE_SMOKE_RESOURCE_TILE = Object.freeze({
+    x: 30,
+    y: 40,
+});
 const BASELINE_MARKET_STORAGE_ITEMS = Object.freeze([
     {
         itemId: 'wolf_fang',
@@ -92,9 +96,6 @@ let playerId = '';
  * 记录access令牌。
  */
 let accessToken = '';
-/**
- * 串联执行脚本主流程。
- */
 async function main() {
   // 关键分支按状态与边界条件处理，非法路径会被提前拦截。
 
@@ -109,33 +110,20 @@ async function main() {
         }, null, 2));
         return;
     }
-/**
- * 记录reconnect目标。
- */
     let reconnectTarget = null;
-/**
- * 记录服务端。
- */
-    let server = await startServer();
+    let server = null;
     try {
+        server = await startServer();
         await waitForHealth();
-/**
- * 记录认证。
- */
         const auth = await registerAndLoginPlayer();
         accessToken = auth.accessToken;
+        playerId = auth.playerId;
         await seedNativePersistenceForToken(accessToken);
         reconnectTarget = await connectAndMutate(accessToken);
-    }
-    finally {
         await stopServer(server);
-    }
-    server = await startServer();
-    try {
+        server = null;
+        server = await startServer();
         await waitForHealth();
-/**
- * 记录restored。
- */
         const restored = await reconnectAndRead(reconnectTarget);
         console.log(JSON.stringify({
             ok: true,
@@ -150,7 +138,9 @@ async function main() {
         if (playerId) {
             await deletePlayer(playerId).catch(() => undefined);
         }
-        await stopServer(server);
+        if (server) {
+            await stopServer(server);
+        }
     }
 }
 /**
@@ -358,6 +348,8 @@ async function ensureTravelToWildlands(socket, currentPlayerId, currentSessionId
         playerId: currentPlayerId,
         sessionId: currentSessionId || undefined,
         mapId: 'wildlands',
+        preferredX: PERSISTENCE_SMOKE_RESOURCE_TILE.x,
+        preferredY: PERSISTENCE_SMOKE_RESOURCE_TILE.y,
     });
     for (let attempt = 0; attempt < 24; attempt += 1) {
 /**
@@ -367,12 +359,14 @@ async function ensureTravelToWildlands(socket, currentPlayerId, currentSessionId
         lastTemplateId = state?.view?.instance?.templateId ?? '';
         lastX = Number(state?.view?.self?.x);
         lastY = Number(state?.view?.self?.y);
-        if (lastTemplateId === 'wildlands') {
+        if (lastTemplateId === 'wildlands'
+            && lastX === PERSISTENCE_SMOKE_RESOURCE_TILE.x
+            && lastY === PERSISTENCE_SMOKE_RESOURCE_TILE.y) {
             return;
         }
         await delay(250);
     }
-    throw new Error(`failed to attach player to wildlands, current=${lastTemplateId} @ (${lastX}, ${lastY})`);
+    throw new Error(`failed to attach player to wildlands resource tile ${PERSISTENCE_SMOKE_RESOURCE_TILE.x},${PERSISTENCE_SMOKE_RESOURCE_TILE.y}; current=${lastTemplateId} @ (${lastX}, ${lastY})`);
 }
 /**
  * 处理reconnectandread。
@@ -608,10 +602,6 @@ async function registerAndLoginPlayer() {
             }
             const payload = parseJwtPayload(nextAccessToken);
             const playerId = typeof payload?.playerId === 'string' ? payload.playerId.trim() : '';
-            (0, smoke_player_auth_1.registerSmokePlayerForCleanup)(playerId, {
-                serverUrl: baseUrl,
-                databaseUrl,
-            });
             return {
                 accessToken: nextAccessToken,
                 playerId,
@@ -1086,10 +1076,16 @@ async function deleteLegacyMarketStorageDocument(playerIdToDelete) {
   const client = new pg_1.Client({ connectionString: databaseUrl });
   await client.connect();
   try {
-    await client.query('DELETE FROM persistent_documents WHERE scope = $1 AND key = $2', [
-      MARKET_STORAGE_SCOPE,
-      playerIdToDelete,
-    ]);
+    try {
+      await client.query('DELETE FROM persistent_documents WHERE scope = $1 AND key = $2', [
+        MARKET_STORAGE_SCOPE,
+        playerIdToDelete,
+      ]);
+    } catch (error) {
+      if (!isMissingTableError(error)) {
+        throw error;
+      }
+    }
   }
   finally {
     await client.end().catch(() => undefined);
@@ -1100,10 +1096,18 @@ async function assertLegacyMarketStorageDocumentAbsent(playerIdToCheck) {
   const client = new pg_1.Client({ connectionString: databaseUrl });
   await client.connect();
   try {
-    const result = await client.query('SELECT 1 FROM persistent_documents WHERE scope = $1 AND key = $2 LIMIT 1', [
-      MARKET_STORAGE_SCOPE,
-      playerIdToCheck,
-    ]);
+    let result = null;
+    try {
+      result = await client.query('SELECT 1 FROM persistent_documents WHERE scope = $1 AND key = $2 LIMIT 1', [
+        MARKET_STORAGE_SCOPE,
+        playerIdToCheck,
+      ]);
+    } catch (error) {
+      if (isMissingTableError(error)) {
+        return;
+      }
+      throw error;
+    }
     if ((result.rowCount ?? 0) !== 0) {
       throw new Error(`expected legacy market storage document to be absent for ${playerIdToCheck}`);
     }
@@ -1111,6 +1115,10 @@ async function assertLegacyMarketStorageDocumentAbsent(playerIdToCheck) {
   finally {
     await client.end().catch(() => undefined);
   }
+}
+
+function isMissingTableError(error) {
+  return Boolean(error && typeof error === 'object' && error.code === '42P01');
 }
 
 async function assertStructuredPlayerMarketStorageItems(playerIdToCheck, expectedItems) {

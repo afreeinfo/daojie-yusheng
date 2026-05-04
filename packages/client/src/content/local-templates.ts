@@ -211,6 +211,8 @@ export function resolvePreviewItem(item: ItemStack): ItemStack {
     groundLabel: item.groundLabel ?? template.groundLabel,
     grade: item.grade ?? template.grade,
     level: item.level ?? template.level,
+    materialCategory: item.materialCategory ?? template.materialCategory,
+    materialValues: item.materialValues ?? template.materialValues,
     equipSlot: item.equipSlot ?? template.equipSlot,
     equipAttrs: item.equipAttrs ?? template.equipAttrs,
     equipStats: item.equipStats ?? template.equipStats,

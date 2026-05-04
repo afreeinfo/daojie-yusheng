@@ -23,6 +23,7 @@ const NODE_KEY_ATTRIBUTES = [
   'data-mail-select',
   'data-mail-check',
   'data-suggestion-select',
+  'data-auction-select-item',
   'data-market-select-group',
   'data-market-select-item',
   'data-inventory-slot',

@@ -854,6 +854,201 @@
           "label": "六维总属性达到 4288"
         }
       ]
+    },
+    {
+      "fromRealmLv": 30,
+      "toRealmLv": 31,
+      "title": "筑基一层",
+      "requirements": [
+        {
+          "id": "bw_30_31_spirit_stone",
+          "type": "item",
+          "itemId": "spirit_stone",
+          "count": 164,
+          "label": "备齐灵石 164 枚，凝练根基",
+          "increaseAttrRequirementPct": 18
+        }
+      ]
+    },
+    {
+      "fromRealmLv": 31,
+      "toRealmLv": 32,
+      "title": "筑基二层",
+      "requirements": [
+        {
+          "id": "bw_31_32_spirit_stone",
+          "type": "item",
+          "itemId": "spirit_stone",
+          "count": 173,
+          "label": "备齐灵石 173 枚，凝练根基",
+          "increaseAttrRequirementPct": 18
+        }
+      ]
+    },
+    {
+      "fromRealmLv": 32,
+      "toRealmLv": 33,
+      "title": "筑基三层",
+      "requirements": [
+        {
+          "id": "bw_32_33_spirit_stone",
+          "type": "item",
+          "itemId": "spirit_stone",
+          "count": 181,
+          "label": "备齐灵石 181 枚，凝练根基",
+          "increaseAttrRequirementPct": 18
+        }
+      ]
+    },
+    {
+      "fromRealmLv": 33,
+      "toRealmLv": 34,
+      "title": "筑基四层",
+      "requirements": [
+        {
+          "id": "bw_33_34_spirit_stone",
+          "type": "item",
+          "itemId": "spirit_stone",
+          "count": 190,
+          "label": "备齐灵石 190 枚，凝练根基",
+          "increaseAttrRequirementPct": 18
+        }
+      ]
+    },
+    {
+      "fromRealmLv": 34,
+      "toRealmLv": 35,
+      "title": "筑基五层",
+      "requirements": [
+        {
+          "id": "bw_34_35_spirit_stone",
+          "type": "item",
+          "itemId": "spirit_stone",
+          "count": 198,
+          "label": "备齐灵石 198 枚，凝练根基",
+          "increaseAttrRequirementPct": 18
+        }
+      ]
+    },
+    {
+      "fromRealmLv": 35,
+      "toRealmLv": 36,
+      "title": "筑基六层",
+      "requirements": [
+        {
+          "id": "bw_35_36_spirit_stone",
+          "type": "item",
+          "itemId": "spirit_stone",
+          "count": 207,
+          "label": "备齐灵石 207 枚，凝练根基",
+          "increaseAttrRequirementPct": 18
+        }
+      ]
+    },
+    {
+      "fromRealmLv": 36,
+      "toRealmLv": 37,
+      "title": "筑基七层",
+      "requirements": [
+        {
+          "id": "bw_36_37_spirit_stone",
+          "type": "item",
+          "itemId": "spirit_stone",
+          "count": 216,
+          "label": "备齐灵石 216 枚，凝练根基",
+          "increaseAttrRequirementPct": 18
+        }
+      ]
+    },
+    {
+      "fromRealmLv": 37,
+      "toRealmLv": 38,
+      "title": "筑基八层",
+      "requirements": [
+        {
+          "id": "bw_37_38_spirit_stone",
+          "type": "item",
+          "itemId": "spirit_stone",
+          "count": 225,
+          "label": "备齐灵石 225 枚，凝练根基",
+          "increaseAttrRequirementPct": 18
+        }
+      ]
+    },
+    {
+      "fromRealmLv": 38,
+      "toRealmLv": 39,
+      "title": "筑基九层",
+      "requirements": [
+        {
+          "id": "bw_38_39_spirit_stone",
+          "type": "item",
+          "itemId": "spirit_stone",
+          "count": 234,
+          "label": "备齐灵石 234 枚，凝练根基",
+          "increaseAttrRequirementPct": 18
+        }
+      ]
+    },
+    {
+      "fromRealmLv": 39,
+      "toRealmLv": 40,
+      "title": "筑基巅峰",
+      "requirements": [
+        {
+          "id": "bw_39_40_spirit_stone",
+          "type": "item",
+          "itemId": "spirit_stone",
+          "count": 244,
+          "label": "备齐灵石 244 枚，凝练根基",
+          "increaseAttrRequirementPct": 18
+        }
+      ]
+    },
+    {
+      "fromRealmLv": 40,
+      "toRealmLv": 41,
+      "title": "筑基大圆满",
+      "requirements": [
+        {
+          "id": "bw_40_41_spirit_stone",
+          "type": "item",
+          "itemId": "spirit_stone",
+          "count": 253,
+          "label": "备齐灵石 253 枚，凝练根基",
+          "increaseAttrRequirementPct": 18
+        }
+      ]
+    },
+    {
+      "fromRealmLv": 41,
+      "toRealmLv": 42,
+      "title": "半步金丹",
+      "requirements": [
+        {
+          "id": "bw_41_42_spirit_stone",
+          "type": "item",
+          "itemId": "spirit_stone",
+          "count": 263,
+          "label": "备齐灵石 263 枚，凝练根基",
+          "increaseAttrRequirementPct": 18
+        }
+      ]
+    },
+    {
+      "fromRealmLv": 42,
+      "toRealmLv": 43,
+      "title": "金丹一层",
+      "requirements": [
+        {
+          "id": "bw_42_43_spirit_stone",
+          "type": "item",
+          "itemId": "spirit_stone",
+          "count": 272,
+          "label": "备齐灵石 272 枚，凝练根基",
+          "increaseAttrRequirementPct": 18
+        }
+      ]
     }
   ]
 }

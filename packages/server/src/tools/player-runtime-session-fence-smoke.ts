@@ -88,7 +88,7 @@ async function main() {
   assert.equal(firstPresence?.runtimeOwnerId, firstFence?.runtimeOwnerId);
   assert.equal(firstPresence?.online, true);
   assert.equal(firstPresence?.inWorld, false);
-  assert.ok(firstFence?.runtimeOwnerId?.includes('sid:first'));
+  assertRuntimeOwnerId(firstFence?.runtimeOwnerId);
   assert.ok(firstDirtyDomains?.has('presence'));
 
   const firstOwner = firstFence?.runtimeOwnerId ?? '';
@@ -110,7 +110,7 @@ async function main() {
   const seededFence = service.getSessionFence(seededPlayerId);
   assert.equal(seeded.sessionId, 'sid:seeded');
   assert.equal(seededFence?.sessionEpoch, 8);
-  assert.ok(seededFence?.runtimeOwnerId?.includes('sid:seeded'));
+  assertRuntimeOwnerId(seededFence?.runtimeOwnerId);
 
   const healedFence = service.ensureRuntimeSessionFenceAtLeast(seededPlayerId, 9);
   const healedPresence = service.describePersistencePresence(seededPlayerId);
@@ -126,7 +126,7 @@ async function main() {
   assert.equal(replaced.sessionId, 'sid:second');
   assert.equal(replacedFence?.sessionEpoch, 2);
   assert.notEqual(replacedFence?.runtimeOwnerId, firstOwner);
-  assert.ok(replacedFence?.runtimeOwnerId?.includes('sid:second'));
+  assertRuntimeOwnerId(replacedFence?.runtimeOwnerId);
   assert.equal(runtimeSnapshot?.runtimeOwnerId, replacedFence?.runtimeOwnerId);
   assert.equal(runtimeSnapshot?.sessionEpoch, 2);
   assert.ok(replacedDirtyDomains?.has('presence'));
@@ -158,10 +158,10 @@ async function main() {
   assert.equal(loaded, first);
   assert.equal(loaderCalled, false);
   assert.equal(loadedFence?.sessionEpoch, 3);
-  assert.ok(loadedFence?.runtimeOwnerId?.includes('sid:third'));
+  assertRuntimeOwnerId(loadedFence?.runtimeOwnerId);
   assert.equal(transferFence?.sessionEpoch, 4);
   assert.notEqual(transferFence?.runtimeOwnerId, loadedFence?.runtimeOwnerId);
-  assert.ok(transferFence?.runtimeOwnerId?.includes('sid:third'));
+  assertRuntimeOwnerId(transferFence?.runtimeOwnerId);
   assert.equal(transferPresence?.transferState, 'in_transfer');
   assert.equal(transferPresence?.transferTargetNodeId, 'node:transfer-target');
   assert.equal(transferPresence?.sessionEpoch, 4);
@@ -197,6 +197,11 @@ async function main() {
       2,
     ),
   );
+}
+
+function assertRuntimeOwnerId(value: unknown): asserts value is string {
+  assert.equal(typeof value, 'string');
+  assert.match(value as string, /^rt:[a-z0-9]+:[a-z0-9]+:[a-z0-9]+:[A-Za-z0-9_-]+$/u);
 }
 
 main().catch((error) => {

@@ -11,42 +11,42 @@ type MainLowFrequencySocketBindingsOptions = {
  * socket：socket相关字段。
  */
 
-  socket: Pick<SocketManager, 'on' | 'onKick' | 'onConnectError' | 'onDisconnect'>;  
+  socket: Pick<SocketManager, 'on' | 'onKick' | 'onConnectError' | 'onDisconnect'>;
   /**
  * onLootWindowUpdate：on掉落窗口Update相关字段。
  */
 
-  onLootWindowUpdate: (data: ServerToClientEventPayload<typeof S2C.LootWindowUpdate>) => void;  
+  onLootWindowUpdate: (data: ServerToClientEventPayload<typeof S2C.LootWindowUpdate>) => void;
   /**
  * onTileDetail：onTile详情状态或数据块。
  */
 
-  onTileDetail: (data: ServerToClientEventPayload<typeof S2C.TileDetail>) => void;  
+  onTileDetail: (data: ServerToClientEventPayload<typeof S2C.TileDetail>) => void;
   /**
  * onDetail：on详情状态或数据块。
  */
 
-  onDetail: (data: ServerToClientEventPayload<typeof S2C.Detail>) => void;  
+  onDetail: (data: ServerToClientEventPayload<typeof S2C.Detail>) => void;
   /**
  * onAttrDetail：onAttr详情状态或数据块。
  */
 
-  onAttrDetail: (data: ServerToClientEventPayload<typeof S2C.AttrDetail>) => void;  
+  onAttrDetail: (data: ServerToClientEventPayload<typeof S2C.AttrDetail>) => void;
   /**
  * onAlchemyPanel：on炼丹面板相关字段。
  */
 
-  onAlchemyPanel: (data: ServerToClientEventPayload<typeof S2C.AlchemyPanel>) => void;  
+  onAlchemyPanel: (data: ServerToClientEventPayload<typeof S2C.AlchemyPanel>) => void;
   /**
  * onEnhancementPanel：on强化面板相关字段。
  */
 
-  onEnhancementPanel: (data: ServerToClientEventPayload<typeof S2C.EnhancementPanel>) => void;  
+  onEnhancementPanel: (data: ServerToClientEventPayload<typeof S2C.EnhancementPanel>) => void;
   /**
  * onLeaderboard：onLeaderboard相关字段。
  */
 
-  onLeaderboard: (data: ServerToClientEventPayload<typeof S2C.Leaderboard>) => void;  
+  onLeaderboard: (data: ServerToClientEventPayload<typeof S2C.Leaderboard>) => void;
   /**
  * onLeaderboardPlayerLocations：玩家击杀榜坐标追索结果。
  */
@@ -56,112 +56,122 @@ type MainLowFrequencySocketBindingsOptions = {
  * onWorldSummary：on世界摘要状态或数据块。
  */
 
-  onWorldSummary: (data: ServerToClientEventPayload<typeof S2C.WorldSummary>) => void;  
+  onWorldSummary: (data: ServerToClientEventPayload<typeof S2C.WorldSummary>) => void;
   /**
  * onNpcQuests：集合字段。
  */
 
-  onNpcQuests: (data: ServerToClientEventPayload<typeof S2C.NpcQuests>) => void;  
+  onNpcQuests: (data: ServerToClientEventPayload<typeof S2C.NpcQuests>) => void;
   /**
  * onQuests：集合字段。
  */
 
-  onQuests: (data: ServerToClientEventPayload<typeof S2C.Quests>) => void;  
+  onQuests: (data: ServerToClientEventPayload<typeof S2C.Quests>) => void;
   /**
  * onQuestNavigateResult：on任务Navigate结果相关字段。
  */
 
-  onQuestNavigateResult: (data: ServerToClientEventPayload<typeof S2C.QuestNavigateResult>) => void;  
+  onQuestNavigateResult: (data: ServerToClientEventPayload<typeof S2C.QuestNavigateResult>) => void;
+  /**
+ * onOfflineGainReports：on离线收益报告相关字段。
+ */
+
+  onOfflineGainReports: (data: ServerToClientEventPayload<typeof S2C.OfflineGainReports>) => void;
   /**
  * onSuggestionUpdate：onSuggestionUpdate相关字段。
  */
 
-  onSuggestionUpdate: (data: ServerToClientEventPayload<typeof S2C.SuggestionUpdate>) => void;  
+  onSuggestionUpdate: (data: ServerToClientEventPayload<typeof S2C.SuggestionUpdate>) => void;
   /**
  * onMailSummary：on邮件摘要状态或数据块。
  */
 
-  onMailSummary: (data: ServerToClientEventPayload<typeof S2C.MailSummary>) => void;  
+  onMailSummary: (data: ServerToClientEventPayload<typeof S2C.MailSummary>) => void;
   /**
  * onMailPage：on邮件Page相关字段。
  */
 
-  onMailPage: (data: ServerToClientEventPayload<typeof S2C.MailPage>) => void;  
+  onMailPage: (data: ServerToClientEventPayload<typeof S2C.MailPage>) => void;
   /**
  * onMailDetail：on邮件详情状态或数据块。
  */
 
-  onMailDetail: (data: ServerToClientEventPayload<typeof S2C.MailDetail>) => void;  
+  onMailDetail: (data: ServerToClientEventPayload<typeof S2C.MailDetail>) => void;
   /**
  * onRedeemCodesResult：onRedeemCode结果相关字段。
  */
 
-  onRedeemCodesResult: (data: ServerToClientEventPayload<typeof S2C.RedeemCodesResult>) => void;  
+  onRedeemCodesResult: (data: ServerToClientEventPayload<typeof S2C.RedeemCodesResult>) => void;
   /**
  * onMailOpResult：on邮件Op结果相关字段。
  */
 
-  onMailOpResult: (data: ServerToClientEventPayload<typeof S2C.MailOpResult>) => void;  
+  onMailOpResult: (data: ServerToClientEventPayload<typeof S2C.MailOpResult>) => void;
   /**
  * onMarketUpdate：on坊市Update相关字段。
  */
 
-  onMarketUpdate: (data: ServerToClientEventPayload<typeof S2C.MarketUpdate>) => void;  
+  onMarketUpdate: (data: ServerToClientEventPayload<typeof S2C.MarketUpdate>) => void;
   /**
  * onMarketListings：on坊市Listing相关字段。
  */
 
-  onMarketListings: (data: ServerToClientEventPayload<typeof S2C.MarketListings>) => void;  
+  onMarketListings: (data: ServerToClientEventPayload<typeof S2C.MarketListings>) => void;
+  /**
+ * onAuctionListings：on拍卖行Listing相关字段。
+ */
+
+  onAuctionListings: (data: ServerToClientEventPayload<typeof S2C.AuctionListings>) => void;
   /**
  * onMarketOrders：on坊市订单相关字段。
  */
 
-  onMarketOrders: (data: ServerToClientEventPayload<typeof S2C.MarketOrders>) => void;  
+  onMarketOrders: (data: ServerToClientEventPayload<typeof S2C.MarketOrders>) => void;
   /**
  * onMarketStorage：on坊市Storage相关字段。
  */
 
-  onMarketStorage: (data: ServerToClientEventPayload<typeof S2C.MarketStorage>) => void;  
+  onMarketStorage: (data: ServerToClientEventPayload<typeof S2C.MarketStorage>) => void;
   /**
  * onMarketItemBook：on坊市道具Book相关字段。
  */
 
-  onMarketItemBook: (data: ServerToClientEventPayload<typeof S2C.MarketItemBook>) => void;  
+  onMarketItemBook: (data: ServerToClientEventPayload<typeof S2C.MarketItemBook>) => void;
   /**
  * onMarketTradeHistory：on坊市TradeHistory相关字段。
  */
 
-  onMarketTradeHistory: (data: ServerToClientEventPayload<typeof S2C.MarketTradeHistory>) => void;  
+  onMarketTradeHistory: (data: ServerToClientEventPayload<typeof S2C.MarketTradeHistory>) => void;
   /**
  * onNpcShop：onNPCShop相关字段。
  */
 
-  onNpcShop: (data: ServerToClientEventPayload<typeof S2C.NpcShop>) => void;  
+  onNpcShop: (data: ServerToClientEventPayload<typeof S2C.NpcShop>) => void;
   /**
  * onNotice：onNotice相关字段。
  */
 
-  onNotice: (data: ServerToClientEventPayload<typeof S2C.Notice>) => void;  
+  onNotice: (data: ServerToClientEventPayload<typeof S2C.Notice>) => void;
   /**
  * onError：onError相关字段。
  */
 
-  onError: (data: ServerToClientEventPayload<typeof S2C.Error>) => void;  
+  onError: (data: ServerToClientEventPayload<typeof S2C.Error>) => void;
   /**
  * onKick：onKick相关字段。
  */
 
-  onKick: Parameters<SocketManager['onKick']>[0];  
+  onKick: Parameters<SocketManager['onKick']>[0];
   /**
  * onConnectError：onConnectError相关字段。
  */
 
-  onConnectError: Parameters<SocketManager['onConnectError']>[0];  
+  onConnectError: Parameters<SocketManager['onConnectError']>[0];
   /**
  * onDisconnect：onDisconnect相关字段。
  */
 
-  onDisconnect: Parameters<SocketManager['onDisconnect']>[0];  
+  onDisconnect: Parameters<SocketManager['onDisconnect']>[0];
   /**
  * onPong：onPong相关字段。
  */
@@ -190,6 +200,7 @@ export function bindMainLowFrequencySocketEvents(options: MainLowFrequencySocket
   options.socket.on(S2C.NpcQuests, options.onNpcQuests);
   options.socket.on(S2C.Quests, options.onQuests);
   options.socket.on(S2C.QuestNavigateResult, options.onQuestNavigateResult);
+  options.socket.on(S2C.OfflineGainReports, options.onOfflineGainReports);
   options.socket.on(S2C.SuggestionUpdate, options.onSuggestionUpdate);
   options.socket.on(S2C.MailSummary, options.onMailSummary);
   options.socket.on(S2C.MailPage, options.onMailPage);
@@ -198,6 +209,7 @@ export function bindMainLowFrequencySocketEvents(options: MainLowFrequencySocket
   options.socket.on(S2C.MailOpResult, options.onMailOpResult);
   options.socket.on(S2C.MarketUpdate, options.onMarketUpdate);
   options.socket.on(S2C.MarketListings, options.onMarketListings);
+  options.socket.on(S2C.AuctionListings, options.onAuctionListings);
   options.socket.on(S2C.MarketOrders, options.onMarketOrders);
   options.socket.on(S2C.MarketStorage, options.onMarketStorage);
   options.socket.on(S2C.MarketItemBook, options.onMarketItemBook);

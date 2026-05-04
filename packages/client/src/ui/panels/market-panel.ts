@@ -1,4 +1,8 @@
 import {
+  AuctionLotPageEntry,
+  AuctionLotStatus,
+  AuctionHouseTab,
+  C2S_RequestAuctionListings,
   C2S_RequestMarketListings,
   computeBestEnhancementExpectedCost,
   calculateMarketTradeTotalCost,
@@ -19,6 +23,7 @@ import {
   MarketOwnOrderView,
   MarketStorage,
   PlayerState,
+  S2C_AuctionListings,
   S2C_MarketListings,
   S2C_MarketItemBook,
   S2C_MarketOrders,
@@ -75,6 +80,11 @@ interface MarketPanelCallbacks {
 
   onRequestListings: (payload: C2S_RequestMarketListings) => void;
   /**
+ * onRequestAuctionListings：onRequest拍卖行Listing相关字段。
+ */
+
+  onRequestAuctionListings: (payload: C2S_RequestAuctionListings) => void;
+  /**
  * onRequestItemBook：onRequest道具Book相关字段。
  */
 
@@ -95,6 +105,16 @@ interface MarketPanelCallbacks {
 
   onCreateBuyOrder: (itemKey: string, quantity: number, unitPrice: number) => void;
   /**
+ * onPlaceAuctionBid：提交拍卖行加价。
+ */
+
+  onPlaceAuctionBid: (lotId: string, itemKey: string, unitPrice: number) => void;
+  /**
+ * onBuyoutAuctionLot：提交拍卖行一口价。
+ */
+
+  onBuyoutAuctionLot: (lotId: string, itemKey: string) => void;
+  /**
  * onCancelOrder：onCancel订单相关字段。
  */
 
@@ -114,9 +134,10 @@ type MarketEquipmentFilter = 'all' | EquipSlot;
 type MarketTechniqueFilter = 'all' | TechniqueCategory;
 /** 交易弹窗的方向。 */
 type MarketTradeDialogKind = 'buy' | 'sell';
+/** 交易弹窗的来源场景。 */
+type MarketTradeDialogSource = 'market' | 'auction-bid';
 /** 交易弹窗里调价按钮的动作类型。 */
 type MarketPriceAction = 'decrease' | 'increase' | 'double' | 'half' | 'preset';
-
 /** 交易弹窗当前的可编辑状态。 */
 interface MarketTradeDialogState {
 /**
@@ -134,6 +155,10 @@ interface MarketTradeDialogState {
  */
 
   unitPrice: number;
+  /** 来源场景，用来区分普通坊市交易和拍卖加价。 */
+  source?: MarketTradeDialogSource;
+  /** 拍卖加价允许的最低单价。 */
+  minUnitPrice?: number;
   /** 是否来自卖盘快捷购买，需要二次确认购买。 */
   confirmPurchase?: boolean;
 }
@@ -141,14 +166,19 @@ interface MarketTradeDialogState {
 /** 交易弹窗一次渲染需要的派生状态，供整渲染和局部 patch 共用。 */
 interface MarketTradeDialogViewState {
   dialog: MarketTradeDialogState;
+  source: MarketTradeDialogSource;
   title: string;
   actionLabel: string;
+  totalLabel: string;
   quantityStep: number;
   inputMax: number;
   totalText: string;
   insufficientCurrency: boolean;
   disabled: boolean;
   maxButtonDisabled: boolean;
+  showPricePresets: boolean;
+  showQuantityControls: boolean;
+  priceActionDisabled: Partial<Record<MarketPriceAction, boolean>>;
   hintsHtml: string;
 }
 
@@ -199,6 +229,30 @@ interface MarketListingGroupView {
   variants: MarketListedItemView[];
 }
 
+/** 拍卖行 UI 使用的轻量拍品视图。 */
+interface AuctionLotView {
+  id: string;
+  itemKey: string;
+  item: ItemStack;
+  itemName: string;
+  typeLabel: string;
+  qualityLabel: string;
+  currentPrice: number;
+  buyoutPrice: number | null;
+  bidCount: number;
+  bids: AuctionLotPageEntry['bids'];
+  startAtMs: number;
+  durationSeconds: number;
+  status: AuctionLotStatus;
+  statusLabel: string;
+  sellerLabel: string;
+  lotNo: string;
+  heat: number;
+  orderId?: string;
+  orderSide?: MarketOwnOrderView['side'];
+  remainingQuantity?: number;
+}
+
 /** 桌面端市场列表的默认分页大小。 */
 const MARKET_DESKTOP_PAGE_SIZE = 32;
 /** 移动端市场列表的默认分页大小。 */
@@ -233,11 +287,15 @@ const MARKET_TECHNIQUE_FILTERS: Array<{
 const ENHANCEMENT_BASE_JOB_TICKS = 5;
 /** 物品等级每升一级额外增加的强化耗时。 */
 const ENHANCEMENT_JOB_TICKS_PER_ITEM_LEVEL = 1;
+/** 拍卖行每页最多显示的拍品数量。 */
+const AUCTION_PAGE_SIZE = 10;
 
 /** 市场面板实现，负责列表浏览、物品书籍、交易弹窗和强化预估。 */
 export class MarketPanel {
   /** 市场详情弹窗的归属标识。 */
   private static readonly MODAL_OWNER = 'market-panel';
+  /** 拍卖行详情弹窗的归属标识。 */
+  private static readonly AUCTION_MODAL_OWNER = 'auction-house-panel';
   /** 交易弹窗根节点的 id。 */
   private static readonly TRADE_MODAL_ID = 'market-trade-modal-root';
   /** 买入确认弹层的归属标识。 */
@@ -252,6 +310,8 @@ export class MarketPanel {
   private itemBook: MarketOrderBookView | null = null;
   /** 最近一次列表分页数据，供筛选和翻页回填。 */
   private marketListings: S2C_MarketListings | null = null;
+  /** 最近一次拍卖行分页数据，服务端已经按筛选和页码裁剪。 */
+  private auctionListings: S2C_AuctionListings | null = null;
   /** 物品书籍本地缓存，避免重复请求同一份详情。 */
   private readonly itemBookCache = new Map<string, MarketOrderBookView>();
   /** 正在等待服务端回包的物品书籍 key。 */
@@ -270,6 +330,16 @@ export class MarketPanel {
   private activeEquipmentCategory: MarketEquipmentFilter = 'all';
   /** 当前功法子分类筛选。 */
   private activeTechniqueCategory: MarketTechniqueFilter = 'all';
+  /** 拍卖行当前标签页。 */
+  private auctionTab: AuctionHouseTab = 'participate';
+  /** 拍卖行物品分类筛选。 */
+  private auctionCategory: MarketCategoryFilter = 'all';
+  /** 拍卖行搜索关键字。 */
+  private auctionSearchQuery = '';
+  /** 拍卖行当前选中的拍品 id。 */
+  private selectedAuctionItemKey: string | null = null;
+  /** 拍卖行当前页码。 */
+  private auctionPage = 1;
   /** 当前列表页码。 */
   private currentPage = 1;
   /** 交易历史页码。 */
@@ -293,6 +363,8 @@ export class MarketPanel {
   private tooltip = new FloatingTooltip('floating-tooltip market-item-tooltip');
   /** 当前正在显示提示的节点。 */
   private tooltipNode: HTMLElement | null = null;
+  /** 拍卖行倒计时本地 ticker，只局部更新倒计时文本。 */
+  private auctionCountdownTimer: ReturnType<typeof window.setInterval> | null = null;
   /**
  * 构造器：初始化 当前 实例并建立基础状态。
  * @returns 无返回值，完成实例初始化。
@@ -323,6 +395,9 @@ export class MarketPanel {
     if (detailModalHost.isOpenFor(MarketPanel.MODAL_OWNER)) {
       this.syncVisibleMarketInventoryState();
       this.syncTradeDialogOverlay();
+    } else if (detailModalHost.isOpenFor(MarketPanel.AUCTION_MODAL_OWNER)) {
+      this.patchAuctionDetailPanel();
+      this.syncTradeDialogOverlay();
     }
   }
 
@@ -333,6 +408,9 @@ export class MarketPanel {
     this.inventory = inventory;
     if (detailModalHost.isOpenFor(MarketPanel.MODAL_OWNER)) {
       this.syncVisibleMarketInventoryState();
+      this.syncTradeDialogOverlay();
+    } else if (detailModalHost.isOpenFor(MarketPanel.AUCTION_MODAL_OWNER)) {
+      this.patchAuctionDetailPanel();
       this.syncTradeDialogOverlay();
     }
   }
@@ -359,6 +437,13 @@ export class MarketPanel {
         this.requestItemBook(this.selectedItemKey);
       }
       this.renderModal();
+    } else if (detailModalHost.isOpenFor(MarketPanel.AUCTION_MODAL_OWNER)) {
+    this.syncAuctionSelection();
+    const selectedAuctionLot = this.resolveAuctionLotByKey(this.selectedAuctionItemKey, this.marketUpdate, this.auctionTab);
+    if (selectedAuctionLot) {
+      this.requestItemBook(selectedAuctionLot.itemKey);
+    }
+      this.renderAuctionModal();
     } else {
       this.syncTradeDialogOverlay();
     }
@@ -378,6 +463,22 @@ export class MarketPanel {
     this.renderPane();
     if (detailModalHost.isOpenFor(MarketPanel.MODAL_OWNER)) {
       this.renderModal();
+    }
+  }
+
+  /** 更新拍卖行分页数据。 */
+  updateAuctionListings(data: S2C_AuctionListings): void {
+  // 关键分支按状态与边界条件处理，非法路径会被提前拦截。
+
+    this.auctionListings = data;
+    this.auctionTab = data.tab;
+    this.auctionCategory = data.category;
+    this.auctionSearchQuery = data.query ?? '';
+    this.auctionPage = Math.max(1, Math.floor(Number.isFinite(data.page) ? data.page : 1));
+    this.syncAuctionSelection();
+    this.renderPane();
+    if (detailModalHost.isOpenFor(MarketPanel.AUCTION_MODAL_OWNER)) {
+      this.renderAuctionModal();
     }
   }
 
@@ -406,6 +507,9 @@ export class MarketPanel {
     this.renderPane();
     if (detailModalHost.isOpenFor(MarketPanel.MODAL_OWNER)) {
       this.renderModal();
+    } else if (detailModalHost.isOpenFor(MarketPanel.AUCTION_MODAL_OWNER)) {
+      this.syncAuctionSelection();
+      this.renderAuctionModal();
     } else {
       this.syncTradeDialogOverlay();
     }
@@ -427,6 +531,8 @@ export class MarketPanel {
     this.renderPane();
     if (detailModalHost.isOpenFor(MarketPanel.MODAL_OWNER)) {
       this.renderModal();
+    } else if (detailModalHost.isOpenFor(MarketPanel.AUCTION_MODAL_OWNER)) {
+      this.renderAuctionModal();
     }
   }
 
@@ -449,6 +555,8 @@ export class MarketPanel {
       if (this.modalTab === 'market') {
         this.patchSelectedBookPanel();
       }
+    } else if (detailModalHost.isOpenFor(MarketPanel.AUCTION_MODAL_OWNER)) {
+      this.patchAuctionDetailPanel();
     } else {
       this.syncTradeDialogOverlay();
     }
@@ -473,6 +581,7 @@ export class MarketPanel {
     this.marketUpdate = null;
     this.itemBook = null;
     this.marketListings = null;
+    this.auctionListings = null;
     this.selectedItemKey = null;
     this.selectedGroupItemId = null;
     this.enhancementBrowseItemId = null;
@@ -480,6 +589,11 @@ export class MarketPanel {
     this.activeCategory = 'all';
     this.activeEquipmentCategory = 'all';
     this.activeTechniqueCategory = 'all';
+    this.auctionTab = 'participate';
+    this.auctionCategory = 'all';
+    this.auctionSearchQuery = '';
+    this.selectedAuctionItemKey = null;
+    this.auctionPage = 1;
     this.currentPage = 1;
     this.tradeHistoryPage = 1;
     this.itemBookLoading = false;
@@ -491,10 +605,12 @@ export class MarketPanel {
     this.hasRequestedMarketBootstrap = false;
     this.tooltipNode = null;
     this.tooltip.hide(true);
+    this.stopAuctionCountdownTicker();
     this.syncTradeDialogOverlay();
     this.renderPane();
     confirmModalHost.close(MarketPanel.CONFIRM_MODAL_OWNER);
     detailModalHost.close(MarketPanel.MODAL_OWNER);
+    detailModalHost.close(MarketPanel.AUCTION_MODAL_OWNER);
   }
 
   /** 渲染面板首屏摘要，只保留打开坊市的入口。 */
@@ -502,6 +618,7 @@ export class MarketPanel {
     const listedCount = this.marketListings?.total ?? this.marketUpdate?.listedItems.length ?? 0;
     const orderCount = this.marketUpdate?.myOrders.length ?? 0;
     const storageCount = this.marketUpdate?.storage.items.reduce((sum, item) => sum + item.count, 0) ?? 0;
+    const auctionStats = this.getAuctionPaneStats(this.marketUpdate);
     preserveSelection(this.pane, () => {
       patchElementHtml(this.pane, `
         <div class="panel-section market-pane ui-surface-pane ui-surface-pane--stack">
@@ -513,6 +630,30 @@ export class MarketPanel {
             <div class="market-pane-stat"><strong>${formatDisplayInteger(storageCount)}</strong><span>托管物品</span></div>
           </div>
           <button class="small-btn" data-market-open type="button">打开坊市</button>
+        </div>
+        <div class="panel-section market-pane auction-pane ui-surface-pane ui-surface-pane--stack">
+          <div class="market-pane-headline">
+            <div class="panel-section-title">拍卖简报</div>
+            <button class="small-btn ghost" data-auction-open="participate" type="button">打开拍卖行</button>
+          </div>
+          <div class="market-pane-copy ui-form-copy">竞价、关注和寄拍集中在独立拍卖行界面处理，简报只显示当前可参与状态。</div>
+          <div class="auction-pane-cards">
+            <button class="auction-pane-card ui-surface-card ui-surface-card--compact" data-auction-open="participate" type="button">
+              <span>参与拍卖</span>
+              <strong>${formatDisplayInteger(auctionStats.activeLots)}</strong>
+              <small>${formatDisplayInteger(auctionStats.myBids)} 件正在竞价</small>
+            </button>
+            <button class="auction-pane-card ui-surface-card ui-surface-card--compact" data-auction-open="mine" type="button">
+              <span>我的寄拍</span>
+              <strong>${formatDisplayInteger(auctionStats.myConsignments)}</strong>
+              <small>${formatDisplayInteger(auctionStats.storageCount)} 件待结算</small>
+            </button>
+          </div>
+          <div class="auction-pane-feed">
+            ${auctionStats.feed.length > 0
+              ? auctionStats.feed.map((entry) => `<div class="auction-pane-feed-row"><span>${escapeHtml(entry.status)}</span><strong>${escapeHtml(entry.name)}</strong><small>${escapeHtml(entry.meta)}</small></div>`).join('')
+              : '<div class="empty-hint">暂无拍卖动态。</div>'}
+          </div>
         </div>
       `);
     });
@@ -530,6 +671,15 @@ export class MarketPanel {
           this.callbacks?.onRequestMarket();
         }
         this.openModal();
+        return;
+      }
+      const auctionOpen = target.closest<HTMLElement>('[data-auction-open]');
+      if (auctionOpen) {
+        const tab = auctionOpen.dataset.auctionOpen === 'mine' ? 'mine' : 'participate';
+        if (!this.requestMarketBootstrap()) {
+          this.callbacks?.onRequestMarket();
+        }
+        this.openAuctionModal(tab);
       }
     });
   }
@@ -568,7 +718,7 @@ export class MarketPanel {
       variantClass: 'detail-modal--market',
       title: '坊市',
       subtitle: '天下修士互通有无',
-      renderBody: (body) => {
+      renderBody: (body: HTMLElement) => {
         patchElementHtml(
           body,
           marketUpdate
@@ -581,7 +731,7 @@ export class MarketPanel {
         this.tooltipNode = null;
         this.tooltip.hide(true);
       },
-      onAfterRender: (body, signal) => {
+      onAfterRender: (body: HTMLElement, signal: AbortSignal) => {
         body.querySelectorAll<HTMLElement>('[data-market-modal-tab]').forEach((button) => button.addEventListener('click', () => {
           const tab = button.dataset.marketModalTab as MarketModalTab | undefined;
           if (!tab || tab === this.modalTab) {
@@ -748,6 +898,450 @@ export class MarketPanel {
         this.syncTradeDialogOverlay();
       },
     });
+  }
+
+  /** 打开拍卖行独立弹层。 */
+  private openAuctionModal(tab: AuctionHouseTab = this.auctionTab): void {
+    this.auctionTab = tab;
+    this.auctionPage = this.auctionListings?.tab === tab ? this.auctionPage : 1;
+    this.requestAuctionListings(this.auctionPage);
+    this.syncAuctionSelection();
+    const selectedAuctionLot = this.resolveAuctionLotByKey(this.selectedAuctionItemKey, this.marketUpdate, this.auctionTab);
+    if (selectedAuctionLot) {
+      this.selectedItemKey = selectedAuctionLot.itemKey;
+      this.requestItemBook(selectedAuctionLot.itemKey);
+    }
+    this.renderAuctionModal();
+  }
+
+  /** 渲染拍卖行独立界面。 */
+  private renderAuctionModal(): void {
+    const marketUpdate = this.marketUpdate;
+    this.syncAuctionSelection();
+    const options = {
+      ownerId: MarketPanel.AUCTION_MODAL_OWNER,
+      size: 'full',
+      variantClass: 'detail-modal--market detail-modal--auction-house',
+      title: '拍卖行',
+      subtitle: '竞价拍品与寄拍管理',
+      renderBody: (body: HTMLElement) => {
+        patchElementHtml(
+          body,
+          marketUpdate
+            ? this.renderAuctionModalBody(marketUpdate)
+            : '<div class="empty-hint">拍卖行行情查探中...</div>',
+        );
+      },
+      onClose: () => {
+        this.tradeDialog = null;
+        this.tooltipNode = null;
+        this.tooltip.hide(true);
+        this.stopAuctionCountdownTicker();
+        this.syncTradeDialogOverlay();
+      },
+      onAfterRender: (body: HTMLElement, signal: AbortSignal) => {
+        this.bindAuctionModalEvents(body, signal);
+        this.bindMarketModalDelegatedEvents(body, signal);
+        this.startAuctionCountdownTicker();
+        this.patchAuctionCountdowns();
+        this.syncTradeDialogOverlay();
+      },
+    } as const;
+    if (detailModalHost.isOpenFor(MarketPanel.AUCTION_MODAL_OWNER)) {
+      detailModalHost.patch(options);
+      return;
+    }
+    detailModalHost.open(options);
+  }
+
+  /** 渲染拍卖行主体。 */
+  private renderAuctionModalBody(update: S2C_MarketUpdate): string {
+    const lots = this.getCurrentAuctionLots();
+    return `
+      <div class="auction-house-shell">
+        <div class="auction-house-tabs" role="tablist" aria-label="拍卖行分栏">
+          <button class="auction-house-tab ${this.auctionTab === 'participate' ? 'active' : ''}" data-auction-tab="participate" type="button">参与拍卖</button>
+          <button class="auction-house-tab ${this.auctionTab === 'mine' ? 'active' : ''}" data-auction-tab="mine" type="button">我的寄拍</button>
+        </div>
+        ${this.renderAuctionSummaryCards(update)}
+        ${this.auctionTab === 'participate'
+          ? this.renderAuctionParticipateTab(update, lots)
+          : this.renderAuctionMineTab(update, lots)}
+      </div>
+    `;
+  }
+
+  /** 渲染拍卖行顶部摘要卡。 */
+  private renderAuctionSummaryCards(update: S2C_MarketUpdate): string {
+    const summary = this.getAuctionSummary(update);
+    return `
+      <div class="auction-house-summary">
+        <div class="auction-summary-card ui-surface-card ui-surface-card--compact">
+          <span>正在拍卖</span>
+          <strong>${formatDisplayInteger(summary.activeLots)}</strong>
+          <small>${formatDisplayInteger(summary.buyoutLots)} 件可一口价</small>
+        </div>
+        <div class="auction-summary-card ui-surface-card ui-surface-card--compact">
+          <span>成交总额</span>
+          <strong>${this.formatMarketUnitPrice(summary.totalCurrentPrice)}</strong>
+          <small>${escapeHtml(update.currencyItemName)}</small>
+        </div>
+        <div class="auction-summary-card ui-surface-card ui-surface-card--compact">
+          <span>我的竞拍</span>
+          <strong>${formatDisplayInteger(summary.myBidCount)}</strong>
+          <small>当前求购竞价</small>
+        </div>
+        <div class="auction-summary-card ui-surface-card ui-surface-card--compact">
+          <span>我的寄拍</span>
+          <strong>${formatDisplayInteger(summary.myConsignments)}</strong>
+          <small>寄拍中 ${formatDisplayInteger(summary.consigningLots)}</small>
+        </div>
+      </div>
+    `;
+  }
+
+  /** 渲染参与拍卖页。 */
+  private renderAuctionParticipateTab(update: S2C_MarketUpdate, lots: AuctionLotView[]): string {
+    const pagination = this.getAuctionPageState(lots);
+    const selected = this.resolveAuctionLotByKey(this.selectedAuctionItemKey, update, 'participate') ?? lots[0] ?? null;
+    return `
+      <div class="auction-house-board">
+        ${this.renderAuctionFilterRail()}
+        <div class="auction-list-panel ui-surface-pane ui-surface-pane--stack">
+          <div class="auction-list-toolbar ui-action-row">
+            <div class="market-list-toolbar-meta">共 ${formatDisplayInteger(pagination.totalItems)} 件拍品，第 ${formatDisplayInteger(pagination.page)} / ${formatDisplayInteger(pagination.totalPages)} 页</div>
+            <div class="market-list-toolbar-actions">
+              <button class="small-btn ghost" data-auction-page="${pagination.page - 1}" type="button" ${pagination.page <= 1 ? 'disabled' : ''}>上一页</button>
+              <button class="small-btn ghost" data-auction-page="${pagination.page + 1}" type="button" ${pagination.page >= pagination.totalPages ? 'disabled' : ''}>下一页</button>
+              <button class="small-btn ghost" data-auction-refresh type="button">刷新列表</button>
+            </div>
+          </div>
+          <div class="auction-list-head">
+            <span>物品</span>
+            <span>品质</span>
+            <span>当前价</span>
+            <span>一口价</span>
+            <span>剩余时间</span>
+          </div>
+          <div class="auction-list ui-scroll-panel">
+            ${lots.length > 0
+              ? lots.map((lot) => this.renderAuctionLotRow(lot, selected?.id ?? '')).join('')
+              : '<div class="empty-hint">当前筛选下暂无可参与拍品。</div>'}
+          </div>
+        </div>
+        <div class="auction-detail-panel ui-surface-pane ui-surface-pane--stack" data-auction-detail-panel>
+          ${this.renderAuctionDetailPanel(selected, update, 'participate')}
+        </div>
+      </div>
+    `;
+  }
+
+  /** 渲染我的寄拍页。 */
+  private renderAuctionMineTab(update: S2C_MarketUpdate, lots: AuctionLotView[]): string {
+    const pagination = this.getAuctionPageState(lots);
+    const selected = this.resolveAuctionLotByKey(this.selectedAuctionItemKey, update, 'mine') ?? lots[0] ?? null;
+    const consigningCount = this.auctionListings?.summary.consigningLots ?? lots.filter((lot) => lot.status === 'consigning').length;
+    const soldCount = this.auctionListings?.summary.soldLots ?? lots.filter((lot) => lot.status === 'sold').length;
+    const failedCount = this.auctionListings?.summary.failedLots ?? lots.filter((lot) => lot.status === 'failed').length;
+    return `
+      <div class="auction-house-board auction-house-board--mine">
+        <div class="auction-consign-overview ui-surface-pane ui-surface-pane--stack">
+          <div class="panel-section-title">寄拍状态</div>
+          <div class="auction-status-strip">
+            <span class="auction-status-pill active">寄拍中 ${formatDisplayInteger(consigningCount)}</span>
+            <span class="auction-status-pill sold">已成交 ${formatDisplayInteger(soldCount)}</span>
+            <span class="auction-status-pill failed">流拍 ${formatDisplayInteger(failedCount)}</span>
+          </div>
+          <div class="market-pane-copy">撤回寄拍会按托管与背包规则返还剩余物品。</div>
+        </div>
+        <div class="auction-list-panel ui-surface-pane ui-surface-pane--stack">
+          <div class="auction-list-toolbar ui-action-row">
+            <div class="market-list-toolbar-meta">我的寄拍 ${formatDisplayInteger(pagination.totalItems)} 件，第 ${formatDisplayInteger(pagination.page)} / ${formatDisplayInteger(pagination.totalPages)} 页</div>
+            <div class="market-list-toolbar-actions">
+              <button class="small-btn ghost" data-auction-page="${pagination.page - 1}" type="button" ${pagination.page <= 1 ? 'disabled' : ''}>上一页</button>
+              <button class="small-btn ghost" data-auction-page="${pagination.page + 1}" type="button" ${pagination.page >= pagination.totalPages ? 'disabled' : ''}>下一页</button>
+              <button class="small-btn ghost" data-auction-refresh type="button">刷新列表</button>
+            </div>
+          </div>
+          <div class="auction-list-head auction-list-head--mine">
+            <span>物品</span>
+            <span>状态</span>
+            <span>寄拍价</span>
+            <span>剩余</span>
+          </div>
+          <div class="auction-list ui-scroll-panel">
+            ${lots.length > 0
+              ? lots.map((lot) => this.renderAuctionLotRow(lot, selected?.id ?? '', true)).join('')
+              : '<div class="empty-hint">当前没有寄拍中的物品。</div>'}
+          </div>
+        </div>
+        <div class="auction-detail-panel ui-surface-pane ui-surface-pane--stack" data-auction-detail-panel>
+          ${this.renderAuctionDetailPanel(selected, update, 'mine')}
+        </div>
+      </div>
+    `;
+  }
+
+  /** 渲染拍卖行筛选栏。 */
+  private renderAuctionFilterRail(): string {
+    const categories: Array<{ id: MarketCategoryFilter; label: string; count: number }> = [
+      { id: 'all', label: '全部分类', count: this.getAuctionCategoryCount('all', 0) },
+      ...ITEM_TYPES.map((type) => ({
+        id: type,
+        label: getItemTypeLabel(type),
+        count: this.getAuctionCategoryCount(type, 0),
+      })),
+    ];
+    return `
+      <aside class="auction-filter-rail ui-surface-pane ui-surface-pane--stack">
+        <label class="auction-search-field">
+          <span>搜索拍品</span>
+          <input class="ui-search-input" data-auction-search id="auction-search-input" type="search" value="${escapeHtmlAttr(this.auctionSearchQuery)}" placeholder="输入物品名称" />
+        </label>
+        <div class="auction-filter-group">
+          <div class="market-list-toolbar-meta">分类</div>
+          <div class="auction-filter-buttons">
+            ${categories.map((category) => `
+              <button class="auction-filter-button ${this.auctionCategory === category.id ? 'active' : ''}" data-auction-category="${category.id}" type="button">
+                <span>${escapeHtml(category.label)}</span>
+                <strong>${formatDisplayInteger(category.count)}</strong>
+              </button>
+            `).join('')}
+          </div>
+        </div>
+        <div class="auction-filter-note">拍卖行交易收取 5% 手续费，最低 100 灵石。</div>
+      </aside>
+    `;
+  }
+
+  /** 渲染单个拍品行。 */
+  private renderAuctionLotRow(lot: AuctionLotView, activeLotId: string, mine = false): string {
+    const buyoutText = lot.buyoutPrice === null ? '--' : this.formatMarketUnitPrice(lot.buyoutPrice);
+    const remainingSeconds = this.getAuctionRemainingSeconds(lot);
+    const mineRibbon = mine
+      ? '<span class="auction-lot-ribbon" aria-hidden="true"><span>我的寄拍</span></span>'
+      : '';
+    return `
+      <button
+        class="auction-lot-row ${mine ? 'auction-lot-row--mine' : ''} ${lot.id === activeLotId ? 'active' : ''}"
+        data-auction-select-item="${escapeHtmlAttr(lot.id)}"
+        data-ui-key="auction:${escapeHtmlAttr(lot.id)}"
+        type="button"
+      >
+        ${mineRibbon}
+        <span class="auction-lot-item">
+          <strong>${escapeHtml(lot.itemName)}</strong>
+          <small>${escapeHtml(lot.typeLabel)} · ${escapeHtml(lot.lotNo)}</small>
+        </span>
+        <span class="auction-quality-tag">${escapeHtml(mine ? lot.statusLabel : lot.qualityLabel)}</span>
+        <span>${this.formatMarketUnitPrice(lot.currentPrice)}</span>
+        <span>${mine ? formatDisplayCountBadge(lot.remainingQuantity ?? 0) : buyoutText}</span>
+        ${mine ? '' : `<span class="auction-time ${this.getAuctionTimeClass(remainingSeconds)}" data-auction-countdown="${escapeHtmlAttr(lot.id)}">${escapeHtml(this.formatAuctionRemaining(remainingSeconds))}</span>`}
+      </button>
+    `;
+  }
+
+  /** 渲染拍品详情。 */
+  private renderAuctionDetailPanel(lot: AuctionLotView | null, update: S2C_MarketUpdate, tab: AuctionHouseTab): string {
+    if (!lot) {
+      return '<div class="empty-hint">请选择左侧拍品。</div>';
+    }
+    const listedEntry = this.findListingVariantByKey(lot.itemKey, update) ?? this.buildMarketListingFromAuctionLot(lot);
+    const buyConflict = this.findConflictingOwnOrder(lot.itemKey, 'buy');
+    const canBid = tab === 'participate' && Boolean(listedEntry) && !buyConflict;
+    const canBuyout = canBid && lot.buyoutPrice !== null;
+    const ownedCurrency = this.findInventoryItemCountByItemId(update.currencyItemId);
+    return `
+      <div class="auction-detail-head">
+        <div class="auction-item-icon" aria-hidden="true">${escapeHtml(this.getAuctionItemInitial(lot.itemName))}</div>
+        <div class="auction-detail-title">
+          <div class="market-item-title ${listedEntry ? 'market-item-title--interactive' : ''}" ${listedEntry ? `data-market-item-tooltip="${escapeHtmlAttr(lot.itemKey)}"` : ''}>${escapeHtml(lot.itemName)}</div>
+          <div class="market-book-subtitle">${escapeHtml(lot.qualityLabel)} · ${escapeHtml(lot.typeLabel)} · ${escapeHtml(lot.statusLabel)}</div>
+        </div>
+        <div class="auction-countdown">
+          <span>剩余时间</span>
+          <strong data-auction-countdown="${escapeHtmlAttr(lot.id)}">${escapeHtml(this.formatAuctionRemaining(this.getAuctionRemainingSeconds(lot)))}</strong>
+        </div>
+      </div>
+      <div class="auction-price-grid">
+        <div class="auction-price-card ui-surface-card ui-surface-card--compact">
+          <span>当前价</span>
+          <strong>${this.formatMarketUnitPrice(lot.currentPrice)}</strong>
+          <small>${formatDisplayInteger(lot.bidCount)} 次出价</small>
+        </div>
+        <div class="auction-price-card ui-surface-card ui-surface-card--compact">
+          <span>一口价</span>
+          <strong>${lot.buyoutPrice === null ? '--' : this.formatMarketUnitPrice(lot.buyoutPrice)}</strong>
+          <small>${escapeHtml(update.currencyItemName)}</small>
+        </div>
+        <div class="auction-price-card ui-surface-card ui-surface-card--compact">
+          <span>我的灵石</span>
+          <strong>${formatDisplayInteger(ownedCurrency)}</strong>
+          <small>${escapeHtml(update.currencyItemName)}</small>
+        </div>
+      </div>
+      ${tab === 'participate'
+        ? `
+          <div class="auction-bid-actions">
+            <button class="small-btn" data-auction-action="bid" data-auction-action-item="${escapeHtmlAttr(lot.itemKey)}" type="button" ${canBid ? '' : 'disabled'}>出价</button>
+            <button class="small-btn ghost" data-auction-action="buyout" data-auction-action-item="${escapeHtmlAttr(lot.itemKey)}" type="button" ${canBuyout ? '' : 'disabled'}>一口价</button>
+          </div>
+          ${buyConflict ? '<div class="market-action-hint market-action-hint--error">你已经对这件物品发起竞价，不能重复出价。</div>' : ''}
+          <div class="market-action-hint">出价按当前价加一档起拍；一口价会先确认再尝试立即成交。</div>
+          ${this.renderAuctionBidHistory(lot, update.currencyItemName)}
+        `
+        : `
+          <div class="auction-bid-actions">
+            <button class="small-btn ghost" data-auction-cancel="${escapeHtmlAttr(lot.orderId ?? '')}" type="button" ${lot.orderId ? '' : 'disabled'}>撤回寄拍</button>
+          </div>
+          <div class="market-action-hint">剩余数量 ${formatDisplayCountBadge(lot.remainingQuantity ?? 0)}，撤回后会按坊市托管与背包规则返还。</div>
+        `}
+    `;
+  }
+
+  /** 渲染出价记录。 */
+  private renderAuctionBidHistory(lot: AuctionLotView, currencyName: string): string {
+    const rows = Array.isArray(lot.bids) ? lot.bids.slice(0, 6) : [];
+    return `
+      <div class="auction-bid-history ui-surface-pane ui-surface-pane--stack ui-surface-pane--muted">
+        <div class="market-book-column-title">出价记录</div>
+        ${rows.length > 0
+            ? rows.map((level, index) => `
+              <div class="auction-bid-row">
+                <span>${escapeHtml(level.bidderLabel || `匿名修士 ${formatDisplayInteger(index + 1)}`)}</span>
+                <strong>${this.formatMarketUnitPrice(level.unitPrice)} ${escapeHtml(currencyName)}</strong>
+                <small>${escapeHtml(this.formatAuctionBidTime(level.createdAtMs))}</small>
+              </div>
+            `).join('')
+            : '<div class="empty-hint">暂无出价记录。</div>'}
+      </div>
+    `;
+  }
+
+  /** 绑定拍卖行弹层事件。 */
+  private bindAuctionModalEvents(body: HTMLElement, signal: AbortSignal): void {
+    body.querySelectorAll<HTMLElement>('[data-auction-tab]').forEach((button) => button.addEventListener('click', () => {
+      const tab = button.dataset.auctionTab as AuctionHouseTab | undefined;
+      if (!tab || tab === this.auctionTab) {
+        return;
+      }
+      this.auctionTab = tab;
+      this.selectedAuctionItemKey = null;
+      this.auctionPage = 1;
+      this.tradeDialog = null;
+      this.requestAuctionListings(1);
+      this.renderAuctionModal();
+    }, { signal }));
+
+    body.querySelectorAll<HTMLElement>('[data-auction-category]').forEach((button) => button.addEventListener('click', () => {
+      const category = button.dataset.auctionCategory as MarketCategoryFilter | undefined;
+      if (!category || category === this.auctionCategory) {
+        return;
+      }
+      this.auctionCategory = category;
+      this.selectedAuctionItemKey = null;
+      this.auctionPage = 1;
+      this.tradeDialog = null;
+      this.requestAuctionListings(1);
+      this.renderAuctionModal();
+    }, { signal }));
+
+    body.querySelector<HTMLInputElement>('[data-auction-search]')?.addEventListener('input', (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLInputElement)) {
+        return;
+      }
+      this.auctionSearchQuery = target.value;
+      this.selectedAuctionItemKey = null;
+      this.auctionPage = 1;
+      this.requestAuctionListings(1);
+    }, { signal });
+
+    body.querySelectorAll<HTMLElement>('[data-auction-page]').forEach((button) => button.addEventListener('click', () => {
+      const nextPage = Number.parseInt(button.dataset.auctionPage ?? '1', 10);
+      if (!Number.isFinite(nextPage) || nextPage === this.auctionPage) {
+        return;
+      }
+      this.auctionPage = Math.max(1, Math.floor(nextPage));
+      this.selectedAuctionItemKey = null;
+      this.tradeDialog = null;
+      this.requestAuctionListings(this.auctionPage);
+      this.renderAuctionModal();
+    }, { signal }));
+
+    body.querySelectorAll<HTMLElement>('[data-auction-select-item]').forEach((button) => button.addEventListener('click', () => {
+      const lotId = button.dataset.auctionSelectItem;
+      if (!lotId || lotId === this.selectedAuctionItemKey) {
+        return;
+      }
+      const lot = this.resolveAuctionLotByKey(lotId, this.marketUpdate, this.auctionTab);
+      if (!lot) {
+        return;
+      }
+      this.selectedAuctionItemKey = lot.id;
+      this.selectedItemKey = lot.itemKey;
+      this.itemBook = null;
+      this.tradeDialog = null;
+      this.requestItemBook(lot.itemKey);
+      this.patchAuctionActiveSelection();
+      this.patchAuctionDetailPanel();
+      this.syncTradeDialogOverlay();
+    }, { signal }));
+
+    body.querySelectorAll<HTMLElement>('[data-auction-action]').forEach((button) => button.addEventListener('click', () => {
+      const action = button.dataset.auctionAction;
+      const itemKey = button.dataset.auctionActionItem;
+      const lot = this.resolveAuctionLotByKey(itemKey, this.marketUpdate, 'participate');
+      const entry = lot ? (this.findListingVariantByKey(lot.itemKey, this.marketUpdate) ?? this.buildMarketListingFromAuctionLot(lot)) : null;
+      if (!action || !lot || !entry) {
+        return;
+      }
+      this.selectedAuctionItemKey = entry.itemKey;
+      this.selectedItemKey = entry.itemKey;
+      if (action === 'buyout') {
+        this.openAuctionBuyoutConfirm(entry, lot);
+        return;
+      }
+      this.openAuctionBidDialog(entry, lot);
+    }, { signal }));
+
+    body.querySelectorAll<HTMLElement>('[data-auction-cancel]').forEach((button) => button.addEventListener('click', () => {
+      const orderId = button.dataset.auctionCancel;
+      if (!orderId) {
+        return;
+      }
+      this.callbacks?.onCancelOrder(orderId);
+    }, { signal }));
+
+    body.querySelector<HTMLElement>('[data-auction-refresh]')?.addEventListener('click', () => {
+      this.requestAuctionListings(this.auctionPage);
+    }, { signal });
+  }
+
+  /** 局部更新拍卖行列表选中态。 */
+  private patchAuctionActiveSelection(): void {
+    const body = this.getOpenAuctionModalBody();
+    if (!body) {
+      return;
+    }
+    body.querySelectorAll<HTMLElement>('[data-auction-select-item]').forEach((button) => {
+      button.classList.toggle('active', button.dataset.auctionSelectItem === this.selectedAuctionItemKey);
+    });
+  }
+
+  /** 局部更新拍卖行右侧详情。 */
+  private patchAuctionDetailPanel(): void {
+    const body = this.getOpenAuctionModalBody();
+    const update = this.marketUpdate;
+    if (!body || !update) {
+      return;
+    }
+    const detail = body.querySelector<HTMLElement>('[data-auction-detail-panel]');
+    if (!detail) {
+      return;
+    }
+    const lot = this.resolveAuctionLotByKey(this.selectedAuctionItemKey, update, this.auctionTab);
+    patchElementHtml(detail, this.renderAuctionDetailPanel(lot, update, this.auctionTab));
   }
 
   /** 渲染市场弹层主体和右侧分栏。 */
@@ -1170,22 +1764,37 @@ export class MarketPanel {
     if (!this.tradeDialog) {
       return null;
     }
-    const dialog = this.tradeDialog;
+    const rawDialog = this.tradeDialog;
+    const source: MarketTradeDialogSource = rawDialog.source ?? 'market';
+    const isAuctionBid = source === 'auction-bid';
+    const minUnitPrice = this.getTradeDialogMinUnitPrice(rawDialog);
+    const unitPrice = isAuctionBid
+      ? this.normalizeTradeDialogPrice(Math.max(rawDialog.unitPrice, minUnitPrice), 'up')
+      : rawDialog.unitPrice;
+    const dialog: MarketTradeDialogState = {
+      ...rawDialog,
+      unitPrice,
+    };
     const matchedInventoryCount = this.findMatchingInventoryCount(entry.item);
     const matchedSlotIndex = this.findMatchingInventorySlot(entry.item);
     const isBuy = dialog.kind === 'buy';
     const conflictOrder = this.findConflictingOwnOrder(entry.itemKey, dialog.kind);
     const ownedCurrency = this.findInventoryItemCountByItemId(currencyItemId);
     const quantityStep = this.getTradeDialogQuantityStep(dialog.unitPrice);
+    const dialogQuantity = isAuctionBid ? quantityStep : dialog.quantity;
     const quantityMax = this.getTradeDialogQuantityMax(entry, dialog.kind, dialog.unitPrice);
     const inputMax = Math.max(quantityStep, quantityMax > 0 ? quantityMax : quantityStep);
+    dialog.quantity = this.normalizeTradeDialogQuantity(dialogQuantity, entry, dialog.kind, dialog.unitPrice);
     const totalCost = this.getMarketTradeTotalCost(dialog.quantity, dialog.unitPrice);
     const insufficientCurrency = isBuy && totalCost !== null && totalCost > ownedCurrency;
     const insufficientStepQuantity = quantityMax <= 0;
     const disabled = Boolean(conflictOrder)
       || ((!isBuy && (matchedSlotIndex === null || matchedInventoryCount <= 0)) || insufficientCurrency || insufficientStepQuantity || totalCost === null);
     const hints: string[] = [];
-    if (quantityStep > 1) {
+    if (isAuctionBid) {
+      hints.push(`<div class="market-action-hint">最低加价为 ${escapeHtml(this.formatMarketUnitPrice(minUnitPrice))} ${escapeHtml(currencyName)}，价格只按坊市档位递增或递减。</div>`);
+    }
+    if (!isAuctionBid && quantityStep > 1) {
       hints.push(`<div class="market-action-hint">当前单价下必须按 ${formatDisplayInteger(quantityStep)} 件的倍数交易，${escapeHtml(currencyName)} x1 可买 ${formatDisplayInteger(quantityStep)} 件。</div>`);
     }
     if (conflictOrder) {
@@ -1197,16 +1806,28 @@ export class MarketPanel {
     if (insufficientCurrency && totalCost !== null) {
       hints.push(`<div class="market-action-hint market-action-hint--error">${escapeHtml(currencyName)}不足，当前需要 ${formatDisplayInteger(totalCost)}。</div>`);
     }
+    const nextDecreasePrice = this.getNextTradeDialogPrice(dialog.unitPrice, 'decrease', null, minUnitPrice);
+    const nextHalfPrice = this.getNextTradeDialogPrice(dialog.unitPrice, 'half', null, minUnitPrice);
     return {
       dialog,
-      title: isBuy ? '发起求购' : '发起挂售',
-      actionLabel: isBuy ? '确认求购' : '确认挂售',
+      source,
+      title: isAuctionBid ? '拍卖加价' : (isBuy ? '发起求购' : '发起挂售'),
+      actionLabel: isAuctionBid ? '确认加价' : (isBuy ? '确认求购' : '确认挂售'),
+      totalLabel: isAuctionBid ? '出价占用' : (dialog.kind === 'buy' ? '总价' : '总额'),
       quantityStep,
       inputMax,
       totalText: totalCost === null ? '--' : `${formatDisplayInteger(totalCost)} ${currencyName}`,
       insufficientCurrency,
       disabled,
       maxButtonDisabled: this.getTradeDialogMaxButtonQuantity(entry, currencyItemId, dialog) <= 0,
+      showPricePresets: !isAuctionBid,
+      showQuantityControls: !isAuctionBid,
+      priceActionDisabled: {
+        decrease: isAuctionBid && nextDecreasePrice >= dialog.unitPrice,
+        half: isAuctionBid && nextHalfPrice >= dialog.unitPrice,
+        increase: dialog.unitPrice >= MARKET_DIALOG_MAX_PRICE,
+        double: dialog.unitPrice >= MARKET_DIALOG_MAX_PRICE,
+      },
       hintsHtml: hints.join(''),
     };
   }
@@ -1223,7 +1844,7 @@ export class MarketPanel {
     return `
       <div class="market-trade-modal-shell">
         <div class="market-trade-modal-backdrop" data-market-close-dialog></div>
-        <div class="market-trade-dialog market-trade-dialog--${dialog.kind} ui-surface-pane ui-surface-pane--stack" role="dialog" aria-modal="true">
+        <div class="market-trade-dialog market-trade-dialog--${dialog.kind} ${state.source === 'auction-bid' ? 'market-trade-dialog--auction-bid' : ''} ui-surface-pane ui-surface-pane--stack" role="dialog" aria-modal="true">
         <div class="market-trade-dialog-head">
           <div class="market-trade-dialog-title ui-title-block">
             <div class="panel-section-title">${state.title}</div>
@@ -1232,63 +1853,71 @@ export class MarketPanel {
           <button class="small-btn ghost" data-market-close-dialog type="button">关闭</button>
         </div>
         <div class="market-trade-dialog-body">
-          <div class="market-trade-dialog-section">
-            <div class="market-trade-dialog-section-label">快捷定价</div>
-            <div class="market-price-preset-row">
-              ${MARKET_PRICE_PRESET_VALUES.map((preset) => `
-                <button
-                  class="small-btn ghost ${preset === dialog.unitPrice ? 'active' : ''}"
-                  data-market-price-action="preset"
-                  data-market-price-preset="${preset}"
-                  type="button"
-                >${escapeHtml(this.formatPricePresetLabel(preset))}</button>
-              `).join('')}
-            </div>
-          </div>
+          ${state.showPricePresets
+            ? `
+              <div class="market-trade-dialog-section">
+                <div class="market-trade-dialog-section-label">快捷定价</div>
+                <div class="market-price-preset-row">
+                  ${MARKET_PRICE_PRESET_VALUES.map((preset) => `
+                    <button
+                      class="small-btn ghost ${preset === dialog.unitPrice ? 'active' : ''}"
+                      data-market-price-action="preset"
+                      data-market-price-preset="${preset}"
+                      type="button"
+                    >${escapeHtml(this.formatPricePresetLabel(preset))}</button>
+                  `).join('')}
+                </div>
+              </div>
+            `
+            : ''}
           <div class="market-trade-dialog-section">
             <div class="market-trade-dialog-field">
               <span>单价</span>
               <div class="market-price-control-row">
                 <div class="market-price-control-side">
-                  <button class="small-btn ghost" data-market-price-action="half" type="button">÷2</button>
-                  <button class="small-btn ghost" data-market-price-action="decrease" type="button">-</button>
+                  <button class="small-btn ghost" data-market-price-action="half" type="button" ${state.priceActionDisabled.half ? 'disabled' : ''}>÷2</button>
+                  <button class="small-btn ghost" data-market-price-action="decrease" type="button" ${state.priceActionDisabled.decrease ? 'disabled' : ''}>-</button>
                 </div>
                 <div class="market-price-display" data-market-dialog-price-display>
                   <strong>${this.formatMarketUnitPrice(dialog.unitPrice)}</strong>
                   <span>${escapeHtml(currencyName)}</span>
                 </div>
                 <div class="market-price-control-side">
-                  <button class="small-btn ghost" data-market-price-action="increase" type="button">+</button>
-                  <button class="small-btn ghost" data-market-price-action="double" type="button">x2</button>
+                  <button class="small-btn ghost" data-market-price-action="increase" type="button" ${state.priceActionDisabled.increase ? 'disabled' : ''}>+</button>
+                  <button class="small-btn ghost" data-market-price-action="double" type="button" ${state.priceActionDisabled.double ? 'disabled' : ''}>x2</button>
                 </div>
               </div>
             </div>
           </div>
           <div class="market-trade-dialog-section">
-            <div class="market-trade-dialog-field">
-              <span>数量</span>
-              <div class="market-quantity-row">
-                <button class="small-btn ghost" data-market-quantity-action="one" type="button">1</button>
-                <input
-                  class="gm-inline-input"
-                  data-market-dialog-quantity
-                  type="number"
-                  inputmode="numeric"
-                  min="${state.quantityStep}"
-                  step="${state.quantityStep}"
-                  max="${state.inputMax}"
-                  value="${dialog.quantity}"
-                />
-                <button
-                  class="small-btn ghost"
-                  data-market-quantity-action="max"
-                  type="button"
-                  ${state.maxButtonDisabled ? 'disabled' : ''}
-                >最大</button>
-              </div>
-            </div>
+            ${state.showQuantityControls
+              ? `
+                <div class="market-trade-dialog-field">
+                  <span>数量</span>
+                  <div class="market-quantity-row">
+                    <button class="small-btn ghost" data-market-quantity-action="one" type="button">1</button>
+                    <input
+                      class="gm-inline-input"
+                      data-market-dialog-quantity
+                      type="number"
+                      inputmode="numeric"
+                      min="${state.quantityStep}"
+                      step="${state.quantityStep}"
+                      max="${state.inputMax}"
+                      value="${dialog.quantity}"
+                    />
+                    <button
+                      class="small-btn ghost"
+                      data-market-quantity-action="max"
+                      type="button"
+                      ${state.maxButtonDisabled ? 'disabled' : ''}
+                    >最大</button>
+                  </div>
+                </div>
+              `
+              : ''}
             <div class="market-trade-dialog-total ${state.insufficientCurrency ? 'error' : ''}" data-market-dialog-total>
-              <span>${dialog.kind === 'buy' ? '总价' : '总额'}</span>
+              <span>${escapeHtml(state.totalLabel)}</span>
               <strong>${escapeHtml(state.totalText)}</strong>
             </div>
           </div>
@@ -1470,6 +2099,278 @@ export class MarketPanel {
     return document.getElementById('detail-modal-body');
   }
 
+  /** 读取当前已打开的拍卖行弹层 body。 */
+  private getOpenAuctionModalBody(): HTMLElement | null {
+    if (!detailModalHost.isOpenFor(MarketPanel.AUCTION_MODAL_OWNER)) {
+      return null;
+    }
+    return document.getElementById('detail-modal-body');
+  }
+
+  /** 读取坊市页内拍卖简报数据。 */
+  private getAuctionPaneStats(update: S2C_MarketUpdate | null): {
+    activeLots: number;
+    myBids: number;
+    myConsignments: number;
+    storageCount: number;
+    feed: Array<{ status: string; name: string; meta: string }>;
+  } {
+    if (!update) {
+      return {
+        activeLots: 0,
+        myBids: 0,
+        myConsignments: 0,
+        storageCount: 0,
+        feed: [],
+      };
+    }
+    const lots = this.auctionListings?.tab === 'participate' ? this.getCurrentAuctionLots() : [];
+    const summary = this.getAuctionSummary(update);
+    return {
+      activeLots: summary.activeLots,
+      myBids: summary.myBidCount,
+      myConsignments: summary.myConsignments,
+      storageCount: summary.storageCount,
+      feed: lots.slice(0, 3).map((lot) => ({
+        status: lot.buyoutPrice === null ? '竞价' : '可一口',
+        name: lot.itemName,
+        meta: `${this.formatMarketUnitPrice(lot.currentPrice)} ${update.currencyItemName}`,
+      })),
+    };
+  }
+
+  /** 同步拍卖行当前选中项。 */
+  private syncAuctionSelection(): void {
+    if (!this.marketUpdate) {
+      this.selectedAuctionItemKey = null;
+      return;
+    }
+    const lots = this.getCurrentAuctionLots();
+    if (lots.length === 0) {
+      this.selectedAuctionItemKey = null;
+      this.selectedItemKey = null;
+      return;
+    }
+    const selected = lots.some((lot) => lot.id === this.selectedAuctionItemKey)
+      ? this.selectedAuctionItemKey
+      : lots[0].id;
+    if (selected !== this.selectedAuctionItemKey) {
+      this.selectedAuctionItemKey = selected;
+      this.itemBook = null;
+    }
+    const selectedLot = lots.find((lot) => lot.id === this.selectedAuctionItemKey) ?? null;
+    this.selectedItemKey = selectedLot?.itemKey ?? null;
+  }
+
+  /** 读取服务端拍卖行当前分页状态。 */
+  private getAuctionPageState(items: ArrayLike<unknown>): {
+    page: number;
+    totalPages: number;
+    totalItems: number;
+  } {
+    const pageSize = this.auctionListings?.pageSize ?? AUCTION_PAGE_SIZE;
+    const totalItems = this.auctionListings?.total ?? items.length;
+    const totalPages = Math.max(1, Math.ceil(totalItems / Math.max(1, pageSize)));
+    const page = this.auctionListings?.page ?? Math.max(1, Math.min(totalPages, Math.floor(Number.isFinite(this.auctionPage) ? this.auctionPage : 1)));
+    this.auctionPage = page;
+    return {
+      page,
+      totalPages,
+      totalItems,
+    };
+  }
+
+  /** 读取当前服务端返回的拍卖行当前页拍品。 */
+  private getCurrentAuctionLots(): AuctionLotView[] {
+    if (!this.auctionListings || this.auctionListings.tab !== this.auctionTab) {
+      return [];
+    }
+    return this.auctionListings.items.map((entry) => this.inflateAuctionLotEntry(entry));
+  }
+
+  /** 按 key 查找拍品。 */
+  private resolveAuctionLotByKey(
+    lotId: string | null | undefined,
+    _update: S2C_MarketUpdate | null,
+    tab: AuctionHouseTab = this.auctionTab,
+  ): AuctionLotView | null {
+    if (!lotId || !this.auctionListings || this.auctionListings.tab !== tab) {
+      return null;
+    }
+    const lots = this.auctionListings.items.map((entry) => this.inflateAuctionLotEntry(entry));
+    return lots.find((lot) => lot.id === lotId || lot.itemKey === lotId) ?? null;
+  }
+
+  /** 把拍卖行分页摘要恢复成 UI 拍品视图。 */
+  private inflateAuctionLotEntry(entry: AuctionLotPageEntry): AuctionLotView {
+    const item = entry.item ?? resolvePreviewItem({
+      itemId: entry.itemId,
+      count: 1,
+      name: '',
+      desc: '',
+      type: entry.itemType,
+      equipSlot: entry.itemType === 'equipment' ? entry.itemSubType as EquipSlot | undefined : undefined,
+      enhanceLevel: entry.enhanceLevel,
+    });
+    return {
+      id: entry.id,
+      itemKey: entry.itemKey,
+      item,
+      itemName: this.getMarketDisplayName(item),
+      typeLabel: getItemTypeLabel(item.type),
+      qualityLabel: this.getAuctionQualityLabel(item),
+      currentPrice: Math.max(1, Math.floor(Number(entry.currentPrice) || 1)),
+      buyoutPrice: entry.buyoutPrice === null || entry.buyoutPrice === undefined ? null : Math.max(1, Math.floor(Number(entry.buyoutPrice) || 1)),
+      bidCount: Math.max(0, Math.floor(Number(entry.bidCount) || 0)),
+      bids: Array.isArray(entry.bids) ? entry.bids : [],
+      startAtMs: Math.max(0, Math.floor(Number(entry.startAtMs) || Date.now())),
+      durationSeconds: Math.max(1, Math.floor(Number(entry.durationSeconds) || 1)),
+      status: entry.status,
+      statusLabel: entry.statusLabel,
+      sellerLabel: entry.sellerLabel,
+      lotNo: entry.lotNo,
+      heat: Math.max(0, Math.floor(Number(entry.heat) || 0)),
+      orderId: entry.orderId,
+      orderSide: entry.orderSide,
+      remainingQuantity: entry.remainingQuantity,
+    };
+  }
+
+  /** 把当前拍品转换成市场交易弹窗可复用的列表条目。 */
+  private buildMarketListingFromAuctionLot(lot: AuctionLotView): MarketListedItemView {
+    return {
+      itemKey: lot.itemKey,
+      item: lot.item,
+      sellOrderCount: lot.buyoutPrice === null ? 0 : 1,
+      sellQuantity: lot.remainingQuantity ?? 0,
+      lowestSellPrice: lot.buyoutPrice ?? undefined,
+      buyOrderCount: lot.bidCount,
+      buyQuantity: lot.bidCount,
+      highestBuyPrice: lot.currentPrice,
+    };
+  }
+
+  /** 根据开始时间和持续时间在前端计算剩余秒数，不依赖网络同步。 */
+  private getAuctionRemainingSeconds(lot: AuctionLotView, now = Date.now()): number {
+    const endAtMs = lot.startAtMs + lot.durationSeconds * 1000;
+    return Math.max(0, Math.ceil((endAtMs - now) / 1000));
+  }
+
+  /** 读取倒计时状态样式。 */
+  private getAuctionTimeClass(remainingSeconds: number): string {
+    if (remainingSeconds <= 0) {
+      return 'ended';
+    }
+    if (remainingSeconds <= 1800) {
+      return 'urgent';
+    }
+    return '';
+  }
+
+  /** 启动拍卖行本地倒计时，只 patch 倒计时文本。 */
+  private startAuctionCountdownTicker(): void {
+    if (this.auctionCountdownTimer !== null || typeof window === 'undefined') {
+      return;
+    }
+    this.auctionCountdownTimer = window.setInterval(() => {
+      this.patchAuctionCountdowns();
+    }, 1000);
+  }
+
+  /** 停止拍卖行本地倒计时。 */
+  private stopAuctionCountdownTicker(): void {
+    if (this.auctionCountdownTimer === null || typeof window === 'undefined') {
+      return;
+    }
+    window.clearInterval(this.auctionCountdownTimer);
+    this.auctionCountdownTimer = null;
+  }
+
+  /** 局部 patch 当前可见拍品的倒计时，不重绘列表或详情。 */
+  private patchAuctionCountdowns(): void {
+    const body = this.getOpenAuctionModalBody();
+    const update = this.marketUpdate;
+    if (!body || !update) {
+      this.stopAuctionCountdownTicker();
+      return;
+    }
+    const now = Date.now();
+    body.querySelectorAll<HTMLElement>('[data-auction-countdown]').forEach((node) => {
+      const lot = this.resolveAuctionLotByKey(node.dataset.auctionCountdown, update, this.auctionTab);
+      if (!lot) {
+        return;
+      }
+      const remainingSeconds = this.getAuctionRemainingSeconds(lot, now);
+      node.textContent = this.formatAuctionRemaining(remainingSeconds);
+      node.classList.toggle('urgent', remainingSeconds > 0 && remainingSeconds <= 1800);
+      node.classList.toggle('ended', remainingSeconds <= 0);
+    });
+  }
+
+  /** 读取拍品品质显示。 */
+  private getAuctionQualityLabel(item: ItemStack): string {
+    const grade = typeof item.grade === 'string' && item.grade.trim() ? item.grade.trim() : '';
+    if (grade) {
+      return grade;
+    }
+    const level = Number(item.level);
+    if (Number.isFinite(level) && level > 0) {
+      return `${formatDisplayInteger(Math.floor(level))}阶`;
+    }
+    return '凡品';
+  }
+
+  /** 读取拍品头像占位字。 */
+  private getAuctionItemInitial(name: string): string {
+    const trimmed = name.trim();
+    return trimmed ? trimmed.slice(0, 1) : '拍';
+  }
+
+  /** 格式化拍卖剩余时间。 */
+  private formatAuctionRemaining(seconds: number): string {
+    const total = Math.max(0, Math.floor(seconds));
+    const hours = Math.floor(total / 3600);
+    const minutes = Math.floor((total % 3600) / 60);
+    const rest = total % 60;
+    const pad = (value: number) => String(value).padStart(2, '0');
+    if (hours > 0) {
+      return `${pad(hours)}:${pad(minutes)}:${pad(rest)}`;
+    }
+    return `${pad(minutes)}:${pad(rest)}`;
+  }
+
+  /** 格式化拍卖出价时间，只用于当前页轻量记录。 */
+  private formatAuctionBidTime(createdAtMs: number): string {
+    const elapsedSeconds = Math.max(0, Math.floor((Date.now() - Math.max(0, Number(createdAtMs) || 0)) / 1000));
+    if (elapsedSeconds < 60) {
+      return '刚刚';
+    }
+    if (elapsedSeconds < 3600) {
+      return `${formatDisplayInteger(Math.floor(elapsedSeconds / 60))}分钟前`;
+    }
+    return `${formatDisplayInteger(Math.floor(elapsedSeconds / 3600))}小时前`;
+  }
+
+  /** 读取服务端拍卖行摘要，未返回前只用本地已知的订单/托管仓兜底。 */
+  private getAuctionSummary(update: S2C_MarketUpdate): S2C_AuctionListings['summary'] {
+    return this.auctionListings?.summary ?? {
+      activeLots: 0,
+      buyoutLots: 0,
+      totalCurrentPrice: 0,
+      myBidCount: update.myOrders.filter((order) => order.side === 'buy').length,
+      myConsignments: update.myOrders.filter((order) => order.side === 'sell').length,
+      consigningLots: update.myOrders.filter((order) => order.side === 'sell').length,
+      soldLots: 0,
+      failedLots: 0,
+      storageCount: update.storage.items.reduce((sum, item) => sum + item.count, 0),
+    };
+  }
+
+  /** 读取服务端拍卖行分类计数。 */
+  private getAuctionCategoryCount(category: MarketCategoryFilter, fallback: number): number {
+    return this.normalizeMarketCount(this.auctionListings?.counts?.categoryCounts?.[category], fallback);
+  }
+
   /** 只同步当前可见区域里的背包相关状态。 */
   private syncVisibleMarketInventoryState(): void {
   // 关键分支按状态与边界条件处理，非法路径会被提前拦截。
@@ -1597,7 +2498,12 @@ export class MarketPanel {
     if (!this.selectedItemKey) {
       return null;
     }
-    return this.findListingVariantByKey(this.selectedItemKey, update);
+    const selected = this.findListingVariantByKey(this.selectedItemKey, update);
+    if (selected) {
+      return selected;
+    }
+    const auctionLot = this.getCurrentAuctionLots().find((lot) => lot.itemKey === this.selectedItemKey || lot.id === this.selectedAuctionItemKey) ?? null;
+    return auctionLot ? this.buildMarketListingFromAuctionLot(auctionLot) : null;
   }
 
   /** 渲染主分类标签。 */
@@ -1928,7 +2834,7 @@ export class MarketPanel {
 
   /** 把列表摘要恢复成客户端可直接渲染的预览物品。 */
   private inflateMarketListingEntry(entry: S2C_MarketListings['items'][number]): MarketListedItemView {
-    const previewItem = resolvePreviewItem({
+    const previewItem = entry.item ?? resolvePreviewItem({
       itemId: entry.itemId,
       count: 1,
       name: '',
@@ -2060,6 +2966,19 @@ export class MarketPanel {
     });
   }
 
+  /** 向外部请求当前筛选条件下的拍卖行分页，每页固定最多 10 条。 */
+  private requestAuctionListings(page: number): void {
+    const nextPage = Math.max(1, Math.floor(Number.isFinite(page) ? page : 1));
+    this.auctionPage = nextPage;
+    this.callbacks?.onRequestAuctionListings({
+      tab: this.auctionTab,
+      page: nextPage,
+      pageSize: AUCTION_PAGE_SIZE,
+      category: this.auctionCategory,
+      query: this.auctionSearchQuery.trim(),
+    });
+  }
+
   /** 把列表分页回填进市场主快照。 */
   private mergeListingsIntoMarketUpdate(update: S2C_MarketUpdate | null, data: S2C_MarketListings): S2C_MarketUpdate | null {
   // 关键分支按状态与边界条件处理，非法路径会被提前拦截。
@@ -2091,11 +3010,56 @@ export class MarketPanel {
     const unitPrice = this.getDefaultTradeDialogPrice(entry, kind, preferredPrice);
     this.tradeDialog = {
       kind,
+      source: 'market',
       quantity: this.normalizeTradeDialogQuantity(1, entry, kind, unitPrice),
       unitPrice,
       confirmPurchase: kind === 'buy' && confirmPurchase,
     };
     this.syncTradeDialogOverlay();
+  }
+
+  /** 打开拍卖加价弹窗，最低价固定为当前价按坊市档位加一档。 */
+  private openAuctionBidDialog(entry: MarketListedItemView, lot: AuctionLotView): void {
+    const minUnitPrice = this.getAuctionMinimumBidPrice(lot);
+    this.tradeDialog = {
+      kind: 'buy',
+      source: 'auction-bid',
+      quantity: this.getTradeDialogQuantityStep(minUnitPrice),
+      unitPrice: minUnitPrice,
+      minUnitPrice,
+    };
+    this.syncTradeDialogOverlay();
+  }
+
+  /** 打开拍卖一口价确认弹窗，不经过价格输入。 */
+  private openAuctionBuyoutConfirm(entry: MarketListedItemView, lot: AuctionLotView): void {
+    if (lot.buyoutPrice === null) {
+      return;
+    }
+    const unitPrice = this.normalizeTradeDialogPrice(lot.buyoutPrice, 'up');
+    const quantity = this.normalizeTradeDialogQuantity(1, entry, 'buy', unitPrice);
+    const totalCost = this.getMarketTradeTotalCost(quantity, unitPrice);
+    const currencyItemName = this.marketUpdate?.currencyItemName ?? '';
+    const ownedCurrency = this.findInventoryItemCountByItemId(this.marketUpdate?.currencyItemId ?? '');
+    const insufficientCurrency = totalCost !== null && totalCost > ownedCurrency;
+    this.buyConfirmState = { itemKey: entry.itemKey, quantity, unitPrice };
+    confirmModalHost.open({
+      ownerId: MarketPanel.CONFIRM_MODAL_OWNER,
+      title: '确认一口价',
+      subtitle: this.getMarketDisplayName(entry.item),
+      bodyHtml: this.renderAuctionBuyoutConfirmBody(lot, currencyItemName, quantity, unitPrice, totalCost, insufficientCurrency),
+      confirmLabel: '确认一口价',
+      confirmDisabled: insufficientCurrency || totalCost === null,
+      onConfirm: () => {
+        this.buyConfirmState = null;
+        this.callbacks?.onBuyoutAuctionLot(lot.id, lot.itemKey);
+        this.tradeDialog = null;
+        this.syncTradeDialogOverlay();
+      },
+      onClose: () => {
+        this.buyConfirmState = null;
+      },
+    });
   }
 
   /** 渲染购买确认页，说明直接成交和剩余求购挂单的预估。 */
@@ -2139,6 +3103,45 @@ export class MarketPanel {
     `;
   }
 
+  /** 渲染拍卖一口价确认内容，不提供价格或数量输入。 */
+  private renderAuctionBuyoutConfirmBody(
+    lot: AuctionLotView,
+    currencyName: string,
+    quantity: number,
+    unitPrice: number,
+    totalCost: number | null,
+    insufficientCurrency: boolean,
+  ): string {
+    return `
+      <div class="market-trade-dialog-section">
+        <div class="market-trade-dialog-field">
+          <span>一口价</span>
+          <div class="market-price-display">
+            <strong>${this.formatMarketUnitPrice(unitPrice)}</strong>
+            <span>${escapeHtml(currencyName)}</span>
+          </div>
+        </div>
+        <div class="market-trade-dialog-total">
+          <span>拍品编号</span>
+          <strong>${escapeHtml(lot.lotNo)}</strong>
+        </div>
+      </div>
+      <div class="market-trade-dialog-section">
+        <div class="market-trade-dialog-total">
+          <span>成交数量</span>
+          <strong>${formatDisplayInteger(quantity)} 件</strong>
+        </div>
+        <div class="market-trade-dialog-total ${insufficientCurrency ? 'error' : ''}">
+          <span>本次支付</span>
+          <strong>${totalCost === null ? '--' : `${formatDisplayInteger(totalCost)} ${escapeHtml(currencyName)}`}</strong>
+        </div>
+      </div>
+      <div class="market-action-hint ${insufficientCurrency ? 'market-action-hint--error' : ''}">
+        ${escapeHtml(insufficientCurrency ? `${currencyName}不足，无法按一口价成交。` : '确认后会按一口价发起立即成交，不再进入加价输入。')}
+      </div>
+    `;
+  }
+
   /** 按当前卖盘估算本次购买会立即成交多少。 */
   private estimateImmediateBuy(entry: MarketListedItemView, quantity: number, unitPrice: number): {
     immediateQuantity: number;
@@ -2177,11 +3180,14 @@ export class MarketPanel {
     const root = this.getTradeDialogOverlayRoot();
     const update = this.marketUpdate;
     const selected = this.getSelectedListedItem(update);
-    if (!this.tradeDialog || this.modalTab !== 'market' || !detailModalHost.isOpenFor(MarketPanel.MODAL_OWNER) || !update || !selected) {
+    const marketModalOpen = this.modalTab === 'market' && detailModalHost.isOpenFor(MarketPanel.MODAL_OWNER);
+    const auctionModalOpen = detailModalHost.isOpenFor(MarketPanel.AUCTION_MODAL_OWNER);
+    if (!this.tradeDialog || (!marketModalOpen && !auctionModalOpen) || !update || !selected) {
       patchElementHtml(root, '');
       root.classList.add('hidden');
       delete root.dataset.marketDialogItemKey;
       delete root.dataset.marketDialogKind;
+      delete root.dataset.marketDialogSource;
       this.tooltipNode = null;
       this.tooltip.hide(true);
       return;
@@ -2194,6 +3200,7 @@ export class MarketPanel {
     patchElementHtml(root, this.renderTradeDialog(selected, update.currencyItemId, update.currencyItemName));
     root.dataset.marketDialogItemKey = selected.itemKey;
     root.dataset.marketDialogKind = this.tradeDialog.kind;
+    root.dataset.marketDialogSource = this.tradeDialog.source ?? 'market';
     this.bindTradeDialogOverlayEvents(root, selected, update);
     this.bindItemTooltipEvents(root);
   }
@@ -2207,7 +3214,12 @@ export class MarketPanel {
   // 关键分支按状态与边界条件处理，非法路径会被提前拦截。
 
     const state = this.getTradeDialogViewState(selected, update.currencyItemId, update.currencyItemName);
-    if (!state || root.dataset.marketDialogItemKey !== selected.itemKey || root.dataset.marketDialogKind !== state.dialog.kind) {
+    if (
+      !state
+      || root.dataset.marketDialogItemKey !== selected.itemKey
+      || root.dataset.marketDialogKind !== state.dialog.kind
+      || root.dataset.marketDialogSource !== state.source
+    ) {
       return false;
     }
     const dialogNode = root.querySelector<HTMLElement>('.market-trade-dialog');
@@ -2216,14 +3228,25 @@ export class MarketPanel {
     const maxButton = root.querySelector<HTMLButtonElement>('[data-market-quantity-action="max"]');
     const totalNode = root.querySelector<HTMLElement>('[data-market-dialog-total]');
     const totalValue = totalNode?.querySelector<HTMLElement>('strong') ?? null;
+    const totalLabel = totalNode?.querySelector<HTMLElement>('span') ?? null;
     const hintsNode = root.querySelector<HTMLElement>('[data-market-dialog-hints]');
     const submitButton = root.querySelector<HTMLButtonElement>('[data-market-submit-dialog]');
-    if (!dialogNode || !priceDisplay || !quantityInput || !maxButton || !totalNode || !totalValue || !hintsNode || !submitButton) {
+    if (
+      !dialogNode
+      || !priceDisplay
+      || !totalNode
+      || !totalValue
+      || !totalLabel
+      || !hintsNode
+      || !submitButton
+      || (state.showQuantityControls && (!quantityInput || !maxButton))
+    ) {
       return false;
     }
 
     dialogNode.classList.toggle('market-trade-dialog--buy', state.dialog.kind === 'buy');
     dialogNode.classList.toggle('market-trade-dialog--sell', state.dialog.kind === 'sell');
+    dialogNode.classList.toggle('market-trade-dialog--auction-bid', state.source === 'auction-bid');
     patchElementHtml(priceDisplay, `
       <strong>${escapeHtml(this.formatMarketUnitPrice(state.dialog.unitPrice))}</strong>
       <span>${escapeHtml(update.currencyItemName)}</span>
@@ -2232,14 +3255,24 @@ export class MarketPanel {
       const preset = this.readDatasetNumber(button.dataset.marketPricePreset);
       button.classList.toggle('active', preset === state.dialog.unitPrice);
     });
-    quantityInput.min = String(state.quantityStep);
-    quantityInput.step = String(state.quantityStep);
-    quantityInput.max = String(state.inputMax);
-    if (document.activeElement !== quantityInput) {
-      quantityInput.value = String(state.dialog.quantity);
+    root.querySelectorAll<HTMLButtonElement>('[data-market-price-action]').forEach((button) => {
+      const action = button.dataset.marketPriceAction as MarketPriceAction | undefined;
+      if (!action) {
+        return;
+      }
+      button.disabled = state.priceActionDisabled[action] === true;
+    });
+    if (state.showQuantityControls && quantityInput && maxButton) {
+      quantityInput.min = String(state.quantityStep);
+      quantityInput.step = String(state.quantityStep);
+      quantityInput.max = String(state.inputMax);
+      if (document.activeElement !== quantityInput) {
+        quantityInput.value = String(state.dialog.quantity);
+      }
+      maxButton.disabled = state.maxButtonDisabled;
     }
-    maxButton.disabled = state.maxButtonDisabled;
     totalNode.classList.toggle('error', state.insufficientCurrency);
+    totalLabel.textContent = state.totalLabel;
     totalValue.textContent = state.totalText;
     patchElementHtml(hintsNode, state.hintsHtml);
     submitButton.disabled = state.disabled;
@@ -2290,11 +3323,19 @@ export class MarketPanel {
         return;
       }
       const preset = this.readDatasetNumber(button.dataset.marketPricePreset);
-      const nextUnitPrice = this.getNextTradeDialogPrice(this.tradeDialog.unitPrice, action, preset);
+      const nextUnitPrice = this.getNextTradeDialogPrice(
+        this.tradeDialog.unitPrice,
+        action,
+        preset,
+        this.getTradeDialogMinUnitPrice(this.tradeDialog),
+      );
+      const quantitySeed = this.tradeDialog.source === 'auction-bid'
+        ? this.getTradeDialogQuantityStep(nextUnitPrice)
+        : this.tradeDialog.quantity;
       this.tradeDialog = {
         ...this.tradeDialog,
         unitPrice: nextUnitPrice,
-        quantity: this.normalizeTradeDialogQuantity(this.tradeDialog.quantity, selected, this.tradeDialog.kind, nextUnitPrice),
+        quantity: this.normalizeTradeDialogQuantity(quantitySeed, selected, this.tradeDialog.kind, nextUnitPrice),
       };
       this.syncTradeDialogOverlay();
     }));
@@ -2319,9 +3360,26 @@ export class MarketPanel {
       if (!kind || !this.tradeDialog || this.tradeDialog.kind !== kind) {
         return;
       }
-      const quantity = this.normalizeTradeDialogQuantity(this.tradeDialog.quantity, selected, kind, this.tradeDialog.unitPrice);
-      const unitPrice = this.normalizeTradeDialogPrice(this.tradeDialog.unitPrice, kind === 'buy' ? 'up' : 'down');
+      const minUnitPrice = this.getTradeDialogMinUnitPrice(this.tradeDialog);
+      const unitPrice = this.normalizeTradeDialogPrice(
+        Math.max(this.tradeDialog.unitPrice, minUnitPrice),
+        kind === 'buy' ? 'up' : 'down',
+      );
+      const quantitySeed = this.tradeDialog.source === 'auction-bid'
+        ? this.getTradeDialogQuantityStep(unitPrice)
+        : this.tradeDialog.quantity;
+      const quantity = this.normalizeTradeDialogQuantity(quantitySeed, selected, kind, unitPrice);
       if (kind === 'buy') {
+        if (this.tradeDialog.source === 'auction-bid') {
+          const lot = this.resolveAuctionLotByKey(this.selectedAuctionItemKey ?? selected.itemKey, update, 'participate');
+          if (!lot) {
+            return;
+          }
+          this.callbacks?.onPlaceAuctionBid(lot.id, lot.itemKey, unitPrice);
+          this.tradeDialog = null;
+          this.syncTradeDialogOverlay();
+          return;
+        }
         if (this.tradeDialog.confirmPurchase) {
           this.openBuyConfirm(selected, quantity, unitPrice);
           return;
@@ -2405,6 +3463,22 @@ export class MarketPanel {
     return this.normalizeTradeDialogPrice(source, kind === 'buy' ? 'up' : 'down');
   }
 
+  /** 拍卖最低加价为当前价沿坊市价格档位向上一档。 */
+  private getAuctionMinimumBidPrice(lot: AuctionLotView): number {
+    if (lot.currentPrice >= MARKET_DIALOG_MAX_PRICE) {
+      return MARKET_DIALOG_MAX_PRICE;
+    }
+    return this.normalizeTradeDialogPrice(lot.currentPrice + getMarketPriceStep(lot.currentPrice), 'up');
+  }
+
+  /** 读取当前交易弹窗的最低价格约束。 */
+  private getTradeDialogMinUnitPrice(dialog: MarketTradeDialogState): number {
+    if (dialog.source !== 'auction-bid') {
+      return MARKET_DIALOG_MIN_PRICE;
+    }
+    return this.normalizeTradeDialogPrice(dialog.minUnitPrice ?? MARKET_DIALOG_MIN_PRICE, 'up');
+  }
+
   /** 规范化交易弹窗里的数量输入，强制对齐最小交易步长。 */
   private normalizeTradeDialogQuantity(
     value: string | number,
@@ -2482,26 +3556,28 @@ export class MarketPanel {
   }
 
   /** 按按钮动作算出下一个单价，并保持在合法范围内。 */
-  private getNextTradeDialogPrice(currentPrice: number, action: MarketPriceAction, preset?: number | null): number {
+  private getNextTradeDialogPrice(currentPrice: number, action: MarketPriceAction, preset?: number | null, minPrice: number = MARKET_DIALOG_MIN_PRICE): number {
   // 关键分支按状态与边界条件处理，非法路径会被提前拦截。
 
+    const clamp = (price: number, direction: 'up' | 'down'): number =>
+      this.normalizeTradeDialogPrice(Math.max(minPrice, price), direction);
     if (action === 'preset') {
-      return this.normalizeTradeDialogPrice(preset ?? MARKET_DIALOG_MIN_PRICE, 'up');
+      return clamp(preset ?? MARKET_DIALOG_MIN_PRICE, 'up');
     }
     if (action === 'double') {
-      return this.normalizeTradeDialogPrice(currentPrice * 2, 'up');
+      return clamp(currentPrice * 2, 'up');
     }
     if (action === 'half') {
-      return this.normalizeTradeDialogPrice(currentPrice / 2, 'down');
+      return clamp(currentPrice / 2, 'down');
     }
     if (action === 'increase') {
       const step = currentPrice < 1
         ? getMarketPriceStep(currentPrice)
         : getMarketPriceStep(Math.min(MARKET_DIALOG_MAX_PRICE, currentPrice + 1));
-      return this.normalizeTradeDialogPrice(currentPrice + step, 'up');
+      return clamp(currentPrice + step, 'up');
     }
-    const probe = Math.max(MARKET_DIALOG_MIN_PRICE, currentPrice - 1);
-    return this.normalizeTradeDialogPrice(currentPrice - getMarketPriceStep(probe), 'down');
+    const probe = Math.max(minPrice, currentPrice - 1);
+    return clamp(currentPrice - getMarketPriceStep(probe), 'down');
   }
 
   /** 按买卖方向把单价夹回合法区间并对齐价格档位。 */
@@ -2667,6 +3743,10 @@ export class MarketPanel {
       if (variant) {
         return variant;
       }
+    }
+    const auctionLot = this.getCurrentAuctionLots().find((lot) => lot.itemKey === itemKey || lot.id === itemKey) ?? null;
+    if (auctionLot) {
+      return this.buildMarketListingFromAuctionLot(auctionLot);
     }
     return null;
   }

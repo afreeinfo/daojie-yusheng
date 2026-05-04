@@ -243,6 +243,7 @@ export function createMainPanelContext(options: CreateMainPanelContextOptions) {
   const settingsStateSource = createMainSettingsStateSource({
     settingsPanel,
     getCurrentAccountName: () => getCurrentAccountName() ?? '',
+    getCurrentPlayerId: () => rootRuntimeSource.getPlayer()?.id ?? '',
     getPlayer: () => rootRuntimeSource.getPlayer(),
     applyVisibleDisplayName: (playerId, displayName) => rootRuntimeSource.applyVisibleDisplayName(playerId, displayName),
     applyVisibleRoleName: (playerId, roleName) => rootRuntimeSource.applyVisibleRoleName(playerId, roleName),

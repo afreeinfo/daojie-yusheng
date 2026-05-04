@@ -535,7 +535,7 @@ class MapInstanceRuntime {
             return existing;
         }
 
-        const spawn = this.findSpawnPoint(request.preferredX, request.preferredY);
+        const spawn = this.findSpawnPoint(request.preferredX, request.preferredY, request.playerId);
         if (!spawn) {
             throw new Error(`实例 ${this.meta.instanceId} 中没有可用出生点`);
         }
@@ -589,7 +589,7 @@ class MapInstanceRuntime {
             return null;
         }
 
-        const target = this.findSpawnPoint(preferredX, preferredY);
+        const target = this.findSpawnPoint(preferredX, preferredY, playerId);
         if (!target) {
             throw new Error(`实例 ${this.meta.instanceId} 中没有可用空地块`);
         }
@@ -3084,7 +3084,7 @@ class MapInstanceRuntime {
         }
     }
     /** findSpawnPoint：查找生成点。 */
-    findSpawnPoint(preferredX, preferredY) {
+    findSpawnPoint(preferredX, preferredY, playerId = null) {
   // 关键分支按状态与边界条件处理，非法路径会被提前拦截。
 
 
@@ -3100,7 +3100,7 @@ class MapInstanceRuntime {
             y: this.template.spawnY,
         });
         for (const candidate of candidates) {
-            const resolved = this.findNearestOpenTile(candidate.x, candidate.y);
+            const resolved = this.findNearestOpenTile(candidate.x, candidate.y, playerId);
             if (resolved) {
                 return resolved;
             }
@@ -3108,10 +3108,10 @@ class MapInstanceRuntime {
         return null;
     }
     /** findNearestOpenTile：查找最近的可占用地块。 */
-    findNearestOpenTile(originX, originY) {
+    findNearestOpenTile(originX, originY, playerId = null) {
   // 关键分支按状态与边界条件处理，非法路径会被提前拦截。
 
-        if (this.isOpenTile(originX, originY)) {
+        if (this.isOpenTile(originX, originY, playerId)) {
             return { x: originX, y: originY };
         }
 
@@ -3128,7 +3128,7 @@ class MapInstanceRuntime {
                     if (Math.abs(x - originX) !== radius && Math.abs(y - originY) !== radius) {
                         continue;
                     }
-                    if (this.isOpenTile(x, y)) {
+                    if (this.isOpenTile(x, y, playerId)) {
                         return { x, y };
                     }
                 }
@@ -3137,10 +3137,10 @@ class MapInstanceRuntime {
         return null;
     }
     /** isOpenTile：判断地块是否可占用。 */
-    isOpenTile(x, y) {
+    isOpenTile(x, y, playerId = null) {
   // 关键分支按状态与边界条件处理，非法路径会被提前拦截。
 
-        if (!this.isWalkable(x, y)) {
+        if (!this.isWalkable(x, y, playerId)) {
             return false;
         }
 

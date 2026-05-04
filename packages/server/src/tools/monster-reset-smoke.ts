@@ -64,8 +64,7 @@ async function main() {
         return monster?.alive === true
             && monster.hp > damagedMonster.monster.hp
             && monster.aggroTargetPlayerId === null
-            && monster.x === monster.spawnX
-            && monster.y === monster.spawnY;
+            && isMonsterWithinWanderRange(monster);
     }, 15000);
 /**
  * 记录final怪物。
@@ -80,8 +79,21 @@ async function main() {
         damageApplied: target.hp - damagedMonster.monster.hp,
         hpRecovered: finalMonster.monster.hp - damagedMonster.monster.hp,
         fullyRecovered: finalMonster.monster.hp === finalMonster.monster.maxHp,
+        withinWanderRange: isMonsterWithinWanderRange(finalMonster.monster),
         finalMonster,
     }, null, 2));
+}
+function isMonsterWithinWanderRange(monster) {
+    if (!monster) {
+        return false;
+    }
+    const radius = Number.isFinite(Number(monster.wanderRadius))
+        ? Math.max(0, Math.trunc(Number(monster.wanderRadius)))
+        : 0;
+    return Math.max(
+        Math.abs(Math.trunc(Number(monster.x)) - Math.trunc(Number(monster.spawnX))),
+        Math.abs(Math.trunc(Number(monster.y)) - Math.trunc(Number(monster.spawnY))),
+    ) <= radius;
 }
 /**
  * 处理fetch怪物。

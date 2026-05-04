@@ -11,6 +11,8 @@ const assert = require("node:assert/strict");
 const { Pool } = require("pg");
 const { resolveServerDatabaseUrl } = require("../config/env-alias");
 const { WorldRuntimeFormationService } = require("../runtime/world/world-runtime-formation.service");
+const { MapTemplateRepository } = require("../runtime/map/map-template.repository");
+const { MapInstanceRuntime } = require("../runtime/instance/map-instance.runtime");
 const { buildFullWorldDelta } = require("../network/world-projector.helpers");
 const { DEFAULT_FORMATION_TILE_AURA_RESOURCE_KEY, FORMATION_TICKS_PER_DAY, QI_HALF_LIFE_RATE_SCALE, buildQiHalfLifeRateScaled } = require("@mud/shared");
 
@@ -489,6 +491,55 @@ async function main() {
   assert.equal(service.isBoundaryBarrierBlocked(instanceId, 9, 8, sectPlayerId), false);
   assert.equal(service.isBoundaryBarrierBlocked(instanceId, 9, 8, detachedOwnerPlayerId), false);
   assert.equal(service.isBoundaryBarrierBlocked(instanceId, 8, 8, outsiderPlayerId), false);
+  const spawnTemplateRepository = new MapTemplateRepository();
+  spawnTemplateRepository.registerRuntimeMapTemplate({
+    id: "formation_guard_spawn",
+    name: "护宗大阵落点测试",
+    width: 12,
+    height: 12,
+    tiles: Array.from({ length: 12 }, () => "............"),
+    spawnPoint: { x: 1, y: 1 },
+    portals: [],
+    npcs: [],
+    monsters: [],
+    safeZones: [],
+    landmarks: [],
+    containers: [],
+    auras: [],
+  });
+  const spawnInstance = new MapInstanceRuntime({
+    instanceId,
+    template: spawnTemplateRepository.getOrThrow("formation_guard_spawn"),
+    monsterSpawns: [],
+    kind: "public",
+    persistent: true,
+    createdAt: Date.now(),
+    displayName: "护宗大阵落点测试",
+    linePreset: "real",
+    lineIndex: 1,
+    instanceOrigin: "smoke",
+    defaultEntry: true,
+    canDamageTile: true,
+  });
+  spawnInstance.setDynamicTileBlocker((x, y, context = null) => (
+    service.isBoundaryBarrierBlocked(instanceId, x, y, context?.playerId) === true
+  ));
+  const memberSpawn = spawnInstance.connectPlayer({
+    playerId: sectPlayerId,
+    sessionId: "session:formation-sect-member",
+    preferredX: 9,
+    preferredY: 8,
+  });
+  assert.equal(memberSpawn.x, 9);
+  assert.equal(memberSpawn.y, 8);
+  spawnInstance.disconnectPlayer(sectPlayerId);
+  const outsiderSpawn = spawnInstance.connectPlayer({
+    playerId: outsiderPlayerId,
+    sessionId: "session:formation-outsider",
+    preferredX: 9,
+    preferredY: 8,
+  });
+  assert.notDeepEqual({ x: outsiderSpawn.x, y: outsiderSpawn.y }, { x: 9, y: 8 });
   const guardianProjection = service.listRuntimeFormations(instanceId).find((entry) => entry.id === guardian.id);
   assert.equal(guardianProjection.name, "护宗大阵");
   assert.equal(guardianProjection.ownerSectId, "sect:smoke");

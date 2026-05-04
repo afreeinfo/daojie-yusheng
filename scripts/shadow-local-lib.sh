@@ -114,6 +114,57 @@ shadow_compile_server() {
   )
 }
 
+shadow_reset_local_gm_password_record() {
+  if [[ "${SHADOW_LOCAL_SKIP_GM_AUTH_RESET:-0}" == "1" ]]; then
+    echo "==> 已跳过本地 GM 密码记录清理 (SHADOW_LOCAL_SKIP_GM_AUTH_RESET=1)"
+    return 0
+  fi
+
+  (
+    cd "${SHADOW_REPO_ROOT}"
+    node <<'NODE'
+const { Pool } = require('./packages/server/node_modules/pg');
+
+const databaseUrl = process.env.SERVER_DATABASE_URL || process.env.DATABASE_URL || '';
+const shadowUrl = process.env.SERVER_SHADOW_URL || process.env.SERVER_URL || '';
+const localHosts = new Set(['127.0.0.1', 'localhost', '::1']);
+
+function isLocalUrl(rawValue) {
+  if (!rawValue || !rawValue.trim()) {
+    return false;
+  }
+  try {
+    return localHosts.has(new URL(rawValue).hostname);
+  } catch {
+    return false;
+  }
+}
+
+async function main() {
+  if (!isLocalUrl(shadowUrl) || !isLocalUrl(databaseUrl)) {
+    return;
+  }
+
+  const pool = new Pool({ connectionString: databaseUrl });
+  try {
+    await pool.query('DELETE FROM server_gm_auth WHERE record_key = $1', ['gm_auth']).catch((error) => {
+      if (!error || typeof error !== 'object' || error.code !== '42P01') {
+        throw error;
+      }
+    });
+  } finally {
+    await pool.end().catch(() => undefined);
+  }
+}
+
+main().catch((error) => {
+  process.stderr.write(`!! 清理本地 GM 密码记录失败: ${error instanceof Error ? error.message : String(error)}\n`);
+  process.exit(1);
+});
+NODE
+  )
+}
+
 shadow_create_stable_dist_snapshot() {
   local runtime_dir=""
   runtime_dir="$(shadow_runtime_dir)"
@@ -247,6 +298,7 @@ shadow_start() {
   shadow_ensure_local_infra
   shadow_compile_server
   shadow_stop_existing
+  shadow_reset_local_gm_password_record
   shadow_runtime_dir >/dev/null
 
   if [[ "${maintenance_flag}" == "1" ]]; then

@@ -298,7 +298,7 @@ function testCreateWorldInstanceRejectsInvalidInput() {
   const service = createService([]);
   assert.throws(() => {
     service.createWorldInstance({ templateId: 'yunlai_town', linePreset: 'invalid' });
-  }, /linePreset must be peaceful or real/);
+  }, /分线预设必须是和平线或真实线/);
 }
 
 function testTransferPlayerToInstanceRejectsOfflinePlayer() {

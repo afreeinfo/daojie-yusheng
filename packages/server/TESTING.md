@@ -51,6 +51,14 @@
 - `pnpm verify:release:shadow:destructive:preflight`
 - `pnpm verify:release:shadow:destructive`
 
+## 细粒度工具
+
+顶层 `smoke:*` 只保留主链冒烟入口。领域回归、报告和压测脚本不再逐个挂顶层 smoke 别名，统一使用编译后工具入口：
+
+- 领域回归：`pnpm --filter @mud/server tool -- world-runtime-auto-combat-smoke`
+- 运维报告：`pnpm --filter @mud/server report -- capacity-planning-report`
+- 压测脚本：`pnpm --filter @mud/server bench -- transfer-pressure-benchmark`
+
 ## 边界
 
 - 自动 proof 负责回答命令是否通、门禁是否能跑、回归是否可复现。

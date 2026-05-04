@@ -58,6 +58,7 @@ import {
   buildItemTooltipPayload,
   describeEquipmentBonuses,
   describeItemEffectDetails,
+  describeMaterialValueDetails,
   ItemTooltipCooldownState,
 } from '../equipment-tooltip';
 import { getItemAffixTypeLabel, getItemDecorClassName, getItemDisplayMeta } from '../item-display';
@@ -113,28 +114,6 @@ interface InventoryActionDialogState {
   confirmDestroy: boolean;
 }
 
-/** InventoryStructureState：背包筛选结果与条目骨架状态。 */
-interface InventoryStructureState {
-/**
- * filter：filter相关字段。
- */
-
-  filter: InventoryFilter;  
-  /**
- * items：集合字段。
- */
-
-  items: Array<{  
-  /**
- * slotIndex：slotIndex相关字段。
- */
- slotIndex: number;  
- /**
- * identity：identity相关字段。
- */
- identity: string }>;
-}
-
 /** InventoryPrimaryAction：背包条目的主操作定义。 */
 interface InventoryPrimaryAction {
 /**
@@ -167,10 +146,10 @@ interface InventoryShellRefs {
 
   title: HTMLDivElement;  
   /**
- * filters：filter相关字段。
+ * filterButtons：筛选按钮缓存。
  */
 
-  filters: HTMLDivElement;  
+  filterButtons: Map<InventoryFilter, HTMLButtonElement>;
   /**
  * grid：grid标识。
  */
@@ -186,6 +165,24 @@ interface InventoryShellRefs {
  */
 
   loadHint: HTMLDivElement;
+}
+
+/** InventoryCellRefs：背包格子内部稳定节点引用。 */
+interface InventoryCellRefs {
+  type: HTMLElement;
+  count: HTMLElement;
+  name: HTMLElement;
+  cooldown: HTMLElement;
+  cooldownPie: HTMLElement;
+  cooldownLabel: HTMLElement;
+  actions: HTMLElement;
+  dropButton: HTMLButtonElement;
+}
+
+/** InventoryVisibleSnapshot：单次背包筛选收集结果。 */
+interface InventoryVisibleSnapshot {
+  totalVisibleItems: number;
+  renderedItems: Array<{ item: ItemStack; slotIndex: number }>;
 }
 
 /** INVENTORY_SOURCE_COLLAPSED_COUNT：背包来源COLLAPSED数量。 */
@@ -216,6 +213,8 @@ const INVENTORY_INITIAL_RENDER_COUNT = 72;
 const INVENTORY_RENDER_BATCH_SIZE = 48;
 /** INVENTORY_LOAD_MORE_THRESHOLD_PX：背包LOAD MORE THRESHOLD PX。 */
 const INVENTORY_LOAD_MORE_THRESHOLD_PX = 240;
+/** INVENTORY_COOLDOWN_REFRESH_MS：背包冷却显示按服务端 1Hz tick 刷新。 */
+const INVENTORY_COOLDOWN_REFRESH_MS = 1000;
 
 /** formatItemEffects：格式化物品效果。 */
 function formatItemEffects(item: ItemStack): string[] {
@@ -248,8 +247,6 @@ export class InventoryPanel {
   private activeFilter: InventoryFilter = 'all';
   /** lastInventory：last背包。 */
   private lastInventory: Inventory | null = null;
-  /** lastStructureState：last Structure状态。 */
-  private lastStructureState: InventoryStructureState | null = null;
   /** selectedSlotIndex：selected槽位索引。 */
   private selectedSlotIndex: number | null = null;
   /** selectedItemKey：selected物品Key。 */
@@ -282,6 +279,10 @@ export class InventoryPanel {
   private playerFoundation = 0;
   /** playerQi：玩家当前灵气/灵力。 */
   private playerQi = 0;
+  /** lastPlayerContextKey：上次玩家上下文签名。 */
+  private lastPlayerContextKey: string | null = null;
+  /** playerContextRevision：玩家上下文版本，用于格子渲染缓存失效。 */
+  private playerContextRevision = 0;
   /** renderedVisibleCount：rendered可见数量。 */
   private renderedVisibleCount = INVENTORY_INITIAL_RENDER_COUNT;
   /** pendingLoadMoreFrame：待处理Load More帧。 */
@@ -290,6 +291,14 @@ export class InventoryPanel {
   private cooldownRefreshTimer: number | null = null;
   /** shellRefs：shell Refs。 */
   private shellRefs: InventoryShellRefs | null = null;
+  /** cellBySlotIndex：背包格子索引，避免每次更新扫描 grid。 */
+  private cellBySlotIndex = new Map<number, HTMLElement>();
+  /** itemIdentityCache：物品签名缓存，避免背包 patch 中重复 JSON 序列化。 */
+  private itemIdentityCache = new WeakMap<ItemStack, string>();
+  /** cellRefs：格子节点缓存，避免每次 patch 反复 querySelector。 */
+  private cellRefs = new WeakMap<HTMLElement, InventoryCellRefs>();
+  /** pendingVisibleRefresh：面板不可见期间延迟列表刷新。 */
+  private pendingVisibleRefresh = false;
   /** handleScrollCapture：处理Scroll Capture。 */
   private handleScrollCapture = (event: Event) => {
     const target = event.target;
@@ -311,6 +320,8 @@ export class InventoryPanel {
     this.ensureTooltipStyle();
     this.bindPaneEvents();
     this.bindTooltipEvents();
+    const paneVisibilityObserver = new MutationObserver(() => this.flushPendingVisibleRefresh());
+    paneVisibilityObserver.observe(this.pane, { attributes: true, attributeFilter: ['class'] });
     document.addEventListener('scroll', this.handleScrollCapture, { capture: true, passive: true });
   }
 
@@ -320,7 +331,6 @@ export class InventoryPanel {
 
     this.activeFilter = 'all';
     this.lastInventory = null;
-    this.lastStructureState = null;
     this.selectedSlotIndex = null;
     this.selectedItemKey = null;
     this.actionDialog = null;
@@ -336,6 +346,9 @@ export class InventoryPanel {
     this.playerRealm = null;
     this.playerHeavenGate = null;
     this.playerFoundation = 0;
+    this.playerQi = 0;
+    this.lastPlayerContextKey = null;
+    this.playerContextRevision = 0;
     this.renderedVisibleCount = INVENTORY_INITIAL_RENDER_COUNT;
     if (this.pendingLoadMoreFrame !== null) {
       cancelAnimationFrame(this.pendingLoadMoreFrame);
@@ -347,6 +360,8 @@ export class InventoryPanel {
     }
     this.tooltip.hide(true);
     this.shellRefs = null;
+    this.cellBySlotIndex.clear();
+    this.pendingVisibleRefresh = false;
     patchElementChildren(this.pane, this.createInventoryEmptyState());
     detailModalHost.close(InventoryPanel.MODAL_OWNER);
   }  
@@ -384,15 +399,18 @@ export class InventoryPanel {
   // 关键分支按状态与边界条件处理，非法路径会被提前拦截。
 
     this.lastInventory = inventory;
-    this.syncRenderedVisibleCount(this.getVisibleItems(inventory).length);
-    const structureState = this.buildStructureState(inventory);
-    if (!this.isSameStructureState(this.lastStructureState, structureState) || !this.patchList(inventory)) {
-      this.render(inventory);
+    if (this.isPaneVisible()) {
+      this.pendingVisibleRefresh = false;
+      if (!this.patchList(inventory)) {
+        this.render(inventory);
+      }
+      this.scheduleLoadMoreCheck();
+    } else {
+      this.pendingVisibleRefresh = true;
     }
     if (!this.patchModal()) {
       this.renderModal();
     }
-    this.scheduleLoadMoreCheck();
     this.syncCooldownRefresh();
   }
 
@@ -412,6 +430,13 @@ export class InventoryPanel {
     player?: Pick<PlayerState, 'techniques' | 'equipment' | 'unlockedMinimapIds' | 'realm' | 'heavenGate' | 'foundation' | 'qi'>,
   ): void {
   // 关键分支按状态与边界条件处理，非法路径会被提前拦截。
+
+    const nextContextKey = this.buildPlayerContextKey(player);
+    if (this.lastPlayerContextKey === nextContextKey) {
+      return;
+    }
+    this.lastPlayerContextKey = nextContextKey;
+    this.playerContextRevision += 1;
 
     if (!player) {
       this.learnedTechniqueIds.clear();
@@ -446,6 +471,38 @@ export class InventoryPanel {
     if (this.lastInventory) {
       this.update(this.lastInventory);
     }
+  }
+
+  /** buildPlayerContextKey：构建背包展示依赖的玩家上下文签名。 */
+  private buildPlayerContextKey(
+    player?: Pick<PlayerState, 'techniques' | 'equipment' | 'unlockedMinimapIds' | 'realm' | 'heavenGate' | 'foundation' | 'qi'>,
+  ): string {
+    if (!player) {
+      return 'none';
+    }
+    const learnedTechniqueKey = (player.techniques ?? [])
+      .map((technique) => technique.techId)
+      .filter((techId): techId is string => typeof techId === 'string' && techId.length > 0)
+      .join(',');
+    const minimapKey = (player.unlockedMinimapIds ?? [])
+      .filter((mapId): mapId is string => typeof mapId === 'string' && mapId.length > 0)
+      .join(',');
+    const equipmentKey = (['weapon', 'head', 'body', 'legs', 'accessory'] as const)
+      .map((slot) => {
+        const equippedItem = player.equipment?.[slot];
+        return `${slot}:${equippedItem ? this.getItemIdentity(equippedItem) : ''}`;
+      })
+      .join(',');
+    const heavenGate = player.realm?.heavenGate ?? player.heavenGate ?? null;
+    return [
+      `tech=${learnedTechniqueKey}`,
+      `map=${minimapKey}`,
+      `eq=${equipmentKey}`,
+      `realm=${player.realm?.realmLv ?? ''}:${player.realm?.progress ?? ''}:${player.realm?.progressToNext ?? ''}`,
+      `gate=${heavenGate?.averageBonus ?? ''}`,
+      `foundation=${Math.max(0, Math.floor(player.foundation ?? 0))}`,
+      `qi=${Math.max(0, Math.floor(player.qi ?? 0))}`,
+    ].join('|');
   }
 
   /** render：渲染渲染。 */
@@ -721,6 +778,7 @@ export class InventoryPanel {
 
     const filters = document.createElement('div');
     filters.className = 'inventory-filter-tabs';
+    const filterButtons = new Map<InventoryFilter, HTMLButtonElement>();
     for (const tab of INVENTORY_FILTER_TABS) {
       const button = document.createElement('button');
       button.type = 'button';
@@ -729,6 +787,7 @@ export class InventoryPanel {
       button.dataset.filter = tab.id;
       button.textContent = tab.label;
       filters.append(button);
+      filterButtons.set(tab.id, button);
     }
 
     const empty = this.createInventoryEmptyState();
@@ -750,7 +809,7 @@ export class InventoryPanel {
     this.shellRefs = {
       section: sectionEl,
       title: titleEl,
-      filters,
+      filterButtons,
       grid,
       empty,
       loadHint,
@@ -804,7 +863,58 @@ export class InventoryPanel {
     actions.append(dropButton);
 
     cell.append(cooldown, head, name, actions);
+    this.cellRefs.set(cell, {
+      type,
+      count,
+      name,
+      cooldown,
+      cooldownPie,
+      cooldownLabel,
+      actions,
+      dropButton,
+    });
     return cell;
+  }
+
+  /** getInventoryCellRefs：读取背包格子缓存节点。 */
+  private getInventoryCellRefs(cell: HTMLElement): InventoryCellRefs | null {
+    const cached = this.cellRefs.get(cell);
+    if (cached) {
+      return cached;
+    }
+    const type = cell.querySelector<HTMLElement>('[data-item-type="true"]');
+    const count = cell.querySelector<HTMLElement>('[data-item-count="true"]');
+    const name = cell.querySelector<HTMLElement>('[data-item-name="true"]');
+    const cooldown = cell.querySelector<HTMLElement>('[data-item-cooldown="true"]');
+    const cooldownPie = cell.querySelector<HTMLElement>('[data-item-cooldown-pie="true"]');
+    const cooldownLabel = cell.querySelector<HTMLElement>('[data-item-cooldown-label="true"]');
+    const actions = cell.querySelector<HTMLElement>('[data-item-actions="true"]');
+    const dropButton = cell.querySelector<HTMLButtonElement>('[data-inline-drop]');
+    if (!type || !count || !name || !cooldown || !cooldownPie || !cooldownLabel || !actions || !dropButton) {
+      return null;
+    }
+    const refs = { type, count, name, cooldown, cooldownPie, cooldownLabel, actions, dropButton };
+    this.cellRefs.set(cell, refs);
+    return refs;
+  }
+
+  /** buildCellRenderKey：构建格子局部渲染签名。 */
+  private buildCellRenderKey(
+    itemIdentity: string,
+    item: ItemStack,
+    slotIndex: number,
+    cooldownState: InventoryItemCooldownState | null,
+    cooldownRemaining: number,
+  ): string {
+    return [
+      String(slotIndex),
+      itemIdentity,
+      String(item.count),
+      String(this.playerContextRevision),
+      cooldownState
+        ? `${cooldownState.startedAtTick}:${cooldownState.cooldown}:${cooldownRemaining}`
+        : '',
+    ].join('|');
   }
 
   /** syncGridChildren：同步Grid Children。 */
@@ -843,30 +953,27 @@ export class InventoryPanel {
   ): boolean {
   // 关键分支按状态与边界条件处理，非法路径会被提前拦截。
 
-    const typeNode = cell.querySelector<HTMLElement>('[data-item-type="true"]');
-    const countNode = cell.querySelector<HTMLElement>('[data-item-count="true"]');
-    const nameNode = cell.querySelector<HTMLElement>('[data-item-name="true"]');
-    const cooldownNode = cell.querySelector<HTMLElement>('[data-item-cooldown="true"]');
-    const cooldownPieNode = cell.querySelector<HTMLElement>('[data-item-cooldown-pie="true"]');
-    const cooldownLabelNode = cell.querySelector<HTMLElement>('[data-item-cooldown-label="true"]');
-    const actionsNode = cell.querySelector<HTMLElement>('[data-item-actions="true"]');
-    if (!typeNode || !countNode || !nameNode || !cooldownNode || !cooldownPieNode || !cooldownLabelNode || !actionsNode) {
+    const cooldownRemaining = this.getItemCooldownRemainingTicks(cooldownState);
+    const itemIdentity = this.getItemIdentity(item);
+    const renderKey = this.buildCellRenderKey(itemIdentity, item, slotIndex, cooldownState, cooldownRemaining);
+    if (cell.dataset.itemRenderKey === renderKey) {
+      return true;
+    }
+
+    const refs = this.getInventoryCellRefs(cell);
+    if (!refs) {
       return false;
     }
 
     const itemMeta = getItemDisplayMeta(item);
     const displayName = itemMeta.displayItem.name;
-    const primaryAction = this.getPrimaryAction(item);
-    let primaryButton = actionsNode.querySelector<HTMLButtonElement>('[data-item-primary="true"]');
-    const dropButton = actionsNode.querySelector<HTMLButtonElement>('[data-inline-drop]');
-    if (!dropButton) {
-      return false;
-    }
+    const primaryAction = this.getPrimaryAction(item, cooldownState);
+    let primaryButton = refs.actions.querySelector<HTMLButtonElement>('[data-item-primary="true"]');
 
     if (primaryAction) {
       if (!primaryButton) {
         primaryButton = createSmallBtn(primaryAction.label, { dataset: { itemPrimary: 'true' } });
-        actionsNode.insertBefore(primaryButton, dropButton);
+        refs.actions.insertBefore(primaryButton, refs.dropButton);
       }
       primaryButton.textContent = primaryAction.label;
       primaryButton.dataset.inlinePrimary = String(slotIndex);
@@ -902,7 +1009,8 @@ export class InventoryPanel {
       levelNode?.remove();
     }
 
-    cell.dataset.itemKey = this.getItemIdentity(item);
+    cell.dataset.itemKey = itemIdentity;
+    cell.dataset.itemRenderKey = renderKey;
     cell.dataset.openItem = String(slotIndex);
     cell.dataset.itemSlot = String(slotIndex);
     if (itemMeta.grade) {
@@ -913,22 +1021,22 @@ export class InventoryPanel {
     cell.className = getItemDecorClassName('inventory-cell', item);
     cell.classList.toggle('inventory-cell--cooldown', cooldownState !== null);
 
-    typeNode.textContent = getItemAffixTypeLabel(item, getItemTypeLabel(item.type));
-    countNode.textContent = formatDisplayCountBadge(item.count);
-    nameNode.textContent = displayName;
-    nameNode.title = displayName;
-    nameNode.className = `inventory-cell-name ${this.getNameClass(displayName)}`.trim();
-    dropButton.dataset.inlineDrop = String(slotIndex);
+    refs.type.textContent = getItemAffixTypeLabel(item, getItemTypeLabel(item.type));
+    refs.count.textContent = formatDisplayCountBadge(item.count);
+    refs.name.textContent = displayName;
+    refs.name.title = displayName;
+    refs.name.className = `inventory-cell-name ${this.getNameClass(displayName)}`.trim();
+    refs.dropButton.dataset.inlineDrop = String(slotIndex);
 
-    cooldownNode.hidden = cooldownState === null;
+    refs.cooldown.hidden = cooldownState === null;
     if (cooldownState) {
-      cooldownNode.title = this.getItemCooldownTitle(cooldownState);
-      cooldownPieNode.style.setProperty('--inventory-cooldown-progress', this.getItemCooldownRatio(cooldownState).toFixed(4));
-      cooldownLabelNode.textContent = formatDisplayInteger(this.getItemCooldownRemainingTicks(cooldownState));
+      refs.cooldown.title = this.getItemCooldownTitle(cooldownState, cooldownRemaining);
+      refs.cooldownPie.style.setProperty('--inventory-cooldown-progress', this.getItemCooldownRatio(cooldownState, cooldownRemaining).toFixed(4));
+      refs.cooldownLabel.textContent = formatDisplayInteger(cooldownRemaining);
     } else {
-      cooldownNode.removeAttribute('title');
-      cooldownPieNode.style.setProperty('--inventory-cooldown-progress', '0');
-      cooldownLabelNode.textContent = '';
+      refs.cooldown.removeAttribute('title');
+      refs.cooldownPie.style.setProperty('--inventory-cooldown-progress', '0');
+      refs.cooldownLabel.textContent = '';
     }
     return true;
   }
@@ -989,6 +1097,7 @@ export class InventoryPanel {
     const bonusLines = item.type === 'equipment'
       ? describeEquipmentBonuses(previewItem)
       : describePreviewBonuses(previewItem.equipAttrs, previewItem.equipStats, previewItem.equipValueStats);
+    const materialValueLines = item.type === 'material' ? describeMaterialValueDetails(previewItem) : [];
     const effectLines = formatItemEffects(item);
     const primaryAction = this.getPrimaryAction(item);
     const statusLabel = this.getItemStatusLabel(item);
@@ -1006,7 +1115,7 @@ export class InventoryPanel {
       title: displayItem.name,
       subtitle: `${getItemTypeLabel(item.type)} · 数量 ${formatDisplayCountBadge(item.count)}`,
       renderBody: (body) => {
-        this.renderItemDetailBody(body, item, sourceListHtml, sourceEntryCount, canToggleSourceList, primaryAction, canBatchUse, canBatchDropOrDestroy, bonusLines, effectLines, statusLabel);
+        this.renderItemDetailBody(body, item, sourceListHtml, sourceEntryCount, canToggleSourceList, primaryAction, canBatchUse, canBatchDropOrDestroy, bonusLines, materialValueLines, effectLines, statusLabel);
       },
       onClose: () => {
         this.clearFormationWorldPreview();
@@ -1602,6 +1711,7 @@ export class InventoryPanel {
     canBatchUse: boolean,
     canBatchDropOrDestroy: boolean,
     bonusLines: string[],
+    materialValueLines: string[],
     effectLines: string[],
     statusLabel: string | null,
   ): void {
@@ -1632,6 +1742,10 @@ export class InventoryPanel {
       ${bonusLines.length > 0 ? `<div class="quest-detail-section">
         <strong>装备属性</strong>
         <span data-inventory-modal-bonuses="true">${this.escapeHtml(bonusLines.join(' / '))}</span>
+      </div>` : ''}
+      ${materialValueLines.length > 0 ? `<div class="quest-detail-section">
+        <strong>材料属性</strong>
+        <span data-inventory-modal-material-values="true">${this.escapeHtml(materialValueLines.join(' / '))}</span>
       </div>` : ''}
       ${effectLines.length > 0 ? `<div class="quest-detail-section">
         <strong>特殊效果</strong>
@@ -1816,50 +1930,50 @@ export class InventoryPanel {
     refs.title.textContent = `背包 (${formatDisplayInteger(inventory.items.length)}/${formatDisplayInteger(inventory.capacity)})`;
 
     for (const tab of INVENTORY_FILTER_TABS) {
-      const button = refs.filters.querySelector<HTMLElement>(`[data-filter-button="${CSS.escape(tab.id)}"]`);
+      const button = refs.filterButtons.get(tab.id);
       if (!button) {
         return false;
       }
       button.classList.toggle('active', this.activeFilter === tab.id);
     }
 
-    const visibleItems = this.getVisibleItems(inventory);
-    this.syncRenderedVisibleCount(visibleItems.length);
-    const renderedItems = visibleItems.slice(0, this.renderedVisibleCount);
-    if (visibleItems.length === 0) {
+    let visibleSnapshot = this.collectVisibleItems(inventory);
+    const previousRenderedVisibleCount = this.renderedVisibleCount;
+    this.syncRenderedVisibleCount(visibleSnapshot.totalVisibleItems);
+    if (previousRenderedVisibleCount !== this.renderedVisibleCount) {
+      visibleSnapshot = this.collectVisibleItems(inventory);
+    }
+    const { renderedItems, totalVisibleItems } = visibleSnapshot;
+    if (totalVisibleItems === 0) {
       refs.empty.hidden = false;
       refs.empty.textContent = inventory.items.length === 0 ? '背包空空如也' : '当前分类暂无物品';
       refs.grid.hidden = true;
-      patchElementHtml(refs.grid, '');
+      refs.grid.replaceChildren();
+      this.cellBySlotIndex.clear();
       refs.loadHint.hidden = true;
       refs.loadHint.textContent = '';
-      this.lastStructureState = this.buildStructureStateFromVisibleItems(renderedItems);
       return true;
     }
 
     refs.empty.hidden = true;
     refs.grid.hidden = false;
     const cooldownStateMap = this.getCooldownStateMap(inventory);
-    if (renderedItems.length < visibleItems.length) {
+    if (renderedItems.length < totalVisibleItems) {
       refs.loadHint.hidden = false;
-      refs.loadHint.textContent = `向下滚动继续加载（已显示 ${formatDisplayInteger(renderedItems.length)} / ${formatDisplayInteger(visibleItems.length)}）`;
+      refs.loadHint.textContent = `向下滚动继续加载（已显示 ${formatDisplayInteger(renderedItems.length)} / ${formatDisplayInteger(totalVisibleItems)}）`;
     } else {
       refs.loadHint.hidden = true;
       refs.loadHint.textContent = '';
     }
 
-    const existingCells = new Map<string, HTMLElement>();
-    refs.grid.querySelectorAll<HTMLElement>('[data-item-slot]').forEach((cell) => {
-      const slot = cell.dataset.itemSlot;
-      if (slot) {
-        existingCells.set(slot, cell);
-      }
-    });
-
+    const usedSlotIndexes = new Set<number>();
     const orderedCells = renderedItems.map(({ item, slotIndex }) => {
-      const key = String(slotIndex);
-      const cell = existingCells.get(key) ?? this.createInventoryCell(slotIndex);
-      existingCells.delete(key);
+      usedSlotIndexes.add(slotIndex);
+      let cell = this.cellBySlotIndex.get(slotIndex);
+      if (!cell) {
+        cell = this.createInventoryCell(slotIndex);
+        this.cellBySlotIndex.set(slotIndex, cell);
+      }
       const cooldownState = cooldownStateMap.get(item.itemId) ?? null;
       if (!this.patchInventoryCell(cell, item, slotIndex, cooldownState)) {
         return null;
@@ -1870,11 +1984,13 @@ export class InventoryPanel {
       return false;
     }
     this.syncGridChildren(refs.grid, orderedCells.filter((cell): cell is HTMLElement => cell !== null));
-    for (const cell of existingCells.values()) {
-      cell.remove();
+    for (const [slotIndex, cell] of this.cellBySlotIndex) {
+      if (!usedSlotIndexes.has(slotIndex)) {
+        cell.remove();
+        this.cellBySlotIndex.delete(slotIndex);
+      }
     }
 
-    this.lastStructureState = this.buildStructureStateFromVisibleItems(renderedItems);
     return true;
   }
 
@@ -2216,10 +2332,13 @@ export class InventoryPanel {
   }
 
   /** getPrimaryAction：读取Primary动作。 */
-  private getPrimaryAction(item: ItemStack): InventoryPrimaryAction | null {
+  private getPrimaryAction(
+    item: ItemStack,
+    cooldownState?: InventoryItemCooldownState | null,
+  ): InventoryPrimaryAction | null {
   // 关键分支按状态与边界条件处理，非法路径会被提前拦截。
 
-    const statusLabel = this.getItemStatusLabel(item);
+    const statusLabel = this.getItemStatusLabel(item, cooldownState);
     if (statusLabel) {
       return { label: statusLabel, kind: 'status', disabled: true };
     }
@@ -2265,11 +2384,16 @@ export class InventoryPanel {
   }
 
   /** getItemStatusLabel：读取物品状态标签。 */
-  private getItemStatusLabel(item: ItemStack): string | null {
+  private getItemStatusLabel(
+    item: ItemStack,
+    cooldownState?: InventoryItemCooldownState | null,
+  ): string | null {
   // 关键分支按状态与边界条件处理，非法路径会被提前拦截。
 
-    const cooldownState = this.getItemCooldownState(item);
-    const cooldownLeft = this.getItemCooldownRemainingTicks(cooldownState);
+    const activeCooldownState = cooldownState === undefined
+      ? this.getItemCooldownState(item)
+      : cooldownState;
+    const cooldownLeft = this.getItemCooldownRemainingTicks(activeCooldownState);
     if (cooldownLeft > 0) {
       return `冷却 ${formatDisplayInteger(cooldownLeft)} 息`;
     }
@@ -2340,19 +2464,21 @@ export class InventoryPanel {
   }
 
   /** getItemCooldownRatio：读取物品冷却Ratio。 */
-  private getItemCooldownRatio(cooldownState: InventoryItemCooldownState | null): number {
+  private getItemCooldownRatio(cooldownState: InventoryItemCooldownState | null, remainingTicks?: number): number {
   // 关键分支按状态与边界条件处理，非法路径会被提前拦截。
 
     if (!cooldownState) {
       return 0;
     }
     const cooldown = Math.max(1, cooldownState.cooldown);
-    return Math.max(0, Math.min(1, this.getItemCooldownRemainingTicks(cooldownState) / cooldown));
+    const remaining = remainingTicks ?? this.getItemCooldownRemainingTicks(cooldownState);
+    return Math.max(0, Math.min(1, remaining / cooldown));
   }
 
   /** getItemCooldownTitle：读取物品冷却标题。 */
-  private getItemCooldownTitle(cooldownState: InventoryItemCooldownState): string {
-    return `使用冷却 ${formatDisplayInteger(this.getItemCooldownRemainingTicks(cooldownState))} / ${formatDisplayInteger(cooldownState.cooldown)} 息`;
+  private getItemCooldownTitle(cooldownState: InventoryItemCooldownState, remainingTicks?: number): string {
+    const remaining = remainingTicks ?? this.getItemCooldownRemainingTicks(cooldownState);
+    return `使用冷却 ${formatDisplayInteger(remaining)} / ${formatDisplayInteger(cooldownState.cooldown)} 息`;
   }
 
   /** getNameClass：读取名称Class。 */
@@ -2371,22 +2497,45 @@ export class InventoryPanel {
 
   /** getItemIdentity：读取物品身份。 */
   private getItemIdentity(item: ItemStack): string {
-    return createItemStackSignature(item);
+    const cached = this.itemIdentityCache.get(item);
+    if (cached) {
+      return cached;
+    }
+    const identity = createItemStackSignature(item);
+    this.itemIdentityCache.set(item, identity);
+    return identity;
   }
 
-  /** getVisibleItems：读取可见物品。 */
-  private getVisibleItems(inventory: Inventory): Array<{  
-  /**
- * item：道具相关字段。
- */
- item: ItemStack;  
- /**
- * slotIndex：slotIndex相关字段。
- */
- slotIndex: number }> {
-    return inventory.items
-      .map((item, slotIndex) => ({ item, slotIndex }))
-      .filter(({ item }) => this.activeFilter === 'all' || item.type === this.activeFilter);
+  /** collectVisibleItems：一次遍历收集可见总数和当前已渲染批次。 */
+  private collectVisibleItems(inventory: Inventory): InventoryVisibleSnapshot {
+    const renderedItems: InventoryVisibleSnapshot['renderedItems'] = [];
+    let totalVisibleItems = 0;
+    const renderLimit = Math.max(0, this.renderedVisibleCount);
+    for (let slotIndex = 0; slotIndex < inventory.items.length; slotIndex += 1) {
+      const item = inventory.items[slotIndex];
+      if (!item || (this.activeFilter !== 'all' && item.type !== this.activeFilter)) {
+        continue;
+      }
+      totalVisibleItems += 1;
+      if (renderedItems.length < renderLimit) {
+        renderedItems.push({ item, slotIndex });
+      }
+    }
+    return { totalVisibleItems, renderedItems };
+  }
+
+  /** countVisibleItems：只计数筛选后条目，滚动懒加载热路径避免创建数组。 */
+  private countVisibleItems(inventory: Inventory): number {
+    if (this.activeFilter === 'all') {
+      return inventory.items.length;
+    }
+    let count = 0;
+    for (const item of inventory.items) {
+      if (item?.type === this.activeFilter) {
+        count += 1;
+      }
+    }
+    return count;
   }
 
   /** syncRenderedVisibleCount：同步Rendered可见数量。 */
@@ -2411,7 +2560,7 @@ export class InventoryPanel {
     if (!this.lastInventory || !this.isPaneVisible()) {
       return;
     }
-    const visibleItemCount = this.getVisibleItems(this.lastInventory).length;
+    const visibleItemCount = this.countVisibleItems(this.lastInventory);
     if (visibleItemCount === 0 || this.renderedVisibleCount >= visibleItemCount) {
       return;
     }
@@ -2476,6 +2625,24 @@ export class InventoryPanel {
     return !this.pane.classList.contains('hidden') && this.pane.getClientRects().length > 0;
   }
 
+  /** isInventoryUiActive：判断背包列表或详情是否需要实时刷新。 */
+  private isInventoryUiActive(): boolean {
+    return this.isPaneVisible() || detailModalHost.isOpenFor(InventoryPanel.MODAL_OWNER);
+  }
+
+  /** flushPendingVisibleRefresh：tab 重新可见后补刷最新背包列表。 */
+  private flushPendingVisibleRefresh(): void {
+    if (!this.pendingVisibleRefresh || !this.lastInventory || !this.isPaneVisible()) {
+      return;
+    }
+    this.pendingVisibleRefresh = false;
+    if (!this.patchList(this.lastInventory)) {
+      this.render(this.lastInventory);
+    }
+    this.scheduleLoadMoreCheck();
+    this.syncCooldownRefresh();
+  }
+
   /** scrollToTop：处理scroll To Top。 */
   private scrollToTop(): void {
   // 关键分支按状态与边界条件处理，非法路径会被提前拦截。
@@ -2484,63 +2651,6 @@ export class InventoryPanel {
     if (scrollContainer) {
       scrollContainer.scrollTop = 0;
     }
-  }
-
-  /** buildStructureState：构建Structure状态。 */
-  private buildStructureState(inventory: Inventory): InventoryStructureState {
-    return this.buildStructureStateFromVisibleItems(this.getVisibleItems(inventory).slice(0, this.renderedVisibleCount));
-  }  
-  /**
- * buildStructureStateFromVisibleItems：构建并返回目标对象。
- * @param visibleItems Array<{ item: ItemStack; slotIndex: number }> 参数说明。
- * @returns 返回Structure状态From可见道具。
- */
-
-
-  private buildStructureStateFromVisibleItems(
-    visibleItems: Array<{    
-    /**
- * item：道具相关字段。
- */
- item: ItemStack;    
- /**
- * slotIndex：slotIndex相关字段。
- */
- slotIndex: number }>,
-  ): InventoryStructureState {
-    return {
-      filter: this.activeFilter,
-      items: visibleItems.map(({ item, slotIndex }) => ({
-        slotIndex,
-        identity: this.getItemIdentity(item),
-      })),
-    };
-  }  
-  /**
- * isSameStructureState：判断SameStructure状态是否满足条件。
- * @param previous InventoryStructureState | null 参数说明。
- * @param next InventoryStructureState 参数说明。
- * @returns 返回是否满足SameStructure状态条件。
- */
-
-
-  private isSameStructureState(
-    previous: InventoryStructureState | null,
-    next: InventoryStructureState,
-  ): boolean {
-  // 关键分支按状态与边界条件处理，非法路径会被提前拦截。
-
-    if (!previous || previous.filter !== next.filter || previous.items.length !== next.items.length) {
-      return false;
-    }
-    for (let index = 0; index < previous.items.length; index += 1) {
-      const previousItem = previous.items[index]!;
-      const nextItem = next.items[index]!;
-      if (previousItem.slotIndex !== nextItem.slotIndex || previousItem.identity !== nextItem.identity) {
-        return false;
-      }
-    }
-    return true;
   }
 
   /** buildTooltipPayload：构建提示载荷。 */
@@ -2591,7 +2701,7 @@ export class InventoryPanel {
       window.clearTimeout(this.cooldownRefreshTimer);
       this.cooldownRefreshTimer = null;
     }
-    if (!this.hasActiveCooldowns()) {
+    if (!this.isInventoryUiActive() || !this.hasActiveCooldowns()) {
       return;
     }
     this.cooldownRefreshTimer = window.setTimeout(() => {
@@ -2599,7 +2709,10 @@ export class InventoryPanel {
       if (!this.lastInventory) {
         return;
       }
-      if (!this.patchList(this.lastInventory)) {
+      if (!this.isInventoryUiActive()) {
+        return;
+      }
+      if (this.isPaneVisible() && !this.patchList(this.lastInventory)) {
         this.render(this.lastInventory);
       }
       if (!this.patchModal()) {
@@ -2607,7 +2720,7 @@ export class InventoryPanel {
       }
       this.refreshTooltipContent();
       this.syncCooldownRefresh();
-    }, 100);
+    }, INVENTORY_COOLDOWN_REFRESH_MS);
   }
 
   /** closeModal：关闭弹窗。 */

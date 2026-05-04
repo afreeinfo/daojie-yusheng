@@ -505,6 +505,32 @@ class WorldRuntimeFormationService {
         };
     }
 
+    getAttackableFormationEyeCombatStateAtTile(instanceId, x, y) {
+        const normalizedInstanceId = normalizeInstanceId(instanceId);
+        const targetX = Math.trunc(Number(x));
+        const targetY = Math.trunc(Number(y));
+        if (!normalizedInstanceId || !Number.isFinite(targetX) || !Number.isFinite(targetY)) {
+            return null;
+        }
+        const candidates = [];
+        for (const formations of this.formationsByInstanceId.values()) {
+            for (const formation of formations) {
+                if (!formation || Number(formation.remainingAuraBudget) <= 0) {
+                    continue;
+                }
+                const eyeInstanceId = normalizeInstanceId(formation.eyeInstanceId ?? formation.instanceId);
+                const eyeX = Number.isFinite(Number(formation.eyeX)) ? Math.trunc(Number(formation.eyeX)) : formation.x;
+                const eyeY = Number.isFinite(Number(formation.eyeY)) ? Math.trunc(Number(formation.eyeY)) : formation.y;
+                if (eyeInstanceId === normalizedInstanceId && eyeX === targetX && eyeY === targetY) {
+                    candidates.push(formation);
+                }
+            }
+        }
+        candidates.sort((left, right) => left.id.localeCompare(right.id, 'zh-Hans-CN'));
+        const formation = candidates[0] ?? null;
+        return formation ? this.getAttackableEntityCombatState(normalizedInstanceId, formation.id) : null;
+    }
+
     applyDamageToFormation(instanceId, formationInstanceId, damage, attackerPlayerId = null, deps = null) {
         const formation = this.findFormationInInstance(instanceId, formationInstanceId);
         if (!formation || formation.remainingAuraBudget <= 0) {

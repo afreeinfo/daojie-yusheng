@@ -67,6 +67,7 @@ interface WorldRuntimePlayerSessionDeps {
   };
   worldRuntimeSectService?: {
     ensureSectRuntimeInstanceByTemplateId?(templateId: string, deps: WorldRuntimePlayerSessionDeps): InstanceRuntimeLike | null;
+    reconcilePlayerSectId?(playerId: string): string | null;
   };
   worldSessionService: {
     purgePlayerSession(playerId: string, reason: string): void;
@@ -136,13 +137,15 @@ export class WorldRuntimePlayerSessionService {
       deps.getInstanceRuntime(previous.instanceId)?.disconnectPlayer(playerId);
     }
 
+    const playerState = deps.playerRuntimeService.ensurePlayer(playerId, sessionId);
+    deps.worldRuntimeSectService?.reconcilePlayerSectId?.(playerId);
+
     const runtimePlayer = targetInstance.connectPlayer({
       playerId,
       sessionId,
       preferredX: input.preferredX,
       preferredY: input.preferredY,
     });
-    const playerState = deps.playerRuntimeService.ensurePlayer(playerId, sessionId);
     targetInstance.setPlayerMoveSpeed(playerId, playerState.attrs.numericStats.moveSpeed);
     deps.setPlayerLocation(playerId, {
       instanceId: targetInstance.meta.instanceId,

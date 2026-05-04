@@ -92,6 +92,7 @@
     "name": "大还灵丹",
     "type": "consumable",
     "level": 8,
+    "grade": "yellow",
     "desc": "药力更浑厚，立刻恢复 32% 真气。",
     "qiPercent": 0.32
   },
@@ -99,7 +100,8 @@
     "itemId": "pure_yang_pill",
     "name": "纯阳丹",
     "type": "consumable",
-    "level": 16,
+    "level": 20,
+    "grade": "yellow",
     "desc": "烈阳药引直入气海，立刻恢复 72% 真气。",
     "qiPercent": 0.72
   },
@@ -108,6 +110,7 @@
     "name": "寒心膏",
     "type": "consumable",
     "level": 10,
+    "grade": "mystic",
     "desc": "寒性药膏可稳住伤处，立刻恢复 42% 气血。",
     "healPercent": 0.42
   },
@@ -116,6 +119,7 @@
     "name": "赤芽丹",
     "type": "consumable",
     "level": 7,
+    "grade": "yellow",
     "tags": ["战斗丹药"],
     "desc": "服后 2400 息内血勇更盛，即使身死药势也不会散，暴击 +9%。",
     "consumeBuffs": [
@@ -138,6 +142,7 @@
     "name": "破阵丹",
     "type": "consumable",
     "level": 12,
+    "grade": "mystic",
     "tags": ["战斗丹药"],
     "desc": "药力凝在手眼与发力节点，2400 息内破招 +14%、命中 +7%，身死不散。",
     "consumeBuffs": [
@@ -161,6 +166,7 @@
     "name": "明目丹",
     "type": "consumable",
     "level": 13,
+    "grade": "mystic",
     "tags": ["战斗丹药"],
     "desc": "服后心神澄明，2400 息内命中 +9%、视野 +14%，死亡不消失。",
     "consumeBuffs": [
@@ -184,6 +190,7 @@
     "name": "轻身丹",
     "type": "consumable",
     "level": 11,
+    "grade": "mystic",
     "tags": ["战斗丹药"],
     "desc": "药劲顺着经脉卸到脚下，2400 息内移动速度 +22%、闪避 +7%，死亡不消失。",
     "consumeBuffs": [
@@ -206,7 +213,8 @@
     "itemId": "pill.bitter_cultivation_elixir",
     "name": "苦修丹",
     "type": "consumable",
-    "level": 18,
+    "level": 20,
+    "grade": "yellow",
     "desc": "强行催运行功，3000 息内境界修为 +25%、功法经验 +25%，但移动速度 -12%。",
     "consumeBuffs": [
       {

@@ -76,7 +76,7 @@ function runIdleScenario(binding, baseView, basePlayer) {
 /**
  * 记录projector。
  */
-    const projector = new world_projector_service_1.WorldProjectorService();
+    const projector = createProjector();
     projector.createInitialEnvelope(binding, baseView, basePlayer);
 /**
  * 记录durationsms。
@@ -113,7 +113,7 @@ function runMoveScenario(binding, baseView, basePlayer) {
 /**
  * 记录projector。
  */
-    const projector = new world_projector_service_1.WorldProjectorService();
+    const projector = createProjector();
     projector.createInitialEnvelope(binding, baseView, basePlayer);
 /**
  * 记录movedview。
@@ -148,7 +148,7 @@ function runInventoryScenario(binding, baseView, basePlayer) {
 /**
  * 记录projector。
  */
-    const projector = new world_projector_service_1.WorldProjectorService();
+    const projector = createProjector();
     projector.createInitialEnvelope(binding, baseView, basePlayer);
 /**
  * 记录patched物品。
@@ -183,7 +183,7 @@ function runTechniqueScenario(binding, baseView, basePlayer) {
 /**
  * 记录projector。
  */
-    const projector = new world_projector_service_1.WorldProjectorService();
+    const projector = createProjector();
     projector.createInitialEnvelope(binding, baseView, basePlayer);
 /**
  * 记录功法entry。
@@ -226,7 +226,7 @@ function runGroundScenario(binding, baseView, basePlayer) {
 /**
  * 记录projector。
  */
-    const projector = new world_projector_service_1.WorldProjectorService();
+    const projector = createProjector();
     projector.createInitialEnvelope(binding, baseView, basePlayer);
 /**
  * 记录nextview。
@@ -269,7 +269,7 @@ function runGroundScenario(binding, baseView, basePlayer) {
  * 运行高负载 crowd scenario。
  */
 function runDenseCrowdScenario(binding, baseView, basePlayer) {
-    const projector = new world_projector_service_1.WorldProjectorService();
+    const projector = createProjector();
     projector.createInitialEnvelope(binding, baseView, basePlayer);
     const denseView = {
         ...baseView,
@@ -405,6 +405,27 @@ function createBaseView() {
             },
         ],
         localGroundPiles: [],
+    };
+}
+function createProjector() {
+    return new world_projector_service_1.WorldProjectorService(createTemplateRepository());
+}
+function createTemplateRepository() {
+    const templates = new Map([
+        ['bench_map', { id: 'bench_map', name: 'Bench Map' }],
+        ['bench_target', { id: 'bench_target', name: 'Bench Target' }],
+    ]);
+    return {
+        has(mapId) {
+            return templates.has(mapId);
+        },
+        getOrThrow(mapId) {
+            const template = templates.get(mapId);
+            if (!template) {
+                throw new Error(`missing bench map template: ${mapId}`);
+            }
+            return template;
+        },
     };
 }
 /**

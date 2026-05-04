@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger, Optional, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import { EQUIP_SLOTS, PLAYER_HEARTBEAT_TIMEOUT_MS } from '@mud/shared';
+import type { OfflineGainReportView, PlayerStatisticPeriodTotalView } from '@mud/shared';
 import type { PoolClient } from 'pg';
 import { Pool } from 'pg';
 
@@ -35,6 +36,9 @@ const PLAYER_ALCHEMY_PRESET_TABLE = 'player_alchemy_preset';
 const PLAYER_ACTIVE_JOB_TABLE = 'player_active_job';
 const PLAYER_ENHANCEMENT_RECORD_TABLE = 'player_enhancement_record';
 const PLAYER_LOGBOOK_MESSAGE_TABLE = 'player_logbook_message';
+const PLAYER_OFFLINE_GAIN_SESSION_TABLE = 'player_offline_gain_session';
+const PLAYER_OFFLINE_GAIN_REPORT_TABLE = 'player_offline_gain_report';
+const PLAYER_STATISTIC_DAY_TOTAL_TABLE = 'player_statistic_day_total';
 const PLAYER_RECOVERY_WATERMARK_TABLE = 'player_recovery_watermark';
 const PLAYER_DOMAIN_BIGINT_COLUMNS_BY_TABLE = {
   [PLAYER_WORLD_ANCHOR_TABLE]: ['respawn_x', 'respawn_y', 'last_safe_x', 'last_safe_y'],
@@ -88,6 +92,9 @@ export const PLAYER_DOMAIN_PROJECTED_TABLES = [
   PLAYER_ACTIVE_JOB_TABLE,
   PLAYER_ENHANCEMENT_RECORD_TABLE,
   PLAYER_LOGBOOK_MESSAGE_TABLE,
+  PLAYER_OFFLINE_GAIN_SESSION_TABLE,
+  PLAYER_OFFLINE_GAIN_REPORT_TABLE,
+  PLAYER_STATISTIC_DAY_TOTAL_TABLE,
   PLAYER_RECOVERY_WATERMARK_TABLE,
 ] as const;
 
@@ -262,6 +269,25 @@ export interface PlayerLogbookMessageUpsertInput {
   from?: string | null;
   at?: number | null;
   ackedAt?: number | null;
+}
+
+export interface PlayerOfflineGainSessionRecord {
+  playerId: string;
+  sessionId: string;
+  startedAt: number;
+  baselinePayload: Record<string, unknown>;
+}
+
+export interface PlayerOfflineGainSessionUpsertInput {
+  sessionId: string;
+  startedAt: number;
+  baselinePayload: Record<string, unknown>;
+}
+
+export interface PlayerStatisticDayTotalRecord {
+  playerId: string;
+  dayKey: string;
+  total: PlayerStatisticPeriodTotalView;
 }
 
 interface AlchemyPresetRow {
@@ -878,6 +904,336 @@ export class PlayerDomainPersistenceService implements OnModuleInit, OnModuleDes
       });
     }
     return presences;
+  }
+
+  async savePlayerOfflineGainSession(
+    playerId: string,
+    input: PlayerOfflineGainSessionUpsertInput,
+  ): Promise<void> {
+    const normalizedPlayerId = normalizeRequiredString(playerId);
+    const sessionId = normalizeRequiredString(input.sessionId);
+    if (!this.pool || !this.enabled || !normalizedPlayerId || !sessionId) {
+      return;
+    }
+
+    await this.withTransaction(async (client) => {
+      await acquirePlayerPersistenceLock(client, normalizedPlayerId);
+      await client.query(
+        `
+          INSERT INTO ${PLAYER_OFFLINE_GAIN_SESSION_TABLE}(
+            player_id,
+            session_id,
+            started_at,
+            baseline_payload,
+            updated_at
+          )
+          VALUES ($1, $2, $3, $4::jsonb, now())
+          ON CONFLICT (player_id)
+          DO UPDATE SET
+            session_id = EXCLUDED.session_id,
+            started_at = EXCLUDED.started_at,
+            baseline_payload = EXCLUDED.baseline_payload,
+            updated_at = now()
+        `,
+        [
+          normalizedPlayerId,
+          sessionId,
+          normalizeMinimumInteger(input.startedAt, Date.now(), 0),
+          JSON.stringify(input.baselinePayload ?? {}),
+        ],
+      );
+    });
+  }
+
+  async loadPlayerOfflineGainSession(playerId: string): Promise<PlayerOfflineGainSessionRecord | null> {
+    const normalizedPlayerId = normalizeRequiredString(playerId);
+    if (!this.pool || !this.enabled || !normalizedPlayerId) {
+      return null;
+    }
+
+    const result = await this.pool.query<{
+      player_id?: unknown;
+      session_id?: unknown;
+      started_at?: unknown;
+      baseline_payload?: unknown;
+    }>(
+      `
+        SELECT player_id, session_id, started_at, baseline_payload
+        FROM ${PLAYER_OFFLINE_GAIN_SESSION_TABLE}
+        WHERE player_id = $1
+      `,
+      [normalizedPlayerId],
+    );
+    const row = result.rows[0];
+    if (!row) {
+      return null;
+    }
+    const sessionId = normalizeRequiredString(row.session_id);
+    if (!sessionId) {
+      return null;
+    }
+    return {
+      playerId: normalizeRequiredString(row.player_id) || normalizedPlayerId,
+      sessionId,
+      startedAt: normalizeMinimumInteger(row.started_at, Date.now(), 0),
+      baselinePayload: asRecord(decodeJsonValue(row.baseline_payload)) ?? {},
+    };
+  }
+
+  async deletePlayerOfflineGainSession(playerId: string, sessionId?: string | null): Promise<void> {
+    const normalizedPlayerId = normalizeRequiredString(playerId);
+    if (!this.pool || !this.enabled || !normalizedPlayerId) {
+      return;
+    }
+    const normalizedSessionId = normalizeOptionalString(sessionId);
+    await this.withTransaction(async (client) => {
+      await acquirePlayerPersistenceLock(client, normalizedPlayerId);
+      if (normalizedSessionId) {
+        await client.query(
+          `DELETE FROM ${PLAYER_OFFLINE_GAIN_SESSION_TABLE} WHERE player_id = $1 AND session_id = $2`,
+          [normalizedPlayerId, normalizedSessionId],
+        );
+        return;
+      }
+      await client.query(
+        `DELETE FROM ${PLAYER_OFFLINE_GAIN_SESSION_TABLE} WHERE player_id = $1`,
+        [normalizedPlayerId],
+      );
+    });
+  }
+
+  async savePlayerOfflineGainReport(playerId: string, report: OfflineGainReportView): Promise<void> {
+    const normalizedPlayerId = normalizeRequiredString(playerId);
+    const reportId = normalizeRequiredString(report?.id);
+    if (!this.pool || !this.enabled || !normalizedPlayerId || !reportId) {
+      return;
+    }
+
+    const payload: OfflineGainReportView = {
+      ...report,
+      id: reportId,
+      playerId: normalizeOptionalString(report.playerId) ?? normalizedPlayerId,
+      startedAt: normalizeMinimumInteger(report.startedAt, Date.now(), 0),
+      endedAt: normalizeMinimumInteger(report.endedAt, Date.now(), 0),
+      durationMs: normalizeMinimumInteger(report.durationMs, 0, 0),
+      generatedAt: normalizeMinimumInteger(report.generatedAt, Date.now(), 0),
+      items: Array.isArray(report.items) ? report.items : [],
+      progress: Array.isArray(report.progress) ? report.progress : [],
+      techniques: Array.isArray(report.techniques) ? report.techniques : [],
+      professions: Array.isArray(report.professions) ? report.professions : [],
+    };
+
+    await this.withTransaction(async (client) => {
+      await acquirePlayerPersistenceLock(client, normalizedPlayerId);
+      await client.query(
+        `
+          INSERT INTO ${PLAYER_OFFLINE_GAIN_REPORT_TABLE}(
+            player_id,
+            report_id,
+            started_at,
+            ended_at,
+            duration_ms,
+            payload,
+            updated_at
+          )
+          VALUES ($1, $2, $3, $4, $5, $6::jsonb, now())
+          ON CONFLICT (player_id, report_id)
+          DO UPDATE SET
+            started_at = EXCLUDED.started_at,
+            ended_at = EXCLUDED.ended_at,
+            duration_ms = EXCLUDED.duration_ms,
+            payload = EXCLUDED.payload,
+            updated_at = now()
+        `,
+        [
+          normalizedPlayerId,
+          reportId,
+          payload.startedAt,
+          payload.endedAt,
+          payload.durationMs,
+          JSON.stringify(payload),
+        ],
+      );
+    });
+  }
+
+  async loadPlayerOfflineGainReports(playerId: string): Promise<OfflineGainReportView[]> {
+    const normalizedPlayerId = normalizeRequiredString(playerId);
+    if (!this.pool || !this.enabled || !normalizedPlayerId) {
+      return [];
+    }
+
+    const result = await this.pool.query<{ payload?: unknown }>(
+      `
+        SELECT payload
+        FROM ${PLAYER_OFFLINE_GAIN_REPORT_TABLE}
+        WHERE player_id = $1
+        ORDER BY started_at ASC, ended_at ASC
+      `,
+      [normalizedPlayerId],
+    );
+    return (result.rows ?? [])
+      .map((row) => normalizeOfflineGainReportPayload(asRecord(decodeJsonValue(row.payload)), normalizedPlayerId))
+      .filter((entry): entry is OfflineGainReportView => Boolean(entry));
+  }
+
+  async deletePlayerOfflineGainReports(playerId: string, reportIds: Iterable<string>): Promise<void> {
+    const normalizedPlayerId = normalizeRequiredString(playerId);
+    if (!this.pool || !this.enabled || !normalizedPlayerId) {
+      return;
+    }
+    const normalizedReportIds = Array.from(new Set(Array.from(reportIds ?? [])
+      .map((reportId) => normalizeRequiredString(reportId))
+      .filter((reportId) => reportId.length > 0)));
+    if (normalizedReportIds.length === 0) {
+      return;
+    }
+
+    await this.withTransaction(async (client) => {
+      await acquirePlayerPersistenceLock(client, normalizedPlayerId);
+      await client.query(
+        `
+          DELETE FROM ${PLAYER_OFFLINE_GAIN_REPORT_TABLE}
+          WHERE player_id = $1
+            AND report_id = ANY($2::text[])
+        `,
+        [normalizedPlayerId, normalizedReportIds],
+      );
+    });
+  }
+
+  async incrementPlayerStatisticDayTotal(
+    playerId: string,
+    dayKey: string,
+    delta: PlayerStatisticPeriodTotalView,
+  ): Promise<void> {
+    const normalizedPlayerId = normalizeRequiredString(playerId);
+    const normalizedDayKey = normalizeRequiredString(dayKey);
+    if (!this.pool || !this.enabled || !normalizedPlayerId || !normalizedDayKey) {
+      return;
+    }
+    const normalizedDelta = normalizePlayerStatisticPeriodTotal(delta);
+    await this.withTransaction(async (client) => {
+      await acquirePlayerPersistenceLock(client, normalizedPlayerId);
+      await client.query(
+        `
+          INSERT INTO ${PLAYER_STATISTIC_DAY_TOTAL_TABLE}(
+            player_id,
+            day_key,
+            spirit_gained,
+            spirit_lost,
+            progress_gained,
+            progress_lost,
+            technique_gained,
+            technique_lost,
+            profession_gained,
+            profession_lost,
+            updated_at
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now())
+          ON CONFLICT (player_id, day_key)
+          DO UPDATE SET
+            spirit_gained = ${PLAYER_STATISTIC_DAY_TOTAL_TABLE}.spirit_gained + EXCLUDED.spirit_gained,
+            spirit_lost = ${PLAYER_STATISTIC_DAY_TOTAL_TABLE}.spirit_lost + EXCLUDED.spirit_lost,
+            progress_gained = ${PLAYER_STATISTIC_DAY_TOTAL_TABLE}.progress_gained + EXCLUDED.progress_gained,
+            progress_lost = ${PLAYER_STATISTIC_DAY_TOTAL_TABLE}.progress_lost + EXCLUDED.progress_lost,
+            technique_gained = ${PLAYER_STATISTIC_DAY_TOTAL_TABLE}.technique_gained + EXCLUDED.technique_gained,
+            technique_lost = ${PLAYER_STATISTIC_DAY_TOTAL_TABLE}.technique_lost + EXCLUDED.technique_lost,
+            profession_gained = ${PLAYER_STATISTIC_DAY_TOTAL_TABLE}.profession_gained + EXCLUDED.profession_gained,
+            profession_lost = ${PLAYER_STATISTIC_DAY_TOTAL_TABLE}.profession_lost + EXCLUDED.profession_lost,
+            updated_at = now()
+        `,
+        [
+          normalizedPlayerId,
+          normalizedDayKey,
+          normalizedDelta.spiritStones.gained,
+          normalizedDelta.spiritStones.lost,
+          normalizedDelta.progress.gained,
+          normalizedDelta.progress.lost,
+          normalizedDelta.techniques.gained,
+          normalizedDelta.techniques.lost,
+          normalizedDelta.professions.gained,
+          normalizedDelta.professions.lost,
+        ],
+      );
+    });
+  }
+
+  async loadPlayerStatisticDayTotals(
+    playerId: string,
+    dayKeys: readonly string[],
+  ): Promise<PlayerStatisticDayTotalRecord[]> {
+    const normalizedPlayerId = normalizeRequiredString(playerId);
+    const normalizedDayKeys = Array.from(new Set((Array.isArray(dayKeys) ? dayKeys : [])
+      .map((dayKey) => normalizeRequiredString(dayKey))
+      .filter((dayKey) => dayKey.length > 0)));
+    if (!this.pool || !this.enabled || !normalizedPlayerId || normalizedDayKeys.length === 0) {
+      return [];
+    }
+    const result = await this.pool.query<{
+      player_id?: unknown;
+      day_key?: unknown;
+      spirit_gained?: unknown;
+      spirit_lost?: unknown;
+      progress_gained?: unknown;
+      progress_lost?: unknown;
+      technique_gained?: unknown;
+      technique_lost?: unknown;
+      profession_gained?: unknown;
+      profession_lost?: unknown;
+    }>(
+      `
+        SELECT
+          player_id,
+          day_key,
+          spirit_gained,
+          spirit_lost,
+          progress_gained,
+          progress_lost,
+          technique_gained,
+          technique_lost,
+          profession_gained,
+          profession_lost
+        FROM ${PLAYER_STATISTIC_DAY_TOTAL_TABLE}
+        WHERE player_id = $1
+          AND day_key = ANY($2::text[])
+      `,
+      [normalizedPlayerId, normalizedDayKeys],
+    );
+    return (result.rows ?? [])
+      .map((row) => {
+        const dayKey = normalizeRequiredString(row.day_key);
+        if (!dayKey) {
+          return null;
+        }
+        return {
+          playerId: normalizeRequiredString(row.player_id) || normalizedPlayerId,
+          dayKey,
+          total: normalizePlayerStatisticPeriodTotal({
+            spiritStones: {
+              gained: row.spirit_gained,
+              lost: row.spirit_lost,
+              net: Number(row.spirit_gained ?? 0) - Number(row.spirit_lost ?? 0),
+            },
+            progress: {
+              gained: row.progress_gained,
+              lost: row.progress_lost,
+              net: Number(row.progress_gained ?? 0) - Number(row.progress_lost ?? 0),
+            },
+            techniques: {
+              gained: row.technique_gained,
+              lost: row.technique_lost,
+              net: Number(row.technique_gained ?? 0) - Number(row.technique_lost ?? 0),
+            },
+            professions: {
+              gained: row.profession_gained,
+              lost: row.profession_lost,
+              net: Number(row.profession_gained ?? 0) - Number(row.profession_lost ?? 0),
+            },
+          }),
+        };
+      })
+      .filter((entry): entry is PlayerStatisticDayTotalRecord => Boolean(entry));
   }
 
   async savePlayerWorldAnchor(
@@ -2699,6 +3055,54 @@ export async function ensurePlayerDomainTablesWithClient(client: PoolClient): Pr
   await client.query(`
     CREATE INDEX IF NOT EXISTS player_logbook_message_player_idx
     ON ${PLAYER_LOGBOOK_MESSAGE_TABLE}(player_id, occurred_at DESC)
+  `);
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS ${PLAYER_OFFLINE_GAIN_SESSION_TABLE} (
+      player_id varchar(100) PRIMARY KEY,
+      session_id varchar(180) NOT NULL,
+      started_at bigint NOT NULL,
+      baseline_payload jsonb NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )
+  `);
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS ${PLAYER_OFFLINE_GAIN_REPORT_TABLE} (
+      player_id varchar(100) NOT NULL,
+      report_id varchar(180) NOT NULL,
+      started_at bigint NOT NULL,
+      ended_at bigint NOT NULL,
+      duration_ms bigint NOT NULL DEFAULT 0,
+      payload jsonb NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now(),
+      PRIMARY KEY(player_id, report_id)
+    )
+  `);
+  await client.query(`
+    CREATE INDEX IF NOT EXISTS player_offline_gain_report_player_idx
+    ON ${PLAYER_OFFLINE_GAIN_REPORT_TABLE}(player_id, ended_at DESC)
+  `);
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS ${PLAYER_STATISTIC_DAY_TOTAL_TABLE} (
+      player_id varchar(100) NOT NULL,
+      day_key varchar(16) NOT NULL,
+      spirit_gained bigint NOT NULL DEFAULT 0,
+      spirit_lost bigint NOT NULL DEFAULT 0,
+      progress_gained bigint NOT NULL DEFAULT 0,
+      progress_lost bigint NOT NULL DEFAULT 0,
+      technique_gained bigint NOT NULL DEFAULT 0,
+      technique_lost bigint NOT NULL DEFAULT 0,
+      profession_gained bigint NOT NULL DEFAULT 0,
+      profession_lost bigint NOT NULL DEFAULT 0,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now(),
+      PRIMARY KEY(player_id, day_key)
+    )
+  `);
+  await client.query(`
+    CREATE INDEX IF NOT EXISTS player_statistic_day_total_player_idx
+    ON ${PLAYER_STATISTIC_DAY_TOTAL_TABLE}(player_id, day_key DESC)
   `);
   await ensurePlayerDomainBigintColumnsWithClient(client);
   await client.query(`
@@ -5082,6 +5486,149 @@ function normalizeVersionSeed(value: unknown): number {
   }
   const numeric = Number(value);
   return Math.max(1, Math.trunc(Number.isFinite(numeric) ? numeric : Date.now()));
+}
+
+function normalizeOfflineGainReportPayload(
+  record: Record<string, unknown> | null,
+  fallbackPlayerId: string,
+): OfflineGainReportView | null {
+  const id = normalizeRequiredString(record?.id);
+  if (!id) {
+    return null;
+  }
+  return {
+    id,
+    playerId: normalizeOptionalString(record?.playerId) ?? fallbackPlayerId,
+    scope: record?.scope === 'online' ? 'online' : 'offline',
+    source: normalizeOptionalString(record?.source) ?? (record?.scope === 'online' ? 'system' : 'cultivation'),
+    startedAt: normalizeMinimumInteger(record?.startedAt, Date.now(), 0),
+    endedAt: normalizeMinimumInteger(record?.endedAt, Date.now(), 0),
+    durationMs: normalizeMinimumInteger(record?.durationMs, 0, 0),
+    generatedAt: normalizeMinimumInteger(record?.generatedAt, Date.now(), 0),
+    spiritStones: normalizeStatisticAmountRecord(asRecord(record?.spiritStones)),
+    items: Array.isArray(record?.items)
+      ? record.items
+        .map((entry) => asRecord(entry))
+        .filter((entry): entry is Record<string, unknown> => Boolean(entry))
+        .map((entry) => {
+          const amount = normalizeStatisticAmountRecord(entry);
+          return {
+            itemId: normalizeRequiredString(entry.itemId),
+            name: normalizeOptionalString(entry.name) ?? undefined,
+            gained: amount.gained,
+            lost: amount.lost,
+            net: amount.net,
+            count: amount.gained,
+          };
+        })
+        .filter((entry) => entry.itemId && (entry.gained > 0 || entry.lost > 0))
+      : [],
+    progress: Array.isArray(record?.progress)
+      ? record.progress
+        .map((entry) => asRecord(entry))
+        .filter((entry): entry is Record<string, unknown> => Boolean(entry))
+        .map((entry) => {
+          const amount = normalizeStatisticAmountRecord(entry);
+          return {
+            kind: normalizeOfflineGainProgressKind(entry.kind),
+            label: normalizeOptionalString(entry.label) ?? '收益',
+            gained: amount.gained,
+            lost: amount.lost,
+            net: amount.net,
+            amount: amount.gained,
+            levelGain: normalizeOptionalInteger(entry.levelGain) ?? undefined,
+            levelLoss: normalizeOptionalInteger(entry.levelLoss) ?? undefined,
+            currentLevel: normalizeOptionalInteger(entry.currentLevel) ?? undefined,
+          };
+        })
+        .filter((entry) => entry.gained > 0 || entry.lost > 0 || (entry.levelGain ?? 0) > 0 || (entry.levelLoss ?? 0) > 0)
+      : [],
+    techniques: Array.isArray(record?.techniques)
+      ? record.techniques
+        .map((entry) => asRecord(entry))
+        .filter((entry): entry is Record<string, unknown> => Boolean(entry))
+        .map((entry) => {
+          const amount = normalizeStatisticExpAmountRecord(entry);
+          return {
+            techniqueId: normalizeRequiredString(entry.techniqueId),
+            name: normalizeOptionalString(entry.name) ?? undefined,
+            expGained: amount.gained,
+            expLost: amount.lost,
+            netExp: amount.net,
+            expGain: amount.gained,
+            levelGain: normalizeOptionalInteger(entry.levelGain) ?? undefined,
+            levelLoss: normalizeOptionalInteger(entry.levelLoss) ?? undefined,
+            currentLevel: normalizeOptionalInteger(entry.currentLevel) ?? undefined,
+          };
+        })
+        .filter((entry) => entry.techniqueId && (entry.expGained > 0 || entry.expLost > 0 || (entry.levelGain ?? 0) > 0 || (entry.levelLoss ?? 0) > 0))
+      : [],
+    professions: Array.isArray(record?.professions)
+      ? record.professions
+        .map((entry) => asRecord(entry))
+        .filter((entry): entry is Record<string, unknown> => Boolean(entry))
+        .map((entry) => {
+          const amount = normalizeStatisticExpAmountRecord(entry);
+          return {
+            professionType: normalizeRequiredString(entry.professionType) || 'unknown',
+            label: normalizeOptionalString(entry.label) ?? '技艺',
+            expGained: amount.gained,
+            expLost: amount.lost,
+            netExp: amount.net,
+            expGain: amount.gained,
+            levelGain: normalizeOptionalInteger(entry.levelGain) ?? undefined,
+            levelLoss: normalizeOptionalInteger(entry.levelLoss) ?? undefined,
+            currentLevel: normalizeOptionalInteger(entry.currentLevel) ?? undefined,
+          };
+        })
+        .filter((entry) => entry.expGained > 0 || entry.expLost > 0 || (entry.levelGain ?? 0) > 0 || (entry.levelLoss ?? 0) > 0)
+      : [],
+  };
+}
+
+function normalizePlayerStatisticPeriodTotal(value: unknown): PlayerStatisticPeriodTotalView {
+  const record = asRecord(value) ?? {};
+  return {
+    spiritStones: normalizeStatisticAmountRecord(asRecord(record.spiritStones)),
+    progress: normalizeStatisticAmountRecord(asRecord(record.progress)),
+    techniques: normalizeStatisticAmountRecord(asRecord(record.techniques)),
+    professions: normalizeStatisticAmountRecord(asRecord(record.professions)),
+  };
+}
+
+function normalizeStatisticAmountRecord(record: Record<string, unknown> | null): { gained: number; lost: number; net: number } {
+  const gained = normalizeMinimumInteger(record?.gained ?? record?.amount ?? record?.count, 0, 0);
+  const lost = normalizeMinimumInteger(record?.lost, 0, 0);
+  const numericNet = Number(record?.net ?? gained - lost);
+  return {
+    gained,
+    lost,
+    net: Number.isFinite(numericNet) ? Math.trunc(numericNet) : gained - lost,
+  };
+}
+
+function normalizeStatisticExpAmountRecord(record: Record<string, unknown> | null): { gained: number; lost: number; net: number } {
+  const gained = normalizeMinimumInteger(record?.expGained ?? record?.expGain, 0, 0);
+  const lost = normalizeMinimumInteger(record?.expLost, 0, 0);
+  const numericNet = Number(record?.netExp ?? gained - lost);
+  return {
+    gained,
+    lost,
+    net: Number.isFinite(numericNet) ? Math.trunc(numericNet) : gained - lost,
+  };
+}
+
+function normalizeOfflineGainProgressKind(value: unknown): OfflineGainReportView['progress'][number]['kind'] {
+  switch (value) {
+    case 'realmExp':
+    case 'foundation':
+    case 'rootFoundation':
+    case 'combatExp':
+    case 'bodyTrainingExp':
+      return value;
+    default:
+      return 'foundation';
+  }
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {

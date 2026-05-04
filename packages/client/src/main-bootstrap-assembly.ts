@@ -36,6 +36,7 @@ import { bindMainLowFrequencySocketEvents } from './main-low-frequency-socket-bi
 import { bindMainMapInteractions } from './main-map-interaction-bindings';
 import { bindMainShellInteractions } from './main-shell-bindings';
 import { bindMainStartup } from './main-startup-bindings';
+import { handleOfflineGainReports } from './ui/offline-gain-modal';
 import {
   MAP_PERFORMANCE_CONFIG_CHANGE_EVENT,
   type MapPerformanceConfig,
@@ -282,6 +283,7 @@ type MainBootstrapAssemblyOptions = {
     MainMarketStateSource,
     | 'handleMarketUpdate'
     | 'handleMarketListings'
+    | 'handleAuctionListings'
     | 'handleMarketOrders'
     | 'handleMarketStorage'
     | 'handleMarketItemBook'
@@ -475,7 +477,7 @@ type MainBootstrapAssemblyOptions = {
  * socialEconomySender：socialEconomySender相关字段。
  */
 
-  socialEconomySender: Pick<SocketSocialEconomySender, 'sendChat'>;
+  socialEconomySender: Pick<SocketSocialEconomySender, 'sendChat' | 'ackOfflineGainReports'>;
   /**
  * adminSender：adminSender相关字段。
  */
@@ -663,6 +665,12 @@ export function bootstrapMainApp(options: MainBootstrapAssemblyOptions): void {
     onNpcQuests: (data) => options.detailStateSource.handleNpcQuests(data),
     onQuests: (data) => options.detailStateSource.handleQuests(data),
     onQuestNavigateResult: (data) => options.detailStateSource.handleQuestNavigateResult(data),
+    onOfflineGainReports: (data) => handleOfflineGainReports(data, {
+      getPlayerId: () => options.getPlayer()?.id,
+      ackOfflineGainReports: (reportIds) => options.socialEconomySender.ackOfflineGainReports(reportIds),
+      showToast: (message, kind) => options.showToast(message, kind),
+      windowRef: options.windowRef,
+    }),
     onSuggestionUpdate: (data) => options.suggestionStateSource.handleSuggestionUpdate(data.suggestions),
     onMailSummary: (data) => options.mailStateSource.handleMailSummary(data.summary),
     onMailPage: (data) => options.mailStateSource.handleMailPage(data.page),
@@ -671,6 +679,7 @@ export function bootstrapMainApp(options: MainBootstrapAssemblyOptions): void {
     onMailOpResult: (data) => options.mailStateSource.handleMailOpResult(data),
     onMarketUpdate: (data) => options.marketStateSource.handleMarketUpdate(data),
     onMarketListings: (data) => options.marketStateSource.handleMarketListings(data),
+    onAuctionListings: (data) => options.marketStateSource.handleAuctionListings(data),
     onMarketOrders: (data) => options.marketStateSource.handleMarketOrders(data),
     onMarketStorage: (data) => options.marketStateSource.handleMarketStorage(data),
     onMarketItemBook: (data) => options.marketStateSource.handleMarketItemBook(data),

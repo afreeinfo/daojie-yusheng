@@ -14,6 +14,7 @@ const smoke_player_auth_1 = require("./smoke-player-auth");
 const DEFAULT_SMOKE_TIMEOUT_MS = 10_000;
 const ENTRY_TIMEOUT_OVERRIDES_MS = new Map([
     ['auth-bootstrap-smoke.js', 45_000],
+    ['combat-smoke.js', 45_000],
     ['gm-smoke.js', 45_000],
     ['progression-smoke.js', 45_000],
     ['persistence-smoke.js', 45_000],

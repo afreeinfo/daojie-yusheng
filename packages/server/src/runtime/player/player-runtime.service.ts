@@ -79,6 +79,22 @@ let PlayerRuntimeService = class PlayerRuntimeService {
     players = this.runtimeState.players;
     /** 断线重连或死亡切换时，暂存的战斗副作用。 */
     pendingCombatEffectsByPlayerId = this.runtimeState.pendingCombatEffectsByPlayerId;
+    /** 数据库禁用时的离线收益基线缓存。 */
+    offlineGainSessionsByPlayerId = new Map();
+    /** 玩家统计持续快照，用于把 tick 外即时资产变化纳入下一次低频统计。 */
+    playerStatisticSnapshotsByPlayerId = new Map();
+    /** 当前进程尚未合入持久缓存的日总账增量。 */
+    playerStatisticDayTotalsByPlayerId = new Map();
+    /** 已从数据库回读的日总账缓存。 */
+    playerStatisticPersistedDayTotalsByPlayerId = new Map();
+    /** 待写入数据库的日总账增量。 */
+    pendingPlayerStatisticDayTotalsByPlayerId = new Map();
+    /** 正在调度异步总账落盘的玩家。 */
+    scheduledPlayerStatisticLedgerFlushes = new Set();
+    /** 待单播给客户端刷新显示的总账玩家。 */
+    pendingPlayerStatisticTotalsEmitPlayerIds = new Set();
+    /** 数据库禁用时等待客户端归档的离线收益报告。 */
+    pendingOfflineGainReportsByPlayerId = new Map();
     /** 注入基础仓库与成长/属性结算器，供玩家在线态统一管理。 */
     constructor(contentTemplateRepository, mapTemplateRepository, playerAttributesService, playerProgressionService, playerDomainPersistenceService = undefined) {
         this.contentTemplateRepository = contentTemplateRepository;
@@ -94,6 +110,7 @@ let PlayerRuntimeService = class PlayerRuntimeService {
 
         const existing = this.players.get(playerId);
         if (existing) {
+            await this.finalizeOfflineGainSessionForPlayer(existing, Date.now());
             if (options?.forceRebind === true) {
                 this.bindRuntimeSession(existing, sessionId);
             } else {
@@ -129,6 +146,7 @@ let PlayerRuntimeService = class PlayerRuntimeService {
         }
         const lateExisting = this.players.get(playerId);
         if (lateExisting) {
+            await this.finalizeOfflineGainSessionForPlayer(lateExisting, Date.now());
             if (options?.forceRebind === true) {
                 this.bindRuntimeSession(lateExisting, sessionId);
             } else {
@@ -141,6 +159,7 @@ let PlayerRuntimeService = class PlayerRuntimeService {
         const player = snapshot
             ? this.hydrateFromSnapshot(playerId, sessionId, snapshot)
             : this.createFreshPlayer(playerId, sessionId);
+        await this.finalizeOfflineGainSessionForPlayer(player, Date.now());
         const sessionEpochFloor = Number.isFinite(options?.sessionEpochFloor)
             ? Math.max(0, Math.trunc(Number(options.sessionEpochFloor)))
             : 0;
@@ -348,9 +367,166 @@ let PlayerRuntimeService = class PlayerRuntimeService {
             markPlayerDirtyDomains(player, [PLAYER_PERSISTENCE_DIRTY_PRESENCE_DOMAIN]);
         }
     }
+    /** 记录离线挂机开始时的权威状态基线。 */
+    async beginOfflineGainSession(playerId, startedAt = Date.now()) {
+        const player = this.players.get(playerId);
+        const normalizedPlayerId = normalizeOfflineGainString(playerId);
+        if (!player || !normalizedPlayerId) {
+            return;
+        }
+        const normalizedStartedAt = Number.isFinite(player.offlineSinceAt)
+            ? Math.max(0, Math.trunc(Number(player.offlineSinceAt)))
+            : Math.max(0, Math.trunc(Number(startedAt) || Date.now()));
+        const session = {
+            sessionId: buildOfflineGainSessionId(normalizedPlayerId, normalizedStartedAt),
+            startedAt: normalizedStartedAt,
+            baselinePayload: buildOfflineGainSnapshot(player, this.contentTemplateRepository),
+            accumulatedPayload: createEmptyOfflineGainReportParts(),
+        };
+        this.playerStatisticSnapshotsByPlayerId.set(normalizedPlayerId, session.baselinePayload);
+        this.offlineGainSessionsByPlayerId.set(normalizedPlayerId, session);
+        if (this.playerDomainPersistenceService?.isEnabled?.()) {
+            await this.playerDomainPersistenceService.savePlayerOfflineGainSession(normalizedPlayerId, session);
+        }
+    }
+    /** 读取当前还在云端等待浏览器本地归档的离线收益报告。 */
+    async loadPendingOfflineGainReports(playerId) {
+        const normalizedPlayerId = normalizeOfflineGainString(playerId);
+        if (!normalizedPlayerId) {
+            return [];
+        }
+        const memoryReports = this.getPendingPlayerStatisticRecords(normalizedPlayerId);
+        if (this.playerDomainPersistenceService?.isEnabled?.()) {
+            const persistedReports = await this.playerDomainPersistenceService.loadPlayerOfflineGainReports(normalizedPlayerId);
+            return [...persistedReports, ...memoryReports];
+        }
+        return memoryReports;
+    }
+    /** 同步读取内存中的待归档离线挂机统计，数据库禁用时供低频同步投递。 */
+    getPendingPlayerStatisticRecords(playerId) {
+        const normalizedPlayerId = normalizeOfflineGainString(playerId);
+        if (!normalizedPlayerId) {
+            return [];
+        }
+        return (this.pendingOfflineGainReportsByPlayerId.get(normalizedPlayerId) ?? []).map((entry) => ({
+            ...entry,
+            spiritStones: entry.spiritStones ? { ...entry.spiritStones } : undefined,
+            items: Array.isArray(entry.items) ? entry.items.map((item) => ({ ...item })) : [],
+            progress: Array.isArray(entry.progress) ? entry.progress.map((item) => ({ ...item })) : [],
+            techniques: Array.isArray(entry.techniques) ? entry.techniques.map((item) => ({ ...item })) : [],
+            professions: Array.isArray(entry.professions) ? entry.professions.map((item) => ({ ...item })) : [],
+        }));
+    }
+    /** 从数据库回读并组合玩家统计总账。 */
+    async loadPlayerStatisticTotals(playerId, now = Date.now()) {
+        const normalizedPlayerId = normalizeOfflineGainString(playerId);
+        if (!normalizedPlayerId) {
+            return buildEmptyPlayerStatisticTotals(now);
+        }
+        if (this.playerDomainPersistenceService?.isEnabled?.()) {
+            const dayKeys = buildPlayerStatisticRelevantDayKeys(now);
+            const rows = await this.playerDomainPersistenceService.loadPlayerStatisticDayTotals(normalizedPlayerId, dayKeys);
+            const byDay = this.playerStatisticPersistedDayTotalsByPlayerId.get(normalizedPlayerId) ?? new Map();
+            for (const row of rows) {
+                byDay.set(row.dayKey, normalizePlayerStatisticPeriodTotal(row.total));
+            }
+            this.playerStatisticPersistedDayTotalsByPlayerId.set(normalizedPlayerId, byDay);
+        }
+        return this.getPlayerStatisticTotalsSync(normalizedPlayerId, now) ?? buildEmptyPlayerStatisticTotals(now);
+    }
+    /** 同步读取当前服务端已知统计总账，用于低频单播。 */
+    getPlayerStatisticTotalsSync(playerId, now = Date.now()) {
+        const normalizedPlayerId = normalizeOfflineGainString(playerId);
+        if (!normalizedPlayerId) {
+            return null;
+        }
+        const persisted = this.playerStatisticPersistedDayTotalsByPlayerId.get(normalizedPlayerId);
+        const runtime = this.playerStatisticDayTotalsByPlayerId.get(normalizedPlayerId);
+        if (!persisted && !runtime) {
+            return null;
+        }
+        return buildPlayerStatisticTotalsView(persisted, runtime, now);
+    }
+    /** 消费待下发的服务端总账，只在实际收支变化后单播，避免低频循环重复发包。 */
+    consumePlayerStatisticTotalsForEmit(playerId, now = Date.now()) {
+        const normalizedPlayerId = normalizeOfflineGainString(playerId);
+        if (!normalizedPlayerId || !this.pendingPlayerStatisticTotalsEmitPlayerIds.has(normalizedPlayerId)) {
+            return null;
+        }
+        this.pendingPlayerStatisticTotalsEmitPlayerIds.delete(normalizedPlayerId);
+        return this.getPlayerStatisticTotalsSync(normalizedPlayerId, now) ?? buildEmptyPlayerStatisticTotals(now);
+    }
+    /** 客户端确认报告已经写入浏览器本地后，清掉云端待发副本。 */
+    async acknowledgeOfflineGainReports(playerId, reportIds) {
+        const normalizedPlayerId = normalizeOfflineGainString(playerId);
+        const normalizedReportIds = Array.from(new Set(Array.from(reportIds ?? [])
+            .map((reportId) => normalizeOfflineGainString(reportId))
+            .filter((reportId) => reportId.length > 0)));
+        if (!normalizedPlayerId || normalizedReportIds.length === 0) {
+            return;
+        }
+        const existing = this.pendingOfflineGainReportsByPlayerId.get(normalizedPlayerId) ?? [];
+        const reportIdSet = new Set(normalizedReportIds);
+        const remaining = existing.filter((entry) => !reportIdSet.has(entry?.id));
+        if (remaining.length > 0) {
+            this.pendingOfflineGainReportsByPlayerId.set(normalizedPlayerId, remaining);
+        } else {
+            this.pendingOfflineGainReportsByPlayerId.delete(normalizedPlayerId);
+        }
+        if (this.playerDomainPersistenceService?.isEnabled?.()) {
+            await this.playerDomainPersistenceService.deletePlayerOfflineGainReports(normalizedPlayerId, normalizedReportIds);
+        }
+    }
+    /** 上线前把离线基线与当前权威态做差，生成待下发报告。 */
+    async finalizeOfflineGainSessionForPlayer(player, endedAt = Date.now()) {
+        const normalizedPlayerId = normalizeOfflineGainString(player?.playerId);
+        if (!player || !normalizedPlayerId) {
+            return null;
+        }
+        const persistedSession = this.playerDomainPersistenceService?.isEnabled?.()
+            ? await this.playerDomainPersistenceService.loadPlayerOfflineGainSession(normalizedPlayerId)
+            : this.offlineGainSessionsByPlayerId.get(normalizedPlayerId);
+        const memorySession = this.offlineGainSessionsByPlayerId.get(normalizedPlayerId);
+        const session = mergeOfflineGainSessionRecords(persistedSession, memorySession);
+        if (!session) {
+            return null;
+        }
+
+        const report = buildOfflineGainReportFromSession(
+            player,
+            session,
+            Math.max(0, Math.trunc(Number(endedAt) || Date.now())),
+            this.contentTemplateRepository,
+        );
+        this.recordPlayerStatisticTotals(normalizedPlayerId, report, report.endedAt);
+        this.offlineGainSessionsByPlayerId.delete(normalizedPlayerId);
+        const shouldSaveOfflineHistory = report.durationMs >= 60_000 && hasOfflineGainReportParts(report);
+        if (shouldSaveOfflineHistory) {
+            if (this.playerDomainPersistenceService?.isEnabled?.()) {
+                await this.playerDomainPersistenceService.savePlayerOfflineGainReport(normalizedPlayerId, report);
+            } else {
+                const existing = this.pendingOfflineGainReportsByPlayerId.get(normalizedPlayerId) ?? [];
+                const deduped = existing.filter((entry) => entry?.id !== report.id);
+                deduped.push(report);
+                this.pendingOfflineGainReportsByPlayerId.set(normalizedPlayerId, deduped);
+            }
+        }
+        if (this.playerDomainPersistenceService?.isEnabled?.()) {
+            await this.playerDomainPersistenceService.deletePlayerOfflineGainSession(normalizedPlayerId, session.sessionId);
+        }
+        return report;
+    }
     /** 从运行时中移除玩家，通常用于注销或彻底清理。 */
     removePlayerRuntime(playerId) {
         this.players.delete(playerId);
+        this.offlineGainSessionsByPlayerId.delete(playerId);
+        this.playerStatisticSnapshotsByPlayerId.delete(playerId);
+        this.playerStatisticDayTotalsByPlayerId.delete(playerId);
+        this.playerStatisticPersistedDayTotalsByPlayerId.delete(playerId);
+        this.pendingPlayerStatisticDayTotalsByPlayerId.delete(playerId);
+        this.scheduledPlayerStatisticLedgerFlushes.delete(playerId);
+        this.pendingPlayerStatisticTotalsEmitPlayerIds.delete(playerId);
+        this.pendingOfflineGainReportsByPlayerId.delete(playerId);
         this.pendingCombatEffectsByPlayerId.delete(playerId);
     }
     /** 打开指定坐标的战利品窗口。 */
@@ -2606,6 +2782,7 @@ let PlayerRuntimeService = class PlayerRuntimeService {
     advanceSinglePlayerTick(player, currentTick, options = {}) {
   // 关键分支按状态与边界条件处理，非法路径会被提前拦截。
 
+            const offlineGainBefore = this.captureOfflineGainBeforeTick(player);
             if (advancePlayerChronology(player)) {
                 markPlayerDirtyDomains(player, ['progression']);
                 this.bumpPersistentRevision(player);
@@ -2638,6 +2815,104 @@ let PlayerRuntimeService = class PlayerRuntimeService {
             if (hasActiveSkillCooldown(player, currentTick)) {
                 this.rebuildActionState(player, currentTick);
             }
+            this.accumulateOfflineGainAfterTick(player, offlineGainBefore);
+    }
+    /** captureOfflineGainBeforeTick：捕获离线收益tick前快照。 */
+    captureOfflineGainBeforeTick(player) {
+        const normalizedPlayerId = normalizeOfflineGainString(player?.playerId);
+        if (!normalizedPlayerId) {
+            return null;
+        }
+        return this.playerStatisticSnapshotsByPlayerId.get(normalizedPlayerId)
+            ?? buildOfflineGainSnapshot(player, this.contentTemplateRepository);
+    }
+    /** accumulateOfflineGainAfterTick：累计玩家tick内实际收支；在线即时排队，离线归入挂机片段。 */
+    accumulateOfflineGainAfterTick(player, beforeSnapshot) {
+        if (!beforeSnapshot || !normalizeOfflineGainString(player?.playerId)) {
+            return;
+        }
+        const normalizedPlayerId = normalizeOfflineGainString(player?.playerId);
+        const afterSnapshot = buildOfflineGainSnapshot(player, this.contentTemplateRepository);
+        const delta = buildOfflineGainDeltaParts(
+            normalizeOfflineGainSnapshot(beforeSnapshot),
+            normalizeOfflineGainSnapshot(afterSnapshot),
+        );
+        this.playerStatisticSnapshotsByPlayerId.set(normalizedPlayerId, afterSnapshot);
+        if (!hasOfflineGainReportParts(delta)) {
+            return;
+        }
+        const offlineSession = this.offlineGainSessionsByPlayerId.get(normalizedPlayerId);
+        if (offlineSession && !normalizeOfflineGainString(player?.sessionId)) {
+            offlineSession.accumulatedPayload = mergeOfflineGainReportPartsBySum(
+                normalizeOfflineGainReportParts(offlineSession.accumulatedPayload),
+                delta,
+            );
+            return;
+        }
+        if (!normalizeOfflineGainString(player?.sessionId)) {
+            return;
+        }
+        const now = Date.now();
+        this.recordPlayerStatisticTotals(normalizedPlayerId, delta, now);
+    }
+    /** recordPlayerStatisticTotals：把收支写入服务端权威日总账，数据库落盘异步调度。 */
+    recordPlayerStatisticTotals(playerId, parts, endedAt = Date.now()) {
+        const normalizedPlayerId = normalizeOfflineGainString(playerId);
+        if (!normalizedPlayerId) {
+            return;
+        }
+        const delta = summarizePlayerStatisticPeriodTotal(parts);
+        if (!hasPlayerStatisticPeriodTotal(delta)) {
+            return;
+        }
+        const dayKey = buildPlayerStatisticLocalDayKey(endedAt);
+        mergePlayerStatisticDayTotalMap(this.playerStatisticDayTotalsByPlayerId, normalizedPlayerId, dayKey, delta);
+        this.pendingPlayerStatisticTotalsEmitPlayerIds.add(normalizedPlayerId);
+        if (this.playerDomainPersistenceService?.isEnabled?.()) {
+            mergePlayerStatisticDayTotalMap(this.pendingPlayerStatisticDayTotalsByPlayerId, normalizedPlayerId, dayKey, delta);
+            this.schedulePlayerStatisticLedgerFlush(normalizedPlayerId);
+        }
+    }
+    /** schedulePlayerStatisticLedgerFlush：异步刷新服务端统计总账到数据库，避开 tick 热路径 IO。 */
+    schedulePlayerStatisticLedgerFlush(playerId) {
+        const normalizedPlayerId = normalizeOfflineGainString(playerId);
+        if (!normalizedPlayerId || this.scheduledPlayerStatisticLedgerFlushes.has(normalizedPlayerId)) {
+            return;
+        }
+        if (!this.playerDomainPersistenceService?.isEnabled?.()) {
+            return;
+        }
+        this.scheduledPlayerStatisticLedgerFlushes.add(normalizedPlayerId);
+        setTimeout(() => {
+            void this.flushPendingPlayerStatisticLedger(normalizedPlayerId);
+        }, 0);
+    }
+    /** flushPendingPlayerStatisticLedger：落盘待写统计总账增量。 */
+    async flushPendingPlayerStatisticLedger(playerId) {
+        const normalizedPlayerId = normalizeOfflineGainString(playerId);
+        if (!normalizedPlayerId) {
+            return;
+        }
+        this.scheduledPlayerStatisticLedgerFlushes.delete(normalizedPlayerId);
+        const pendingByDay = this.pendingPlayerStatisticDayTotalsByPlayerId.get(normalizedPlayerId);
+        if (!pendingByDay || pendingByDay.size === 0 || !this.playerDomainPersistenceService?.isEnabled?.()) {
+            return;
+        }
+        this.pendingPlayerStatisticDayTotalsByPlayerId.delete(normalizedPlayerId);
+        let shouldRetry = false;
+        for (const [dayKey, delta] of pendingByDay.entries()) {
+            try {
+                await this.playerDomainPersistenceService.incrementPlayerStatisticDayTotal(normalizedPlayerId, dayKey, delta);
+                mergePlayerStatisticDayTotalMap(this.playerStatisticPersistedDayTotalsByPlayerId, normalizedPlayerId, dayKey, delta);
+                subtractPlayerStatisticDayTotalMap(this.playerStatisticDayTotalsByPlayerId, normalizedPlayerId, dayKey, delta);
+            } catch (error) {
+                mergePlayerStatisticDayTotalMap(this.pendingPlayerStatisticDayTotalsByPlayerId, normalizedPlayerId, dayKey, delta);
+                shouldRetry = true;
+            }
+        }
+        if (shouldRetry) {
+            this.schedulePlayerStatisticLedgerFlush(normalizedPlayerId);
+        }
     }
     /**
  * respawnPlayer：执行重生玩家相关逻辑。
@@ -3159,6 +3434,7 @@ let PlayerRuntimeService = class PlayerRuntimeService {
         player.runtimeOwnerId = buildRuntimeOwnerId(player.playerId, sessionId, player.sessionEpoch);
         player.lastHeartbeatAt = Date.now();
         player.offlineSinceAt = null;
+        this.playerStatisticSnapshotsByPlayerId.set(player.playerId, buildOfflineGainSnapshot(player, this.contentTemplateRepository));
         markPlayerDirtyDomains(player, [PLAYER_PERSISTENCE_DIRTY_PRESENCE_DOMAIN]);
         return player;
     }
@@ -3586,6 +3862,993 @@ function readInventoryItemCount(player, itemId) {
         return 0;
     }
     return player.inventory.items.reduce((total, entry) => total + (entry?.itemId === normalizedItemId ? Math.max(0, Math.trunc(Number(entry?.count ?? 0))) : 0), 0);
+}
+function normalizeOfflineGainString(value) {
+    return typeof value === 'string' ? value.trim() : '';
+}
+function normalizeOfflineGainCount(value) {
+    return Math.max(0, Math.trunc(Number(value ?? 0) || 0));
+}
+function normalizeOfflineGainSignedCount(value) {
+    const numeric = Number(value ?? 0);
+    return Number.isFinite(numeric) ? Math.trunc(numeric) : 0;
+}
+function buildOfflineGainSessionId(playerId, startedAt) {
+    const normalizedPlayerId = normalizeOfflineGainString(playerId) || 'player';
+    const normalizedStartedAt = Math.max(0, Math.trunc(Number(startedAt) || Date.now()));
+    const digest = (0, crypto_1.createHash)('sha1')
+        .update(`${normalizedPlayerId}:${normalizedStartedAt}`)
+        .digest('base64url')
+        .slice(0, 18);
+    return `offline:${normalizedStartedAt}:${digest}`;
+}
+function buildPlayerStatisticRecordId(playerId, timestamp, scope = 'online') {
+    const normalizedPlayerId = normalizeOfflineGainString(playerId) || 'player';
+    const normalizedTimestamp = Math.max(0, Math.trunc(Number(timestamp) || Date.now()));
+    const normalizedScope = scope === 'offline' ? 'offline' : 'online';
+    const digest = (0, crypto_1.createHash)('sha1')
+        .update(`${normalizedScope}:${normalizedPlayerId}:${normalizedTimestamp}:${Math.random()}`)
+        .digest('base64url')
+        .slice(0, 18);
+    return `stat:${normalizedScope}:${normalizedTimestamp}:${digest}`;
+}
+function createEmptyOfflineGainReportParts() {
+    return {
+        spiritStones: { gained: 0, lost: 0, net: 0 },
+        items: [],
+        progress: [],
+        techniques: [],
+        professions: [],
+    };
+}
+function mergeOfflineGainSessionRecords(persistedSession, memorySession) {
+    if (!persistedSession && !memorySession) {
+        return null;
+    }
+    if (!memorySession) {
+        return persistedSession;
+    }
+    if (!persistedSession) {
+        return memorySession;
+    }
+    return {
+        ...persistedSession,
+        ...memorySession,
+        playerId: normalizeOfflineGainString(memorySession.playerId) || normalizeOfflineGainString(persistedSession.playerId),
+        sessionId: normalizeOfflineGainString(memorySession.sessionId) || normalizeOfflineGainString(persistedSession.sessionId),
+        startedAt: normalizeOfflineGainCount(memorySession.startedAt || persistedSession.startedAt),
+        baselinePayload: memorySession.baselinePayload ?? persistedSession.baselinePayload,
+        accumulatedPayload: memorySession.accumulatedPayload ?? persistedSession.accumulatedPayload,
+    };
+}
+function accumulateOfflineGainSessionDelta(session, beforeSnapshot, afterSnapshot) {
+    if (!session) {
+        return;
+    }
+    const delta = buildOfflineGainDeltaParts(
+        normalizeOfflineGainSnapshot(beforeSnapshot),
+        normalizeOfflineGainSnapshot(afterSnapshot),
+    );
+    session.accumulatedPayload = mergeOfflineGainReportPartsBySum(
+        normalizeOfflineGainReportParts(session.accumulatedPayload),
+        delta,
+    );
+}
+function buildOfflineGainDeltaParts(before, after) {
+    const itemDeltas = diffOfflineGainItems(before.inventoryItems, after.inventoryItems);
+    const spiritStones = itemDeltas
+        .filter((entry) => isWalletCacheItemId(entry.itemId))
+        .reduce((total, entry) => ({
+            gained: total.gained + normalizeOfflineGainCount(entry.gained ?? entry.count),
+            lost: total.lost + normalizeOfflineGainCount(entry.lost),
+            net: total.net + normalizeOfflineGainSignedCount(entry.net ?? ((entry.gained ?? entry.count ?? 0) - (entry.lost ?? 0))),
+        }), { gained: 0, lost: 0, net: 0 });
+    return {
+        spiritStones,
+        items: itemDeltas.filter((entry) => !isWalletCacheItemId(entry.itemId)),
+        progress: diffOfflineGainProgress(before, after),
+        techniques: diffOfflineGainTechniques(before.techniques, after.techniques),
+        professions: diffOfflineGainProfessions(before.professions, after.professions),
+    };
+}
+function hasOfflineGainReportParts(parts) {
+    const normalized = normalizeOfflineGainReportParts(parts);
+    return normalized.spiritStones.gained > 0
+        || normalized.spiritStones.lost > 0
+        || normalized.items.length > 0
+        || normalized.progress.length > 0
+        || normalized.techniques.length > 0
+        || normalized.professions.length > 0;
+}
+function buildEmptyPlayerStatisticTotals(now = Date.now()) {
+    const generatedAt = Math.max(0, Math.trunc(Number(now) || Date.now()));
+    return {
+        today: createEmptyPlayerStatisticPeriodTotal(),
+        yesterday: createEmptyPlayerStatisticPeriodTotal(),
+        week: createEmptyPlayerStatisticPeriodTotal(),
+        generatedAt,
+    };
+}
+function createEmptyPlayerStatisticPeriodTotal() {
+    return {
+        spiritStones: createEmptyPlayerStatisticAmount(),
+        progress: createEmptyPlayerStatisticAmount(),
+        techniques: createEmptyPlayerStatisticAmount(),
+        professions: createEmptyPlayerStatisticAmount(),
+    };
+}
+function createEmptyPlayerStatisticAmount() {
+    return { gained: 0, lost: 0, net: 0 };
+}
+function buildPlayerStatisticRelevantDayKeys(now = Date.now()) {
+    const keys = buildPlayerStatisticPeriodDayKeys(now);
+    return Array.from(new Set([keys.today, keys.yesterday, ...keys.week]));
+}
+function buildPlayerStatisticPeriodDayKeys(now = Date.now()) {
+    const dayStart = buildPlayerStatisticLocalDayStart(now);
+    const yesterday = new Date(dayStart.getTime());
+    yesterday.setDate(dayStart.getDate() - 1);
+    const weekday = dayStart.getDay();
+    const mondayOffset = weekday === 0 ? -6 : 1 - weekday;
+    const monday = new Date(dayStart.getTime());
+    monday.setDate(dayStart.getDate() + mondayOffset);
+    const week = [];
+    for (let index = 0; index < 7; index += 1) {
+        const day = new Date(monday.getTime());
+        day.setDate(monday.getDate() + index);
+        week.push(buildPlayerStatisticLocalDayKey(day.getTime()));
+    }
+    return {
+        today: buildPlayerStatisticLocalDayKey(dayStart.getTime()),
+        yesterday: buildPlayerStatisticLocalDayKey(yesterday.getTime()),
+        week,
+    };
+}
+function buildPlayerStatisticLocalDayStart(timestamp = Date.now()) {
+    const normalized = Math.max(0, Math.trunc(Number(timestamp) || Date.now()));
+    const date = new Date(normalized);
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+function buildPlayerStatisticLocalDayKey(timestamp = Date.now()) {
+    const dayStart = buildPlayerStatisticLocalDayStart(timestamp);
+    const year = dayStart.getFullYear();
+    const month = String(dayStart.getMonth() + 1).padStart(2, '0');
+    const day = String(dayStart.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+function buildPlayerStatisticTotalsView(persistedByDay, runtimeByDay, now = Date.now()) {
+    const keys = buildPlayerStatisticPeriodDayKeys(now);
+    return {
+        today: readPlayerStatisticDayTotal(persistedByDay, runtimeByDay, keys.today),
+        yesterday: readPlayerStatisticDayTotal(persistedByDay, runtimeByDay, keys.yesterday),
+        week: keys.week.reduce(
+            (total, dayKey) => mergePlayerStatisticPeriodTotals(total, readPlayerStatisticDayTotal(persistedByDay, runtimeByDay, dayKey)),
+            createEmptyPlayerStatisticPeriodTotal(),
+        ),
+        generatedAt: Math.max(0, Math.trunc(Number(now) || Date.now())),
+    };
+}
+function readPlayerStatisticDayTotal(persistedByDay, runtimeByDay, dayKey) {
+    return mergePlayerStatisticPeriodTotals(
+        persistedByDay instanceof Map ? persistedByDay.get(dayKey) : null,
+        runtimeByDay instanceof Map ? runtimeByDay.get(dayKey) : null,
+    );
+}
+function summarizePlayerStatisticPeriodTotal(parts) {
+    const normalized = normalizeOfflineGainReportParts(parts);
+    const total = createEmptyPlayerStatisticPeriodTotal();
+    total.spiritStones = normalizePlayerStatisticAmountRecord(normalized.spiritStones);
+    for (const entry of normalized.progress) {
+        const target = entry.kind === 'bodyTrainingExp' ? 'techniques' : 'progress';
+        total[target] = mergePlayerStatisticAmount(total[target], {
+            gained: entry.gained ?? entry.amount,
+            lost: entry.lost,
+        });
+    }
+    for (const entry of normalized.techniques) {
+        total.techniques = mergePlayerStatisticAmount(total.techniques, {
+            gained: entry.expGained ?? entry.expGain,
+            lost: entry.expLost,
+        });
+    }
+    for (const entry of normalized.professions) {
+        total.professions = mergePlayerStatisticAmount(total.professions, {
+            gained: entry.expGained ?? entry.expGain,
+            lost: entry.expLost,
+        });
+    }
+    return normalizePlayerStatisticPeriodTotal(total);
+}
+function hasPlayerStatisticPeriodTotal(total) {
+    const normalized = normalizePlayerStatisticPeriodTotal(total);
+    return normalized.spiritStones.gained > 0
+        || normalized.spiritStones.lost > 0
+        || normalized.progress.gained > 0
+        || normalized.progress.lost > 0
+        || normalized.techniques.gained > 0
+        || normalized.techniques.lost > 0
+        || normalized.professions.gained > 0
+        || normalized.professions.lost > 0;
+}
+function mergePlayerStatisticDayTotalMap(target, playerId, dayKey, delta) {
+    const normalizedPlayerId = normalizeOfflineGainString(playerId);
+    const normalizedDayKey = normalizeOfflineGainString(dayKey);
+    const normalizedDelta = normalizePlayerStatisticPeriodTotal(delta);
+    if (!normalizedPlayerId || !normalizedDayKey || !hasPlayerStatisticPeriodTotal(normalizedDelta)) {
+        return;
+    }
+    const byDay = target.get(normalizedPlayerId) ?? new Map();
+    byDay.set(normalizedDayKey, mergePlayerStatisticPeriodTotals(byDay.get(normalizedDayKey), normalizedDelta));
+    target.set(normalizedPlayerId, byDay);
+}
+function subtractPlayerStatisticDayTotalMap(target, playerId, dayKey, delta) {
+    const normalizedPlayerId = normalizeOfflineGainString(playerId);
+    const normalizedDayKey = normalizeOfflineGainString(dayKey);
+    if (!normalizedPlayerId || !normalizedDayKey) {
+        return;
+    }
+    const byDay = target.get(normalizedPlayerId);
+    if (!(byDay instanceof Map)) {
+        return;
+    }
+    const next = mergePlayerStatisticPeriodTotals(byDay.get(normalizedDayKey), delta, -1);
+    if (hasPlayerStatisticPeriodTotal(next)) {
+        byDay.set(normalizedDayKey, next);
+    } else {
+        byDay.delete(normalizedDayKey);
+    }
+    if (byDay.size > 0) {
+        target.set(normalizedPlayerId, byDay);
+    } else {
+        target.delete(normalizedPlayerId);
+    }
+}
+function normalizePlayerStatisticPeriodTotal(value) {
+    const record = value && typeof value === 'object' ? value : {};
+    return {
+        spiritStones: normalizePlayerStatisticAmountRecord(record.spiritStones),
+        progress: normalizePlayerStatisticAmountRecord(record.progress),
+        techniques: normalizePlayerStatisticAmountRecord(record.techniques),
+        professions: normalizePlayerStatisticAmountRecord(record.professions),
+    };
+}
+function mergePlayerStatisticPeriodTotals(leftValue, rightValue, sign = 1) {
+    const left = normalizePlayerStatisticPeriodTotal(leftValue);
+    const right = normalizePlayerStatisticPeriodTotal(rightValue);
+    return {
+        spiritStones: mergePlayerStatisticAmount(left.spiritStones, right.spiritStones, sign),
+        progress: mergePlayerStatisticAmount(left.progress, right.progress, sign),
+        techniques: mergePlayerStatisticAmount(left.techniques, right.techniques, sign),
+        professions: mergePlayerStatisticAmount(left.professions, right.professions, sign),
+    };
+}
+function normalizePlayerStatisticAmountRecord(value) {
+    const record = value && typeof value === 'object' ? value : {};
+    const gained = normalizeOfflineGainCount(record.gained ?? record.amount ?? record.expGained ?? record.expGain ?? record.count);
+    const lost = normalizeOfflineGainCount(record.lost ?? record.expLost);
+    return {
+        gained,
+        lost,
+        net: gained - lost,
+    };
+}
+function mergePlayerStatisticAmount(leftValue, rightValue, sign = 1) {
+    const left = normalizePlayerStatisticAmountRecord(leftValue);
+    const right = normalizePlayerStatisticAmountRecord(rightValue);
+    const gained = Math.max(0, left.gained + (sign * right.gained));
+    const lost = Math.max(0, left.lost + (sign * right.lost));
+    return {
+        gained,
+        lost,
+        net: gained - lost,
+    };
+}
+function buildPlayerStatisticRecordFromParts(player, session, endedAt, parts, scope = 'offline') {
+    const normalizedParts = normalizeOfflineGainReportParts(parts);
+    const startedAt = normalizeOfflineGainCount(session?.startedAt ?? session?.baselinePayload?.snapshotAt ?? endedAt);
+    const normalizedEndedAt = Math.max(startedAt, normalizeOfflineGainCount(endedAt));
+    const normalizedScope = scope === 'online' ? 'online' : 'offline';
+    return {
+        id: normalizeOfflineGainString(session?.sessionId) || buildPlayerStatisticRecordId(player?.playerId, normalizedEndedAt, normalizedScope),
+        playerId: normalizeOfflineGainString(player?.playerId) || undefined,
+        scope: normalizedScope,
+        source: resolvePlayerStatisticSource(normalizedParts, normalizedScope),
+        startedAt,
+        endedAt: normalizedEndedAt,
+        durationMs: Math.max(0, normalizedEndedAt - startedAt),
+        generatedAt: Date.now(),
+        spiritStones: normalizedParts.spiritStones,
+        items: normalizedParts.items,
+        progress: normalizedParts.progress,
+        techniques: normalizedParts.techniques,
+        professions: normalizedParts.professions,
+    };
+}
+function resolvePlayerStatisticSource(parts, scope) {
+    if (scope === 'offline') {
+        return 'cultivation';
+    }
+    const hasGrowth = parts.progress.length > 0 || parts.techniques.length > 0 || parts.professions.length > 0;
+    const hasAssets = parts.items.length > 0 || parts.spiritStones.gained > 0 || parts.spiritStones.lost > 0;
+    if (hasGrowth && !hasAssets) {
+        return 'cultivation';
+    }
+    if (hasAssets && !hasGrowth) {
+        return 'system';
+    }
+    return 'system';
+}
+function normalizeOfflineGainReportParts(value) {
+    const record = value && typeof value === 'object' ? value : {};
+    return {
+        spiritStones: normalizeOfflineGainAmountRecord(record.spiritStones),
+        items: normalizeOfflineGainItemGainList(record.items),
+        progress: normalizeOfflineGainProgressGainList(record.progress),
+        techniques: normalizeOfflineGainTechniqueGainList(record.techniques),
+        professions: normalizeOfflineGainProfessionGainList(record.professions),
+    };
+}
+function normalizeOfflineGainAmountRecord(value) {
+    const record = value && typeof value === 'object' ? value : {};
+    const gained = normalizeOfflineGainCount(record.gained ?? record.amount ?? record.expGained ?? record.expGain ?? record.count);
+    const lost = normalizeOfflineGainCount(record.lost ?? record.expLost);
+    return {
+        gained,
+        lost,
+        net: normalizeOfflineGainSignedCount(record.net ?? record.netExp ?? gained - lost),
+    };
+}
+function normalizeOfflineGainItemGainList(value) {
+    return (Array.isArray(value) ? value : [])
+        .map((entry) => {
+            const amount = normalizeOfflineGainAmountRecord(entry);
+            return {
+                itemId: normalizeOfflineGainString(entry?.itemId),
+                name: normalizeOfflineGainString(entry?.name) || undefined,
+                gained: amount.gained,
+                lost: amount.lost,
+                net: amount.net,
+                count: amount.gained,
+            };
+        })
+        .filter((entry) => entry.itemId && (entry.gained > 0 || entry.lost > 0));
+}
+function normalizeOfflineGainProgressGainList(value) {
+    return (Array.isArray(value) ? value : [])
+        .map((entry) => {
+            const amount = normalizeOfflineGainAmountRecord(entry);
+            return {
+                kind: normalizeOfflineGainProgressKind(entry?.kind),
+                label: normalizeOfflineGainString(entry?.label) || '收益',
+                gained: amount.gained,
+                lost: amount.lost,
+                net: amount.net,
+                amount: amount.gained,
+                levelGain: normalizeOfflineGainOptionalCount(entry?.levelGain),
+                levelLoss: normalizeOfflineGainOptionalCount(entry?.levelLoss),
+                currentLevel: normalizeOfflineGainOptionalCount(entry?.currentLevel),
+            };
+        })
+        .filter((entry) => entry.gained > 0 || entry.lost > 0 || (entry.levelGain ?? 0) > 0 || (entry.levelLoss ?? 0) > 0);
+}
+function normalizeOfflineGainTechniqueGainList(value) {
+    return (Array.isArray(value) ? value : [])
+        .map((entry) => {
+            const amount = normalizeOfflineGainAmountRecord({
+                expGained: entry?.expGained ?? entry?.expGain,
+                expLost: entry?.expLost,
+                netExp: entry?.netExp,
+            });
+            return {
+                techniqueId: normalizeOfflineGainString(entry?.techniqueId),
+                name: normalizeOfflineGainString(entry?.name) || undefined,
+                expGained: amount.gained,
+                expLost: amount.lost,
+                netExp: amount.net,
+                expGain: amount.gained,
+                levelGain: normalizeOfflineGainOptionalCount(entry?.levelGain),
+                levelLoss: normalizeOfflineGainOptionalCount(entry?.levelLoss),
+                currentLevel: normalizeOfflineGainOptionalCount(entry?.currentLevel),
+            };
+        })
+        .filter((entry) => entry.techniqueId && (entry.expGained > 0 || entry.expLost > 0 || (entry.levelGain ?? 0) > 0 || (entry.levelLoss ?? 0) > 0));
+}
+function normalizeOfflineGainProfessionGainList(value) {
+    return (Array.isArray(value) ? value : [])
+        .map((entry) => {
+            const amount = normalizeOfflineGainAmountRecord({
+                expGained: entry?.expGained ?? entry?.expGain,
+                expLost: entry?.expLost,
+                netExp: entry?.netExp,
+            });
+            return {
+                professionType: normalizeOfflineGainString(entry?.professionType) || 'unknown',
+                label: normalizeOfflineGainString(entry?.label) || '技艺',
+                expGained: amount.gained,
+                expLost: amount.lost,
+                netExp: amount.net,
+                expGain: amount.gained,
+                levelGain: normalizeOfflineGainOptionalCount(entry?.levelGain),
+                levelLoss: normalizeOfflineGainOptionalCount(entry?.levelLoss),
+                currentLevel: normalizeOfflineGainOptionalCount(entry?.currentLevel),
+            };
+        })
+        .filter((entry) => entry.expGained > 0 || entry.expLost > 0 || (entry.levelGain ?? 0) > 0 || (entry.levelLoss ?? 0) > 0);
+}
+function normalizeOfflineGainProgressKind(value) {
+    switch (value) {
+        case 'realmExp':
+        case 'foundation':
+        case 'rootFoundation':
+        case 'combatExp':
+        case 'bodyTrainingExp':
+            return value;
+        default:
+            return 'foundation';
+    }
+}
+function normalizeOfflineGainOptionalCount(value) {
+    if (value === undefined || value === null) {
+        return undefined;
+    }
+    return normalizeOfflineGainCount(value);
+}
+function mergeOfflineGainReportPartsBySum(left, right) {
+    return {
+        spiritStones: mergeOfflineGainAmountRecord(left.spiritStones, right.spiritStones, 'sum'),
+        items: mergeOfflineGainItems(left.items, right.items, 'sum'),
+        progress: mergeOfflineGainProgress(left.progress, right.progress, 'sum'),
+        techniques: mergeOfflineGainTechniques(left.techniques, right.techniques, 'sum'),
+        professions: mergeOfflineGainProfessions(left.professions, right.professions, 'sum'),
+    };
+}
+function mergeOfflineGainReportPartsByMaximum(left, right) {
+    return {
+        spiritStones: mergeOfflineGainAmountRecord(left.spiritStones, right.spiritStones, 'maximum'),
+        items: mergeOfflineGainItems(left.items, right.items, 'maximum'),
+        progress: mergeOfflineGainProgress(left.progress, right.progress, 'maximum'),
+        techniques: mergeOfflineGainTechniques(left.techniques, right.techniques, 'maximum'),
+        professions: mergeOfflineGainProfessions(left.professions, right.professions, 'maximum'),
+    };
+}
+function mergeOfflineGainAmountRecord(leftValue, rightValue, mode) {
+    const left = normalizeOfflineGainAmountRecord(leftValue);
+    const right = normalizeOfflineGainAmountRecord(rightValue);
+    const gained = mode === 'sum' ? left.gained + right.gained : Math.max(left.gained, right.gained);
+    const lost = mode === 'sum' ? left.lost + right.lost : Math.max(left.lost, right.lost);
+    return {
+        gained,
+        lost,
+        net: gained - lost,
+    };
+}
+function mergeOfflineGainItems(leftItems, rightItems, mode) {
+    const byId = new Map();
+    for (const entry of [...normalizeOfflineGainItemGainList(leftItems), ...normalizeOfflineGainItemGainList(rightItems)]) {
+        const current = byId.get(entry.itemId);
+        if (!current) {
+            byId.set(entry.itemId, { ...entry });
+            continue;
+        }
+        current.name = entry.name || current.name;
+        const merged = mergeOfflineGainAmountRecord(current, entry, mode);
+        current.gained = merged.gained;
+        current.lost = merged.lost;
+        current.net = merged.net;
+        current.count = merged.gained;
+    }
+    return Array.from(byId.values()).sort((left, right) => String(left.name ?? left.itemId).localeCompare(String(right.name ?? right.itemId), 'zh-Hans-CN'));
+}
+function mergeOfflineGainProgress(leftRows, rightRows, mode) {
+    const byKind = new Map();
+    for (const entry of [...normalizeOfflineGainProgressGainList(leftRows), ...normalizeOfflineGainProgressGainList(rightRows)]) {
+        const current = byKind.get(entry.kind);
+        if (!current) {
+            byKind.set(entry.kind, { ...entry });
+            continue;
+        }
+        current.label = entry.label || current.label;
+        const merged = mergeOfflineGainAmountRecord(current, entry, mode);
+        current.gained = merged.gained;
+        current.lost = merged.lost;
+        current.net = merged.net;
+        current.amount = merged.gained;
+        current.levelGain = mergeOfflineGainOptionalAmount(current.levelGain, entry.levelGain, mode);
+        current.levelLoss = mergeOfflineGainOptionalAmount(current.levelLoss, entry.levelLoss, mode);
+        current.currentLevel = entry.currentLevel ?? current.currentLevel;
+    }
+    return Array.from(byKind.values());
+}
+function mergeOfflineGainTechniques(leftRows, rightRows, mode) {
+    const byId = new Map();
+    for (const entry of [...normalizeOfflineGainTechniqueGainList(leftRows), ...normalizeOfflineGainTechniqueGainList(rightRows)]) {
+        const current = byId.get(entry.techniqueId);
+        if (!current) {
+            byId.set(entry.techniqueId, { ...entry });
+            continue;
+        }
+        current.name = entry.name || current.name;
+        const merged = mergeOfflineGainAmountRecord({
+            gained: current.expGained,
+            lost: current.expLost,
+            net: current.netExp,
+        }, {
+            gained: entry.expGained,
+            lost: entry.expLost,
+            net: entry.netExp,
+        }, mode);
+        current.expGained = merged.gained;
+        current.expLost = merged.lost;
+        current.netExp = merged.net;
+        current.expGain = merged.gained;
+        current.levelGain = mergeOfflineGainOptionalAmount(current.levelGain, entry.levelGain, mode);
+        current.levelLoss = mergeOfflineGainOptionalAmount(current.levelLoss, entry.levelLoss, mode);
+        current.currentLevel = entry.currentLevel ?? current.currentLevel;
+    }
+    return Array.from(byId.values()).sort((left, right) => String(left.name ?? left.techniqueId).localeCompare(String(right.name ?? right.techniqueId), 'zh-Hans-CN'));
+}
+function mergeOfflineGainProfessions(leftRows, rightRows, mode) {
+    const byType = new Map();
+    for (const entry of [...normalizeOfflineGainProfessionGainList(leftRows), ...normalizeOfflineGainProfessionGainList(rightRows)]) {
+        const current = byType.get(entry.professionType);
+        if (!current) {
+            byType.set(entry.professionType, { ...entry });
+            continue;
+        }
+        current.label = entry.label || current.label;
+        const merged = mergeOfflineGainAmountRecord({
+            gained: current.expGained,
+            lost: current.expLost,
+            net: current.netExp,
+        }, {
+            gained: entry.expGained,
+            lost: entry.expLost,
+            net: entry.netExp,
+        }, mode);
+        current.expGained = merged.gained;
+        current.expLost = merged.lost;
+        current.netExp = merged.net;
+        current.expGain = merged.gained;
+        current.levelGain = mergeOfflineGainOptionalAmount(current.levelGain, entry.levelGain, mode);
+        current.levelLoss = mergeOfflineGainOptionalAmount(current.levelLoss, entry.levelLoss, mode);
+        current.currentLevel = entry.currentLevel ?? current.currentLevel;
+    }
+    return Array.from(byType.values()).sort((left, right) => String(left.label ?? left.professionType).localeCompare(String(right.label ?? right.professionType), 'zh-Hans-CN'));
+}
+function mergeOfflineGainOptionalAmount(leftValue, rightValue, mode) {
+    const left = normalizeOfflineGainCount(leftValue);
+    const right = normalizeOfflineGainCount(rightValue);
+    const merged = mode === 'sum' ? left + right : Math.max(left, right);
+    return merged > 0 ? merged : undefined;
+}
+function buildOfflineGainSnapshot(player, contentTemplateRepository = null) {
+    return {
+        snapshotAt: Date.now(),
+        playerId: normalizeOfflineGainString(player?.playerId),
+        inventoryItems: buildOfflineGainInventorySnapshot(player?.inventory?.items, contentTemplateRepository),
+        realm: {
+            realmLv: normalizeOfflineGainCount(player?.realm?.realmLv),
+            level: normalizeOfflineGainCount(player?.realm?.realmLv),
+            progress: normalizeOfflineGainCount(player?.realm?.progress),
+            exp: normalizeOfflineGainCount(player?.realm?.progress),
+            progressToNext: normalizeOfflineGainCount(player?.realm?.progressToNext),
+            expToNext: normalizeOfflineGainCount(player?.realm?.progressToNext),
+        },
+        foundation: normalizeOfflineGainCount(player?.foundation),
+        rootFoundation: normalizeOfflineGainCount(player?.rootFoundation),
+        combatExp: normalizeOfflineGainCount(player?.combatExp),
+        bodyTraining: buildOfflineGainExpStateSnapshot(player?.bodyTraining, {
+            minLevel: 0,
+            resolveExpToNext: (level) => typeof shared_1.getBodyTrainingExpToNext === 'function'
+                ? (0, shared_1.getBodyTrainingExpToNext)(level)
+                : normalizeOfflineGainCount(player?.bodyTraining?.expToNext),
+        }),
+        techniques: buildOfflineGainTechniqueSnapshot(player?.techniques?.techniques),
+        professions: [
+            buildOfflineGainProfessionSnapshot('alchemy', '炼丹', player?.alchemySkill),
+            buildOfflineGainProfessionSnapshot('gather', '采集', player?.gatherSkill),
+            buildOfflineGainProfessionSnapshot('enhancement', '强化', player?.enhancementSkill),
+        ].filter((entry) => Boolean(entry)),
+    };
+}
+function buildOfflineGainInventorySnapshot(items, contentTemplateRepository = null) {
+    const byItemId = new Map();
+    for (const entry of Array.isArray(items) ? items : []) {
+        const itemId = normalizeOfflineGainString(entry?.itemId);
+        const count = normalizeOfflineGainCount(entry?.count);
+        if (!itemId || count <= 0) {
+            continue;
+        }
+        const existing = byItemId.get(itemId) ?? {
+            itemId,
+            name: normalizeOfflineGainString(entry?.name)
+                || (typeof contentTemplateRepository?.getItemName === 'function' ? contentTemplateRepository.getItemName(itemId) : null)
+                || itemId,
+            count: 0,
+        };
+        existing.count += count;
+        byItemId.set(itemId, existing);
+    }
+    return Array.from(byItemId.values())
+        .sort((left, right) => String(left.name ?? left.itemId).localeCompare(String(right.name ?? right.itemId), 'zh-Hans-CN'));
+}
+function buildOfflineGainTechniqueSnapshot(techniques) {
+    return (Array.isArray(techniques) ? techniques : [])
+        .map((entry) => {
+            const techniqueId = normalizeOfflineGainString(entry?.techId);
+            if (!techniqueId) {
+                return null;
+            }
+            return {
+                techniqueId,
+                name: normalizeOfflineGainString(entry?.name) || techniqueId,
+                ...buildOfflineGainExpStateSnapshot(entry, {
+                    minLevel: 1,
+                    levelKey: 'level',
+                    expKey: 'exp',
+                    expToNextKey: 'expToNext',
+                    expToNextByLevel: buildOfflineGainTechniqueExpTable(entry),
+                }),
+            };
+        })
+        .filter((entry) => Boolean(entry));
+}
+function buildOfflineGainTechniqueExpTable(technique) {
+    const byLevel = {};
+    for (const layer of Array.isArray(technique?.layers) ? technique.layers : []) {
+        const level = normalizeOfflineGainCount(layer?.level);
+        const expToNext = normalizeOfflineGainCount(layer?.expToNext);
+        if (level > 0) {
+            byLevel[String(level)] = expToNext;
+        }
+    }
+    return byLevel;
+}
+function buildOfflineGainProfessionSnapshot(professionType, label, state) {
+    if (!state) {
+        return null;
+    }
+    return {
+        professionType,
+        label,
+        ...buildOfflineGainExpStateSnapshot(state, {
+            minLevel: 1,
+            resolveExpToNext: resolveCraftSkillExpToNextForLevel,
+        }),
+    };
+}
+function buildOfflineGainExpStateSnapshot(state, options = {}) {
+    const levelKey = options.levelKey ?? 'level';
+    const expKey = options.expKey ?? 'exp';
+    const expToNextKey = options.expToNextKey ?? 'expToNext';
+    const minLevel = Number.isFinite(options.minLevel) ? Math.trunc(Number(options.minLevel)) : 0;
+    const level = Math.max(minLevel, Math.trunc(Number(state?.[levelKey] ?? minLevel) || minLevel));
+    const fallbackExpToNext = typeof options.resolveExpToNext === 'function'
+        ? options.resolveExpToNext(level)
+        : state?.[expToNextKey];
+    return {
+        level,
+        exp: normalizeOfflineGainCount(state?.[expKey]),
+        expToNext: normalizeOfflineGainCount(state?.[expToNextKey] ?? fallbackExpToNext),
+        expToNextByLevel: options.expToNextByLevel ?? null,
+    };
+}
+function resolveCraftSkillExpToNextForLevel(level) {
+    const normalizedLevel = Math.max(1, Math.trunc(Number(level) || 1));
+    return Math.max(60, 60 + ((normalizedLevel - 1) * 12));
+}
+function buildOfflineGainReportFromSession(player, session, endedAt, contentTemplateRepository = null) {
+    const baseline = normalizeOfflineGainSnapshot(session?.baselinePayload);
+    const after = buildOfflineGainSnapshot(player, contentTemplateRepository);
+    const startedAt = normalizeOfflineGainCount(session?.startedAt ?? baseline.snapshotAt);
+    const normalizedEndedAt = Math.max(startedAt, normalizeOfflineGainCount(endedAt));
+    const snapshotDelta = buildOfflineGainDeltaParts(baseline, normalizeOfflineGainSnapshot(after));
+    const mergedPayload = mergeOfflineGainReportPartsByMaximum(
+        normalizeOfflineGainReportParts(session?.accumulatedPayload),
+        snapshotDelta,
+    );
+    return buildPlayerStatisticRecordFromParts(player, {
+        sessionId: normalizeOfflineGainString(session?.sessionId) || buildOfflineGainSessionId(player?.playerId, startedAt),
+        startedAt,
+        baselinePayload: session?.baselinePayload,
+        accumulatedPayload: mergedPayload,
+    }, normalizedEndedAt, mergedPayload, 'offline');
+}
+function normalizeOfflineGainSnapshot(value) {
+    const record = value && typeof value === 'object' ? value : {};
+    return {
+        snapshotAt: normalizeOfflineGainCount(record.snapshotAt),
+        inventoryItems: normalizeOfflineGainItemSnapshotList(record.inventoryItems),
+        realm: normalizeOfflineGainExpRecord(record.realm, { levelKey: 'realmLv', minLevel: 0 }),
+        foundation: normalizeOfflineGainCount(record.foundation),
+        rootFoundation: normalizeOfflineGainCount(record.rootFoundation),
+        combatExp: normalizeOfflineGainCount(record.combatExp),
+        bodyTraining: normalizeOfflineGainExpRecord(record.bodyTraining, { minLevel: 0 }),
+        techniques: normalizeOfflineGainExpNamedList(record.techniques, 'techniqueId'),
+        professions: normalizeOfflineGainExpNamedList(record.professions, 'professionType'),
+    };
+}
+function normalizeOfflineGainItemSnapshotList(value) {
+    return (Array.isArray(value) ? value : [])
+        .map((entry) => ({
+            itemId: normalizeOfflineGainString(entry?.itemId),
+            name: normalizeOfflineGainString(entry?.name) || undefined,
+            count: normalizeOfflineGainCount(entry?.count),
+        }))
+        .filter((entry) => entry.itemId && entry.count > 0);
+}
+function normalizeOfflineGainExpNamedList(value, idKey) {
+    return (Array.isArray(value) ? value : [])
+        .map((entry) => ({
+            ...normalizeOfflineGainExpRecord(entry, { minLevel: 1 }),
+            [idKey]: normalizeOfflineGainString(entry?.[idKey]),
+            name: normalizeOfflineGainString(entry?.name) || undefined,
+            label: normalizeOfflineGainString(entry?.label) || undefined,
+        }))
+        .filter((entry) => entry[idKey]);
+}
+function normalizeOfflineGainExpRecord(value, options = {}) {
+    const record = value && typeof value === 'object' ? value : {};
+    const levelKey = options.levelKey ?? 'level';
+    const minLevel = Number.isFinite(options.minLevel) ? Math.trunc(Number(options.minLevel)) : 0;
+    const level = Math.max(minLevel, Math.trunc(Number(record[levelKey] ?? record.level ?? minLevel) || minLevel));
+    return {
+        level,
+        realmLv: normalizeOfflineGainCount(record.realmLv ?? level),
+        exp: normalizeOfflineGainCount(record.exp ?? record.progress),
+        progress: normalizeOfflineGainCount(record.progress ?? record.exp),
+        expToNext: normalizeOfflineGainCount(record.expToNext ?? record.progressToNext),
+        progressToNext: normalizeOfflineGainCount(record.progressToNext ?? record.expToNext),
+        expToNextByLevel: record.expToNextByLevel && typeof record.expToNextByLevel === 'object'
+            ? { ...record.expToNextByLevel }
+            : null,
+    };
+}
+function diffOfflineGainItems(beforeItems, afterItems) {
+    const byId = new Map();
+    for (const entry of Array.isArray(beforeItems) ? beforeItems : []) {
+        const itemId = normalizeOfflineGainString(entry?.itemId);
+        if (!itemId) {
+            continue;
+        }
+        const current = byId.get(itemId) ?? {
+            itemId,
+            name: normalizeOfflineGainString(entry?.name) || undefined,
+            before: 0,
+            after: 0,
+        };
+        current.before += normalizeOfflineGainCount(entry?.count);
+        current.name = current.name || normalizeOfflineGainString(entry?.name) || undefined;
+        byId.set(itemId, current);
+    }
+    for (const entry of Array.isArray(afterItems) ? afterItems : []) {
+        const itemId = normalizeOfflineGainString(entry?.itemId);
+        if (!itemId) {
+            continue;
+        }
+        const current = byId.get(itemId) ?? {
+            itemId,
+            name: normalizeOfflineGainString(entry?.name) || undefined,
+            before: 0,
+            after: 0,
+        };
+        current.after += normalizeOfflineGainCount(entry?.count);
+        current.name = normalizeOfflineGainString(entry?.name) || current.name;
+        byId.set(itemId, current);
+    }
+    return Array.from(byId.values())
+        .map((entry) => {
+            const net = normalizeOfflineGainSignedCount(entry.after - entry.before);
+            if (net === 0) {
+                return null;
+            }
+            const gained = Math.max(0, net);
+            const lost = Math.max(0, -net);
+            return {
+                itemId: entry.itemId,
+                name: normalizeOfflineGainString(entry.name) || undefined,
+                gained,
+                lost,
+                net,
+                count: gained,
+            };
+        })
+        .filter((entry) => Boolean(entry));
+}
+function diffOfflineGainProgress(before, after) {
+    const progress = [];
+    const realmDelta = calculateOfflineGainExpChange(before.realm, after.realm, {
+        beforeLevelKey: 'realmLv',
+        afterLevelKey: 'realmLv',
+    });
+    if (realmDelta.expGained > 0 || realmDelta.expLost > 0 || realmDelta.levelGain > 0 || realmDelta.levelLoss > 0) {
+        progress.push({
+            kind: 'realmExp',
+            label: '修为',
+            gained: realmDelta.expGained,
+            lost: realmDelta.expLost,
+            net: realmDelta.netExp,
+            amount: realmDelta.expGained,
+            levelGain: realmDelta.levelGain > 0 ? realmDelta.levelGain : undefined,
+            levelLoss: realmDelta.levelLoss > 0 ? realmDelta.levelLoss : undefined,
+            currentLevel: normalizeOfflineGainCount(after.realm?.realmLv),
+        });
+    }
+    appendOfflineGainProgressDelta(progress, 'foundation', '底蕴', before.foundation, after.foundation);
+    appendOfflineGainProgressDelta(progress, 'rootFoundation', '根基', before.rootFoundation, after.rootFoundation);
+    appendOfflineGainProgressDelta(progress, 'combatExp', '战斗经验', before.combatExp, after.combatExp);
+    const bodyTrainingDelta = calculateOfflineGainExpChange(before.bodyTraining, after.bodyTraining, {
+        resolveExpToNext: (level) => typeof shared_1.getBodyTrainingExpToNext === 'function'
+            ? (0, shared_1.getBodyTrainingExpToNext)(level)
+            : 0,
+    });
+    if (bodyTrainingDelta.expGained > 0 || bodyTrainingDelta.expLost > 0 || bodyTrainingDelta.levelGain > 0 || bodyTrainingDelta.levelLoss > 0) {
+        progress.push({
+            kind: 'bodyTrainingExp',
+            label: '炼体经验',
+            gained: bodyTrainingDelta.expGained,
+            lost: bodyTrainingDelta.expLost,
+            net: bodyTrainingDelta.netExp,
+            amount: bodyTrainingDelta.expGained,
+            levelGain: bodyTrainingDelta.levelGain > 0 ? bodyTrainingDelta.levelGain : undefined,
+            levelLoss: bodyTrainingDelta.levelLoss > 0 ? bodyTrainingDelta.levelLoss : undefined,
+            currentLevel: normalizeOfflineGainCount(after.bodyTraining?.level),
+        });
+    }
+    return progress;
+}
+function appendOfflineGainProgressDelta(progress, kind, label, beforeValue, afterValue) {
+    const amount = normalizeOfflineGainCount(afterValue) - normalizeOfflineGainCount(beforeValue);
+    if (amount === 0) {
+        return;
+    }
+    progress.push({
+        kind,
+        label,
+        gained: Math.max(0, amount),
+        lost: Math.max(0, -amount),
+        net: amount,
+        amount: Math.max(0, amount),
+    });
+}
+function diffOfflineGainTechniques(beforeTechniques, afterTechniques) {
+    const beforeById = new Map((Array.isArray(beforeTechniques) ? beforeTechniques : [])
+        .map((entry) => [entry.techniqueId, entry]));
+    return (Array.isArray(afterTechniques) ? afterTechniques : [])
+        .map((after) => {
+            const before = beforeById.get(after.techniqueId) ?? {};
+            const delta = calculateOfflineGainExpChange(before, after);
+            if (delta.expGained <= 0 && delta.expLost <= 0 && delta.levelGain <= 0 && delta.levelLoss <= 0) {
+                return null;
+            }
+            return {
+                techniqueId: after.techniqueId,
+                name: normalizeOfflineGainString(after.name) || undefined,
+                expGained: delta.expGained,
+                expLost: delta.expLost,
+                netExp: delta.netExp,
+                expGain: delta.expGained,
+                levelGain: delta.levelGain > 0 ? delta.levelGain : undefined,
+                levelLoss: delta.levelLoss > 0 ? delta.levelLoss : undefined,
+                currentLevel: normalizeOfflineGainCount(after.level),
+            };
+        })
+        .filter((entry) => Boolean(entry));
+}
+function diffOfflineGainProfessions(beforeProfessions, afterProfessions) {
+    const beforeByType = new Map((Array.isArray(beforeProfessions) ? beforeProfessions : [])
+        .map((entry) => [entry.professionType, entry]));
+    return (Array.isArray(afterProfessions) ? afterProfessions : [])
+        .map((after) => {
+            const before = beforeByType.get(after.professionType) ?? {};
+            const delta = calculateOfflineGainExpChange(before, after, {
+                resolveExpToNext: resolveCraftSkillExpToNextForLevel,
+            });
+            if (delta.expGained <= 0 && delta.expLost <= 0 && delta.levelGain <= 0 && delta.levelLoss <= 0) {
+                return null;
+            }
+            return {
+                professionType: after.professionType,
+                label: normalizeOfflineGainString(after.label) || '技艺',
+                expGained: delta.expGained,
+                expLost: delta.expLost,
+                netExp: delta.netExp,
+                expGain: delta.expGained,
+                levelGain: delta.levelGain > 0 ? delta.levelGain : undefined,
+                levelLoss: delta.levelLoss > 0 ? delta.levelLoss : undefined,
+                currentLevel: normalizeOfflineGainCount(after.level),
+            };
+        })
+        .filter((entry) => Boolean(entry));
+}
+function calculateOfflineGainExpChange(before, after, options = {}) {
+    const beforeLevelKey = options.beforeLevelKey ?? 'level';
+    const afterLevelKey = options.afterLevelKey ?? 'level';
+    const beforeLevel = normalizeOfflineGainCount(before?.[beforeLevelKey] ?? before?.level);
+    const afterLevel = normalizeOfflineGainCount(after?.[afterLevelKey] ?? after?.level);
+    if (afterLevel > beforeLevel) {
+        const gained = calculateOfflineGainExpDelta(before, after, options);
+        return {
+            expGained: gained.expGain,
+            expLost: 0,
+            netExp: gained.expGain,
+            levelGain: gained.levelGain,
+            levelLoss: 0,
+        };
+    }
+    if (afterLevel < beforeLevel) {
+        const lost = calculateOfflineGainExpDelta(after, before, {
+            ...options,
+            beforeLevelKey: afterLevelKey,
+            afterLevelKey: beforeLevelKey,
+        });
+        return {
+            expGained: 0,
+            expLost: lost.expGain,
+            netExp: -lost.expGain,
+            levelGain: 0,
+            levelLoss: Math.max(0, beforeLevel - afterLevel),
+        };
+    }
+    const expDelta = normalizeOfflineGainCount(after?.exp ?? after?.progress) - normalizeOfflineGainCount(before?.exp ?? before?.progress);
+    return {
+        expGained: Math.max(0, expDelta),
+        expLost: Math.max(0, -expDelta),
+        netExp: expDelta,
+        levelGain: 0,
+        levelLoss: 0,
+    };
+}
+function calculateOfflineGainExpDelta(before, after, options = {}) {
+    const beforeLevelKey = options.beforeLevelKey ?? 'level';
+    const afterLevelKey = options.afterLevelKey ?? 'level';
+    const beforeLevel = normalizeOfflineGainCount(before?.[beforeLevelKey] ?? before?.level);
+    const afterLevel = normalizeOfflineGainCount(after?.[afterLevelKey] ?? after?.level);
+    const beforeExp = normalizeOfflineGainCount(before?.exp ?? before?.progress);
+    const afterExp = normalizeOfflineGainCount(after?.exp ?? after?.progress);
+    if (afterLevel <= beforeLevel) {
+        return {
+            expGain: Math.max(0, afterExp - beforeExp),
+            levelGain: 0,
+        };
+    }
+    let expGain = Math.max(0, resolveOfflineGainExpToNext(beforeLevel, before, after, options) - beforeExp);
+    for (let level = beforeLevel + 1; level < afterLevel; level += 1) {
+        expGain += Math.max(0, resolveOfflineGainExpToNext(level, before, after, options));
+    }
+    expGain += afterExp;
+    return {
+        expGain: normalizeOfflineGainCount(expGain),
+        levelGain: Math.max(0, afterLevel - beforeLevel),
+    };
+}
+function resolveOfflineGainExpToNext(level, before, after, options = {}) {
+    const normalizedLevel = normalizeOfflineGainCount(level);
+    const fromAfter = readOfflineGainExpToNextByLevel(after, normalizedLevel);
+    if (fromAfter > 0) {
+        return fromAfter;
+    }
+    const fromBefore = readOfflineGainExpToNextByLevel(before, normalizedLevel);
+    if (fromBefore > 0) {
+        return fromBefore;
+    }
+    if (typeof options.resolveExpToNext === 'function') {
+        return normalizeOfflineGainCount(options.resolveExpToNext(normalizedLevel));
+    }
+    if (normalizeOfflineGainCount(before?.level) === normalizedLevel) {
+        return normalizeOfflineGainCount(before?.expToNext ?? before?.progressToNext);
+    }
+    if (normalizeOfflineGainCount(after?.level) === normalizedLevel) {
+        return normalizeOfflineGainCount(after?.expToNext ?? after?.progressToNext);
+    }
+    return 0;
+}
+function readOfflineGainExpToNextByLevel(snapshot, level) {
+    const table = snapshot?.expToNextByLevel;
+    if (!table || typeof table !== 'object') {
+        return 0;
+    }
+    return normalizeOfflineGainCount(table[String(level)]);
 }
 function isWalletCacheItemId(itemId) {
     return typeof itemId === 'string' && itemId.trim() === 'spirit_stone';

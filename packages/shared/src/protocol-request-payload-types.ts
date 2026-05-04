@@ -1,5 +1,6 @@
 import type {
   AckSystemMessagesRequestView,
+  AckOfflineGainReportsRequestView,
   ActionRequestView,
   ChatRequestView,
   DebugResetSpawnRequestView,
@@ -21,6 +22,7 @@ import type {
 import type {
   AcceptNpcQuestView,
   BuyMarketItemView,
+  BuyoutAuctionLotView,
   BuyNpcShopItemView,
   CancelAlchemyView,
   CancelEnhancementView,
@@ -40,6 +42,7 @@ import type {
   RedeemCodesView,
   RequestAlchemyPanelView,
   RequestAttrDetailView,
+  RequestAuctionListingsView,
   RequestDetailView,
   RequestEnhancementPanelView,
   RequestLeaderboardView,
@@ -55,6 +58,7 @@ import type {
   RequestNpcShopView,
   RequestQuestsView,
   RequestWorldSummaryView,
+  PlaceAuctionBidView,
   SaveAlchemyPresetView,
   SellMarketItemView,
   SortInventoryView,
@@ -130,10 +134,14 @@ export interface C2S_DebugResetSpawn extends DebugResetSpawnRequestView {}
 export interface C2S_Chat extends ChatRequestView {}
 /** 系统消息已读回执。 */
 export interface C2S_AckSystemMessages extends AckSystemMessagesRequestView {}
+/** 离线收益报告已存入浏览器本地的回执。 */
+export interface C2S_AckOfflineGainReports extends AckOfflineGainReportsRequestView {}
 /** 请求坊市首页数据。 */
 export interface C2S_RequestMarket extends RequestMarketView {}
 /** 请求坊市分页列表。 */
 export interface C2S_RequestMarketListings extends RequestMarketListingsView {}
+/** 请求拍卖行分页列表。 */
+export interface C2S_RequestAuctionListings extends RequestAuctionListingsView {}
 /** 请求邮件摘要。 */
 export interface C2S_RequestMailSummary extends RequestMailSummaryView {}
 /** 请求邮件分页列表。 */
@@ -178,6 +186,10 @@ export interface C2S_CancelGather extends CancelGatherView {}
 export interface C2S_CreateMarketSellOrder extends CreateMarketSellOrderView {}
 /** 创建坊市买单。 */
 export interface C2S_CreateMarketBuyOrder extends CreateMarketBuyOrderView {}
+/** 拍卖行加价。 */
+export interface C2S_PlaceAuctionBid extends PlaceAuctionBidView {}
+/** 拍卖行一口价。 */
+export interface C2S_BuyoutAuctionLot extends BuyoutAuctionLotView {}
 /** 直接购买坊市挂单物品。 */
 export interface C2S_BuyMarketItem extends BuyMarketItemView {}
 /** 直接向坊市出售背包物品。 */

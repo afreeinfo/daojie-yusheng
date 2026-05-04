@@ -729,6 +729,8 @@ function isSameSyncedItem(left: SyncedItemStack | null | undefined, right: Synce
     && left.groundLabel === right.groundLabel
     && left.grade === right.grade
     && left.level === right.level
+    && left.materialCategory === right.materialCategory
+    && shallowEqualRecord(left.materialValues, right.materialValues)
     && left.enhanceLevel === right.enhanceLevel
     && left.equipSlot === right.equipSlot
     && shallowEqualRecord(left.equipAttrs, right.equipAttrs)

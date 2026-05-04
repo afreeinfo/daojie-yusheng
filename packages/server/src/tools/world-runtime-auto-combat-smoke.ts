@@ -3,12 +3,16 @@ import assert from 'node:assert/strict';
 import { WorldRuntimeAutoCombatService } from '../runtime/world/world-runtime-auto-combat.service';
 import { findPathToTargetWithinRangeOnMap } from '../runtime/world/world-runtime.path-planning.helpers';
 
-function createPlayerRuntimeService(player: Record<string, unknown>) {
+function createPlayerRuntimeService(player: Record<string, unknown>, extraPlayers: Array<Record<string, unknown>> = []) {
   const log: unknown[][] = [];
+  const players = new Map<string, Record<string, unknown>>([
+    [String(player.playerId), player],
+    ...extraPlayers.map((entry) => [String(entry.playerId), entry] as [string, Record<string, unknown>]),
+  ]);
   return {
     log,
     getPlayer(playerId: string) {
-      return playerId === player.playerId ? player : null;
+      return players.get(playerId) ?? null;
     },
     clearManualEngagePending(playerId: string) {
       log.push(['clearManualEngagePending', playerId]);
@@ -21,6 +25,14 @@ function createPlayerRuntimeService(player: Record<string, unknown>) {
     },
     setCombatTarget(playerId: string, targetRef: string, locked: boolean, tick: number) {
       log.push(['setCombatTarget', playerId, targetRef, locked, tick]);
+    },
+    useItem(playerId: string, slotIndex: number) {
+      log.push(['useItem', playerId, slotIndex]);
+      const inventory = player.inventory as { items?: Array<{ count?: number }> } | undefined;
+      const item = inventory?.items?.[slotIndex];
+      if (item && typeof item.count === 'number') {
+        item.count -= 1;
+      }
     },
   };
 }
@@ -274,6 +286,133 @@ function createMaterializeDeps(instance: Record<string, unknown>, enqueueLog: un
     },
     queuePlayerNotice() {},
   };
+}
+
+function createAutoUsePillDeps(log: unknown[][], hasPendingCommand = false) {
+  return {
+    listConnectedPlayerIds() {
+      return ['player:1'];
+    },
+    hasPendingCommand() {
+      return hasPendingCommand;
+    },
+    refreshQuestStates(playerId: string) {
+      log.push(['refreshQuestStates', playerId]);
+    },
+    queuePlayerNotice(playerId: string, message: string, kind: string) {
+      log.push(['queuePlayerNotice', playerId, message, kind]);
+    },
+  };
+}
+
+function createAutoUsePillPlayer(overrides: Record<string, unknown> = {}) {
+  return {
+    playerId: 'player:1',
+    hp: 42,
+    maxHp: 100,
+    qi: 30,
+    maxQi: 100,
+    inventory: {
+      items: [{
+        itemId: 'pill.minor_heal',
+        name: '回春散',
+        count: 3,
+        healPercent: 0.22,
+      }],
+    },
+    buffs: {
+      buffs: [],
+    },
+    combat: {
+      autoUsePills: [{
+        itemId: 'pill.minor_heal',
+        conditions: [{ type: 'resource_ratio', resource: 'hp', op: 'lt', thresholdPct: 60 }],
+      }],
+    },
+    ...overrides,
+  };
+}
+
+function testAutoUsePillTriggersBeforeAutoCombatCommandMaterialization(): void {
+  const player = createAutoUsePillPlayer();
+  const playerRuntimeService = createPlayerRuntimeService(player);
+  const service = new WorldRuntimeAutoCombatService(playerRuntimeService as never);
+
+  service.materializeAutoUsePills(createAutoUsePillDeps(playerRuntimeService.log) as never);
+
+  assert.deepEqual(playerRuntimeService.log, [
+    ['useItem', 'player:1', 0],
+    ['refreshQuestStates', 'player:1'],
+    ['queuePlayerNotice', 'player:1', '自动使用 回春散', 'success'],
+  ]);
+  assert.equal(((player.inventory as { items: Array<{ count: number }> }).items[0]?.count), 2);
+}
+
+function testAutoUsePillSkipsEmptyConditions(): void {
+  const player = createAutoUsePillPlayer({
+    combat: {
+      autoUsePills: [{
+        itemId: 'pill.minor_heal',
+        conditions: [],
+      }],
+    },
+  });
+  const playerRuntimeService = createPlayerRuntimeService(player);
+  const service = new WorldRuntimeAutoCombatService(playerRuntimeService as never);
+
+  service.materializeAutoUsePills(createAutoUsePillDeps(playerRuntimeService.log) as never);
+
+  assert.deepEqual(playerRuntimeService.log, []);
+}
+
+function testAutoUsePillSkipsWhenManualCommandIsPending(): void {
+  const player = createAutoUsePillPlayer();
+  const playerRuntimeService = createPlayerRuntimeService(player);
+  const service = new WorldRuntimeAutoCombatService(playerRuntimeService as never);
+
+  service.materializeAutoUsePills(createAutoUsePillDeps(playerRuntimeService.log, true) as never);
+
+  assert.deepEqual(playerRuntimeService.log, []);
+}
+
+function testAutoUseBuffPillTriggersOnlyWhenBuffMissing(): void {
+  const player = createAutoUsePillPlayer({
+    inventory: {
+      items: [{
+        itemId: 'pill.crimson_bud_elixir',
+        name: '赤芽丹',
+        count: 2,
+        consumeBuffs: [{ buffId: 'item_buff.crimson_bud', name: '赤芽生锋', duration: 10 }],
+      }],
+    },
+    buffs: {
+      buffs: [{
+        buffId: 'item_buff.crimson_bud',
+        remainingTicks: 10,
+        stacks: 1,
+      }],
+    },
+    combat: {
+      autoUsePills: [{
+        itemId: 'pill.crimson_bud_elixir',
+        conditions: [{ type: 'buff_missing' }],
+      }],
+    },
+  });
+  const playerRuntimeService = createPlayerRuntimeService(player);
+  const service = new WorldRuntimeAutoCombatService(playerRuntimeService as never);
+
+  service.materializeAutoUsePills(createAutoUsePillDeps(playerRuntimeService.log) as never);
+  assert.deepEqual(playerRuntimeService.log, []);
+
+  (player.buffs as { buffs: Array<{ remainingTicks: number }> }).buffs[0]!.remainingTicks = 0;
+  service.materializeAutoUsePills(createAutoUsePillDeps(playerRuntimeService.log) as never);
+
+  assert.deepEqual(playerRuntimeService.log, [
+    ['useItem', 'player:1', 0],
+    ['refreshQuestStates', 'player:1'],
+    ['queuePlayerNotice', 'player:1', '自动使用 赤芽丹', 'success'],
+  ]);
 }
 
 function testAutoCombatDoesNotEnqueueSpentActionCommand(): void {
@@ -647,6 +786,165 @@ function testLockedHerbTileContinuesBasicAttack(): void {
   });
 }
 
+function testRetaliatePlayerPreemptsLockedMiningTileWithoutClearingLock(): void {
+  const player = {
+    playerId: 'player:1',
+    hp: 100,
+    x: 1,
+    y: 1,
+    instanceId: 'public:test_map',
+    qi: 100,
+    attrs: {
+      numericStats: {
+        viewRange: 6,
+        maxQiOutputPerTick: 100,
+      },
+    },
+    actions: { actions: [] },
+    combat: {
+      autoBattle: true,
+      autoRetaliate: true,
+      autoBattleStationary: false,
+      combatTargetId: 'tile:2:1',
+      combatTargetLocked: true,
+      retaliatePlayerTargetId: 'attacker',
+      manualEngagePending: false,
+    },
+  };
+  const attacker = {
+    playerId: 'attacker',
+    hp: 100,
+    maxHp: 100,
+    x: 2,
+    y: 1,
+    instanceId: 'public:test_map',
+    combat: {},
+  };
+  const playerRuntimeService = createPlayerRuntimeService(player, [attacker]);
+  const service = new WorldRuntimeAutoCombatService(playerRuntimeService as never);
+  const command = service.buildAutoCombatCommand({
+    meta: {
+      instanceId: 'public:test_map',
+      supportsPvp: true,
+      canDamageTile: true,
+    },
+    isPointInSafeZone() {
+      return false;
+    },
+    buildPlayerView() {
+      return {
+        playerId: 'player:1',
+        self: { x: 1, y: 1 },
+        instance: { width: 4, height: 4 },
+        visiblePlayers: [],
+        localMonsters: [],
+        localNpcs: [],
+        localPortals: [],
+        localGroundPiles: [],
+      };
+    },
+  } as never, player as never, {
+    resolveCurrentTickForPlayerId() {
+      return 24;
+    },
+    queuePlayerNotice() {},
+  } as never);
+
+  assert.deepEqual(command, {
+    kind: 'basicAttack',
+    targetPlayerId: 'attacker',
+    targetMonsterId: null,
+    targetX: null,
+    targetY: null,
+    autoCombat: true,
+  });
+  assert.equal((player.combat as { combatTargetId: string }).combatTargetId, 'tile:2:1');
+  assert.equal((player.combat as { combatTargetLocked: boolean }).combatTargetLocked, true);
+  assert.deepEqual(playerRuntimeService.log, []);
+}
+
+function testRetaliatePlayerDoesNotPreemptLockedPlayerTarget(): void {
+  const player = {
+    playerId: 'player:1',
+    hp: 100,
+    x: 1,
+    y: 1,
+    instanceId: 'public:test_map',
+    qi: 100,
+    attrs: {
+      numericStats: {
+        viewRange: 6,
+        maxQiOutputPerTick: 100,
+      },
+    },
+    actions: { actions: [] },
+    combat: {
+      autoBattle: true,
+      autoRetaliate: true,
+      autoBattleStationary: false,
+      combatTargetId: 'player:duel',
+      combatTargetLocked: true,
+      retaliatePlayerTargetId: 'attacker',
+      allowAoePlayerHit: true,
+      manualEngagePending: false,
+    },
+  };
+  const duelTarget = {
+    playerId: 'duel',
+    hp: 100,
+    maxHp: 100,
+    x: 2,
+    y: 1,
+    instanceId: 'public:test_map',
+    combat: {},
+  };
+  const attacker = {
+    playerId: 'attacker',
+    hp: 100,
+    maxHp: 100,
+    x: 1,
+    y: 2,
+    instanceId: 'public:test_map',
+    combat: {},
+  };
+  const service = new WorldRuntimeAutoCombatService(createPlayerRuntimeService(player, [duelTarget, attacker]) as never);
+  const command = service.buildAutoCombatCommand({
+    meta: {
+      instanceId: 'public:test_map',
+      supportsPvp: true,
+    },
+    isPointInSafeZone() {
+      return false;
+    },
+    buildPlayerView() {
+      return {
+        playerId: 'player:1',
+        self: { x: 1, y: 1 },
+        instance: { width: 4, height: 4 },
+        visiblePlayers: [],
+        localMonsters: [],
+        localNpcs: [],
+        localPortals: [],
+        localGroundPiles: [],
+      };
+    },
+  } as never, player as never, {
+    resolveCurrentTickForPlayerId() {
+      return 25;
+    },
+    queuePlayerNotice() {},
+  } as never);
+
+  assert.deepEqual(command, {
+    kind: 'basicAttack',
+    targetPlayerId: 'duel',
+    targetMonsterId: null,
+    targetX: null,
+    targetY: null,
+    autoCombat: true,
+  });
+}
+
 function testLockedDepletedHerbTileClearsTarget(): void {
   const player = {
     playerId: 'player:1',
@@ -802,11 +1100,17 @@ testStationaryOutOfRangeSkillSkipsWithoutMove();
 testStopDistancePathDoesNotGenerateRangeCandidateGrid();
 testLockedDestroyedTileClearsTarget();
 testLockedHerbTileContinuesBasicAttack();
+testRetaliatePlayerPreemptsLockedMiningTileWithoutClearingLock();
+testRetaliatePlayerDoesNotPreemptLockedPlayerTarget();
 testLockedDepletedHerbTileClearsTarget();
 testLockedFormationContinuesBasicAttack();
+testAutoUsePillTriggersBeforeAutoCombatCommandMaterialization();
+testAutoUsePillSkipsEmptyConditions();
+testAutoUsePillSkipsWhenManualCommandIsPending();
+testAutoUseBuffPillTriggersOnlyWhenBuffMissing();
 
 console.log(JSON.stringify({
   ok: true,
   case: 'world-runtime-auto-combat',
-  answers: '自动战斗不会在本 tick 行动次数已满时继续物化必然失败的攻击指令；一次性接战和自动战斗会在技能超距时同息追近到技能最远射程，原地战斗会跳过超距技能；锁定目标失效后只清理当前目标锁，不关闭自动战斗、不发丢失提示；锁定草药和阵法会在未清空或未摧毁前继续生成下一次攻击。',
+  answers: '自动战斗不会在本 tick 行动次数已满时继续物化必然失败的攻击指令；一次性接战和自动战斗会在技能超距时同息追近到技能最远射程，原地战斗会跳过超距技能；锁定目标失效后只清理当前目标锁，不关闭自动战斗、不发丢失提示；锁定草药、挖矿和阵法会在未清空或未摧毁前继续生成下一次攻击；自动反击会临时抢占非玩家锁定目标并保留原锁定，明确锁定玩家时不擅自切目标；自动丹药会按资源阈值或缺 Buff 条件在 tick 受控流程内使用，空条件不触发，已有 pending command 时不改动背包槽位。',
 }, null, 2));

@@ -1,7 +1,7 @@
 import type { AccountRedeemCodesRes } from './api-contracts';
 import type { AlchemyRecipeCatalogEntry, SyncedAlchemyPanelState, SyncedEnhancementPanelState } from './crafting-types';
 import type { ObservedTileEntityDetail } from './detail-view-types';
-import type { MarketListedItemView, MarketOrderBookView, MarketOwnOrderView, MarketStorage, MarketTradeHistoryEntryView } from './market-types';
+import type { AuctionFilterCategory, AuctionHouseTab, AuctionListingCountsView, AuctionListingSummaryView, AuctionLotPageEntry, MarketListedItemView, MarketOrderBookView, MarketOwnOrderView, MarketStorage, MarketTradeHistoryEntryView } from './market-types';
 import type { MailDetailView, MailPageView, MailSummaryView } from './mail-types';
 import type { QuestRuntimeStateView } from './quest-types';
 import type { Suggestion } from './world-view-types';
@@ -170,6 +170,65 @@ export interface MarketListingsView {
  */
 
   items: MarketListingPageEntry[];
+}
+
+/** 拍卖行分页列表视图。 */
+export interface AuctionListingsView {
+/**
+ * currencyItemId：currency道具ID标识。
+ */
+
+  currencyItemId: string;
+  /**
+ * currencyItemName：currency道具名称名称或显示文本。
+ */
+
+  currencyItemName: string;
+  /**
+ * tab：拍卖行分栏。
+ */
+
+  tab: AuctionHouseTab;
+  /**
+ * page：page相关字段。
+ */
+
+  page: number;
+  /**
+ * pageSize：数量或计量字段。
+ */
+
+  pageSize: number;
+  /**
+ * total：数量或计量字段。
+ */
+
+  total: number;
+  /**
+ * category：category相关字段。
+ */
+
+  category: AuctionFilterCategory;
+  /**
+ * query：搜索关键字。
+ */
+
+  query: string;
+  /**
+ * counts：拍卖行分类计数。
+ */
+
+  counts?: AuctionListingCountsView;
+  /**
+ * summary：拍卖行顶部摘要。
+ */
+
+  summary: AuctionListingSummaryView;
+  /**
+ * items：当前页拍品摘要。
+ */
+
+  items: AuctionLotPageEntry[];
 }
 
 /** 坊市订单列表视图。 */

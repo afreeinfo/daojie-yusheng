@@ -27,7 +27,7 @@ let WorldRuntimeTickDispatchService = class WorldRuntimeTickDispatchService {
 
     getLegacyNavigationPath(playerId, deps) {
         return deps.worldRuntimeNavigationService.getLegacyNavigationPath(playerId, deps);
-    }    
+    }
     /**
  * applyTransfer：处理Transfer并更新相关状态。
  * @param transfer 参数说明。
@@ -37,7 +37,7 @@ let WorldRuntimeTickDispatchService = class WorldRuntimeTickDispatchService {
 
     applyTransfer(transfer, deps) {
         deps.worldRuntimeTransferService.applyTransfer(transfer, deps);
-    }    
+    }
     /**
  * materializeNavigationCommands：执行materialize导航Command相关逻辑。
  * @param deps 运行时依赖。
@@ -78,6 +78,15 @@ let WorldRuntimeTickDispatchService = class WorldRuntimeTickDispatchService {
     materializeAutoCombatCommands(deps) {
         deps.worldRuntimeAutoCombatService.materializeAutoCombatCommands(deps);
     }    
+    /**
+ * materializeAutoUsePills：执行materializeAuto丹药Command相关逻辑。
+ * @param deps 运行时依赖。
+ * @returns 无返回值，直接更新自动丹药相关状态。
+ */
+
+    materializeAutoUsePills(deps) {
+        deps.worldRuntimeAutoCombatService.materializeAutoUsePills(deps);
+    }
     /**
  * buildAutoCombatCommand：构建并返回目标对象。
  * @param instance 地图实例。

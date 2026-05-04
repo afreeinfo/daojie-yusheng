@@ -1783,6 +1783,105 @@ function normalizeStarterInventoryEntry(raw) {
     };
 }
 /**
+ * normalizeMaterialElementValues：规范化材料五行数值。
+ * @param raw 参数说明。
+ * @returns 返回材料五行数值或 undefined。
+ */
+
+function normalizeMaterialElementValues(raw) {
+  // 配置冷路径只保留正整数五行值，运行时直读已归一化结果。
+
+    if (!raw || typeof raw !== 'object') {
+        return undefined;
+    }
+    const result = {};
+    for (const element of shared_1.ELEMENT_KEYS) {
+        const value = Number(raw[element]);
+        if (!Number.isFinite(value) || value <= 0) {
+            continue;
+        }
+        result[element] = Math.max(1, Math.trunc(value));
+    }
+    return Object.keys(result).length > 0 ? result : undefined;
+}
+/**
+ * normalizeMaterialScalarValues：规范化材料扩展标量数值。
+ * @param raw 参数说明。
+ * @returns 返回材料扩展标量数值或 undefined。
+ */
+
+function normalizeMaterialScalarValues(raw) {
+  // 后续材料硬度、药性、纯度等可通过 scalars 扩展，仍在冷路径完成数值规整。
+
+    if (!raw || typeof raw !== 'object') {
+        return undefined;
+    }
+    const result = {};
+    for (const [key, value] of Object.entries(raw)) {
+        const normalizedKey = typeof key === 'string' ? key.trim() : '';
+        const normalizedValue = Number(value);
+        if (!normalizedKey || !Number.isFinite(normalizedValue)) {
+            continue;
+        }
+        result[normalizedKey] = normalizedValue;
+    }
+    return Object.keys(result).length > 0 ? result : undefined;
+}
+/**
+ * normalizeMaterialValues：规范化材料属性值容器。
+ * @param raw 参数说明。
+ * @param legacyElements 参数说明。
+ * @returns 返回材料属性值容器或 undefined。
+ */
+
+function normalizeMaterialValues(raw, legacyElements) {
+  // 当前只启用 elements，容器结构为后续其他材料属性预留同层扩展口。
+
+    const candidate = raw && typeof raw === 'object' ? raw : {};
+    const elements = normalizeMaterialElementValues(candidate.elements ?? legacyElements);
+    const scalars = normalizeMaterialScalarValues(candidate.scalars);
+    const result = {};
+    if (elements) {
+        result.elements = elements;
+    }
+    if (scalars) {
+        result.scalars = scalars;
+    }
+    return Object.keys(result).length > 0 ? result : undefined;
+}
+/**
+ * normalizeMaterialCategory：规范化材料主分类。
+ * @param value 参数说明。
+ * @returns 返回材料主分类或 undefined。
+ */
+
+function normalizeMaterialCategory(value) {
+    return ['herb', 'exotic', 'ore'].includes(value) ? value : undefined;
+}
+/**
+ * normalizeItemTags：规范化物品标签，并注入材料分类标签。
+ * @param raw 参数说明。
+ * @param materialCategory 参数说明。
+ * @returns 返回标签列表或 undefined。
+ */
+
+function normalizeItemTags(raw, materialCategory) {
+    const tags = new Set(Array.isArray(raw) ? raw.filter((entry) => typeof entry === 'string' && entry.trim()).map((entry) => entry.trim()) : []);
+    switch (materialCategory) {
+        case 'herb':
+            tags.add('药材');
+            break;
+        case 'exotic':
+            tags.add('异材');
+            break;
+        case 'ore':
+            tags.add('矿石');
+            tags.add('矿材');
+            break;
+    }
+    return tags.size > 0 ? [...tags] : undefined;
+}
+/**
  * normalizeItemTemplate：规范化或转换道具Template。
  * @param raw 参数说明。
  * @returns 无返回值，直接更新道具Template相关状态。
@@ -1820,6 +1919,7 @@ function normalizeItemTemplate(raw) {
         : undefined;
     const synthesizedTileAuraGainAmount = normalizedTileAuraGainAmount
         ?? normalizedTileResourceGains?.find((entry) => entry.resourceKey === defaultTileAuraResourceKey)?.amount;
+    const materialCategory = normalizeMaterialCategory(candidate.materialCategory);
     return {
         itemId: candidate.itemId,
 
@@ -1831,6 +1931,8 @@ function normalizeItemTemplate(raw) {
         groundLabel: typeof candidate.groundLabel === 'string' ? candidate.groundLabel : undefined,
         grade: candidate.grade,
         level: Number.isFinite(candidate.level) ? Math.trunc(candidate.level ?? 0) : undefined,
+        materialCategory,
+        materialValues: normalizeMaterialValues(candidate.materialValues, candidate.materialElementValues),
 
         equipSlot: typeof candidate.equipSlot === 'string' && shared_1.EQUIP_SLOTS.includes(candidate.equipSlot)
             ? candidate.equipSlot
@@ -1843,7 +1945,7 @@ function normalizeItemTemplate(raw) {
         healPercent: Number.isFinite(candidate.healPercent) ? clampUnitRatio(candidate.healPercent ?? 0) : undefined,
         qiPercent: Number.isFinite(candidate.qiPercent) ? clampUnitRatio(candidate.qiPercent ?? 0) : undefined,
         consumeBuffs: normalizeConsumableBuffs(raw.consumeBuffs),
-        tags: Array.isArray(candidate.tags) ? candidate.tags.slice() : undefined,
+        tags: normalizeItemTags(candidate.tags, materialCategory),
 
         mapUnlockId: typeof candidate.mapUnlockId === 'string' ? candidate.mapUnlockId : undefined,
         mapUnlockIds: Array.isArray(candidate.mapUnlockIds)

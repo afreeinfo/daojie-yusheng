@@ -46,6 +46,11 @@ const outputPath = path.join(clientDir, 'src/constants/world/editor-catalog.gene
  * 记录境界levels路径。
  */
 const realmLevelsPath = path.join(contentDir, 'realm-levels.json');
+const MATERIAL_CATEGORY_TAGS = {
+  herb: ['药材'],
+  exotic: ['异材'],
+  ore: ['矿石', '矿材'],
+};
 
 /**
  * 动态加载目标 shared 包构建产物，复用功法计算逻辑。
@@ -222,14 +227,21 @@ function applyDerivedMaterialTags(items, herbMaterialItemIds, exoticMaterialItem
     }
     const tags = new Set(
       Array.isArray(item.tags)
-        ? item.tags.filter((tag) => typeof tag === 'string' && tag !== '药材' && tag !== '异材')
+        ? item.tags.filter((tag) => typeof tag === 'string' && tag !== '药材' && tag !== '异材' && tag !== '矿石' && tag !== '矿材')
         : [],
     );
-    if (herbMaterialItemIds.has(item.itemId)) {
-      tags.add('药材');
-    }
-    if (exoticMaterialItemIds.has(item.itemId)) {
-      tags.add('异材');
+    const materialCategoryTags = MATERIAL_CATEGORY_TAGS[item.materialCategory];
+    if (materialCategoryTags) {
+      for (const tag of materialCategoryTags) {
+        tags.add(tag);
+      }
+    } else {
+      if (herbMaterialItemIds.has(item.itemId)) {
+        tags.add('药材');
+      }
+      if (exoticMaterialItemIds.has(item.itemId)) {
+        tags.add('异材');
+      }
     }
     if (tags.size > 0) {
       item.tags = [...tags];

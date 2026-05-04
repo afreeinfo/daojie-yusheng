@@ -190,6 +190,7 @@ async function main(): Promise<void> {
     await cleanupRoute(pool, playerId).catch(() => undefined);
     await playerSessionRouteService.onModuleDestroy().catch(() => undefined);
     await nodeRegistryService.onModuleDestroy?.().catch(() => undefined);
+    await provider.onModuleDestroy().catch(() => undefined);
     await pool.end().catch(() => undefined);
     if (typeof previousNodeId === 'string') {
       process.env.SERVER_NODE_ID = previousNodeId;

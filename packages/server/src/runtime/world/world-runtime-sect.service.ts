@@ -934,6 +934,55 @@ class WorldRuntimeSectService {
         return null;
     }
 
+    resolvePlayerSectId(playerId) {
+        const normalizedPlayerId = normalizeOptionalString(playerId);
+        if (!normalizedPlayerId) {
+            return null;
+        }
+        const runtimePlayer = this.playerRuntimeService.getPlayer?.(normalizedPlayerId) ?? null;
+        const runtimeSectId = normalizeOptionalString(runtimePlayer?.sectId);
+        if (runtimeSectId) {
+            const runtimeSect = this.findSectById(runtimeSectId);
+            if (runtimeSect && runtimeSect.status !== 'dissolved' && isSectMember(runtimeSect, normalizedPlayerId)) {
+                this.playerSectId.set(normalizedPlayerId, runtimeSectId);
+                return runtimeSectId;
+            }
+        }
+        const mappedSectId = normalizeOptionalString(this.playerSectId.get(normalizedPlayerId));
+        if (mappedSectId) {
+            const mappedSect = this.findSectById(mappedSectId);
+            if (mappedSect && mappedSect.status !== 'dissolved' && isSectMember(mappedSect, normalizedPlayerId)) {
+                return mappedSectId;
+            }
+            this.playerSectId.delete(normalizedPlayerId);
+        }
+        for (const sect of this.sectsById.values()) {
+            if (sect.status === 'dissolved' || !isSectMember(sect, normalizedPlayerId)) {
+                continue;
+            }
+            this.playerSectId.set(normalizedPlayerId, sect.sectId);
+            return sect.sectId;
+        }
+        return null;
+    }
+
+    reconcilePlayerSectId(playerId) {
+        const normalizedPlayerId = normalizeOptionalString(playerId);
+        if (!normalizedPlayerId) {
+            return null;
+        }
+        const sectId = this.resolvePlayerSectId(normalizedPlayerId);
+        const runtimePlayer = this.playerRuntimeService.getPlayer?.(normalizedPlayerId) ?? null;
+        if (runtimePlayer && sectId && normalizeOptionalString(runtimePlayer.sectId) !== sectId) {
+            if (typeof this.playerRuntimeService.setPlayerSectId === 'function') {
+                this.playerRuntimeService.setPlayerSectId(normalizedPlayerId, sectId);
+            } else {
+                runtimePlayer.sectId = sectId;
+            }
+        }
+        return sectId;
+    }
+
     async restoreSectTemplates(deps) {
         const document = await this.loadSectDocument();
         const entries = Array.isArray(document?.sects) ? document.sects : [];

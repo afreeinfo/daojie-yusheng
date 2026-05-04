@@ -10317,9 +10317,20 @@
       "itemId": "half_base_embryo",
       "name": "半基灵胚",
       "type": "material",
+      "grade": "earth",
       "level": 30,
+      "materialCategory": "exotic",
+      "materialValues": {
+        "elements": {
+          "earth": 120,
+          "wood": 60,
+          "water": 40
+        }
+      },
       "desc": "旧阵把五炁压成半成品后遗下的灵胚，拿在手里都像要自行立基。",
-      "grade": "earth"
+      "tags": [
+        "异材"
+      ]
     },
     {
       "itemId": "equip.gather_qi_pendant",
@@ -10338,17 +10349,35 @@
       "itemId": "cleft_iron_fragment",
       "name": "残兵铁片",
       "type": "material",
+      "grade": "yellow",
       "level": 20,
+      "materialCategory": "ore",
+      "materialValues": {
+        "elements": {
+          "metal": 20,
+          "earth": 10
+        }
+      },
       "desc": "裂锋原旧兵器在风砂里磨剩下的铁片，边缘依旧带着细碎锋意。",
-      "grade": "yellow"
+      "tags": [
+        "矿石",
+        "矿材"
+      ]
     },
     {
       "itemId": "mat.bearingroot_ginseng",
       "name": "承脉参",
       "type": "material",
-      "level": 20,
-      "desc": "深扎裂岩的厚根，嚼之微涩，却最能稳住下沉地气。",
       "grade": "yellow",
+      "level": 20,
+      "materialCategory": "herb",
+      "materialValues": {
+        "elements": {
+          "earth": 20,
+          "wood": 10
+        }
+      },
+      "desc": "深扎裂岩的厚根，嚼之微涩，却最能稳住下沉地气。",
       "tags": [
         "药材"
       ]
@@ -10357,9 +10386,20 @@
       "itemId": "earthbearing_stone",
       "name": "承脉石",
       "type": "material",
+      "grade": "yellow",
       "level": 20,
+      "materialCategory": "ore",
+      "materialValues": {
+        "elements": {
+          "earth": 20,
+          "water": 10
+        }
+      },
       "desc": "厚脉岭地气压出来的承重石，拿在手里就觉得气机往下沉。",
-      "grade": "yellow"
+      "tags": [
+        "矿石",
+        "矿材"
+      ]
     },
     {
       "itemId": "mat.red_flame_leaf",
@@ -10367,6 +10407,13 @@
       "type": "material",
       "grade": "yellow",
       "level": 2,
+      "materialCategory": "herb",
+      "materialValues": {
+        "elements": {
+          "fire": 2,
+          "wood": 1
+        }
+      },
       "desc": "叶脉似有火线流过，微温不烈，常用来提振炉火药性。",
       "tags": [
         "药材"
@@ -10377,6 +10424,7 @@
       "name": "赤芽丹",
       "type": "consumable",
       "level": 7,
+      "grade": "yellow",
       "tags": [
         "战斗丹药"
       ],
@@ -10402,6 +10450,13 @@
       "type": "material",
       "grade": "yellow",
       "level": 2,
+      "materialCategory": "herb",
+      "materialValues": {
+        "elements": {
+          "fire": 2,
+          "wood": 1
+        }
+      },
       "desc": "果肉辛甜，药气偏热，最适合催发血气。",
       "tags": [
         "药材"
@@ -10457,7 +10512,8 @@
       "itemId": "pure_yang_pill",
       "name": "纯阳丹",
       "type": "consumable",
-      "level": 16,
+      "level": 20,
+      "grade": "yellow",
       "desc": "烈阳药引直入气海，立刻恢复 72% 真气。",
       "qiPercent": 0.72
     },
@@ -10489,6 +10545,13 @@
       "name": "翠竹心",
       "type": "material",
       "level": 5,
+      "materialCategory": "exotic",
+      "materialValues": {
+        "elements": {
+          "wood": 3,
+          "earth": 2
+        }
+      },
       "desc": "竹灵聚气形成的核心髓结。",
       "tags": [
         "异材"
@@ -10499,6 +10562,7 @@
       "name": "大还灵丹",
       "type": "consumable",
       "level": 8,
+      "grade": "yellow",
       "desc": "药力更浑厚，立刻恢复 32% 真气。",
       "qiPercent": 0.32
     },
@@ -10530,7 +10594,18 @@
       "name": "断纹石片",
       "type": "material",
       "level": 12,
-      "desc": "遗迹傀儡体内剥落的残纹。"
+      "materialCategory": "ore",
+      "materialValues": {
+        "elements": {
+          "earth": 6,
+          "metal": 3
+        }
+      },
+      "desc": "遗迹傀儡体内剥落的残纹。",
+      "tags": [
+        "矿石",
+        "矿材"
+      ]
     },
     {
       "itemId": "formation_disk.mortal",
@@ -10546,7 +10621,17 @@
       "name": "匪徒腰牌",
       "type": "material",
       "level": 2,
-      "desc": "荒野匪徒身份的金属牌。"
+      "materialCategory": "exotic",
+      "materialValues": {
+        "elements": {
+          "metal": 1,
+          "earth": 1
+        }
+      },
+      "desc": "荒野匪徒身份的金属牌。",
+      "tags": [
+        "异材"
+      ]
     },
     {
       "itemId": "equip.sealed_path_token",
@@ -10626,11 +10711,19 @@
       "itemId": "blade_pattern_crystal",
       "name": "锋纹残晶",
       "type": "material",
-      "level": 26,
-      "desc": "断兵锋气在碑纹与砂金间凝成的碎晶，常用于金行器胚重铸。",
       "grade": "mystic",
+      "level": 26,
+      "materialCategory": "ore",
+      "materialValues": {
+        "elements": {
+          "metal": 52,
+          "fire": 26
+        }
+      },
+      "desc": "断兵锋气在碑纹与砂金间凝成的碎晶，常用于金行器胚重铸。",
       "tags": [
-        "异材"
+        "矿石",
+        "矿材"
       ]
     },
     {
@@ -10694,7 +10787,17 @@
       "name": "谷蛇逆鳞",
       "type": "material",
       "level": 11,
-      "desc": "兽谷异蛇的逆鳞碎片。"
+      "materialCategory": "exotic",
+      "materialValues": {
+        "elements": {
+          "water": 6,
+          "metal": 3
+        }
+      },
+      "desc": "兽谷异蛇的逆鳞碎片。",
+      "tags": [
+        "异材"
+      ]
     },
     {
       "itemId": "equip.guizang_conflux_blade",
@@ -10715,9 +10818,21 @@
       "itemId": "guizang_vein_core",
       "name": "归藏脉核",
       "type": "material",
+      "grade": "earth",
       "level": 30,
+      "materialCategory": "ore",
+      "materialValues": {
+        "elements": {
+          "earth": 120,
+          "metal": 60,
+          "water": 40
+        }
+      },
       "desc": "混脉压到极处后凝出的硬核碎块，是练气后段少见的合脉炼材。",
-      "grade": "earth"
+      "tags": [
+        "矿石",
+        "矿材"
+      ]
     },
     {
       "itemId": "map.guizang_vein_cavern",
@@ -10766,6 +10881,13 @@
       "type": "material",
       "grade": "mystic",
       "level": 3,
+      "materialCategory": "herb",
+      "materialValues": {
+        "elements": {
+          "water": 6,
+          "wood": 3
+        }
+      },
       "desc": "带着寒雾水汽的薄瓣，能压住燥烈药势。",
       "tags": [
         "药材"
@@ -10775,17 +10897,34 @@
       "itemId": "coldspirit_dew",
       "name": "寒魄露",
       "type": "material",
+      "grade": "yellow",
       "level": 20,
+      "materialCategory": "exotic",
+      "materialValues": {
+        "elements": {
+          "water": 20,
+          "metal": 10
+        }
+      },
       "desc": "寒汐泽夜露凝成的冷滴，入手清寒，常被拿去压杂气和做回灵药。",
-      "grade": "yellow"
+      "tags": [
+        "异材"
+      ]
     },
     {
       "itemId": "mat.coldmarrow_reed",
       "name": "寒髓苇",
       "type": "material",
-      "level": 20,
-      "desc": "生在寒汐浅滩的青白苇芯，内里一缕冷意直入髓海。",
       "grade": "yellow",
+      "level": 20,
+      "materialCategory": "herb",
+      "materialValues": {
+        "elements": {
+          "water": 20,
+          "wood": 10
+        }
+      },
+      "desc": "生在寒汐浅滩的青白苇芯，内里一缕冷意直入髓海。",
       "tags": [
         "药材"
       ]
@@ -10817,6 +10956,7 @@
       "name": "寒心膏",
       "type": "consumable",
       "level": 10,
+      "grade": "mystic",
       "desc": "寒性药膏可稳住伤处，立刻恢复 42% 气血。",
       "healPercent": 0.42
     },
@@ -10888,9 +11028,20 @@
       "itemId": "thickrock_core",
       "name": "厚岩核",
       "type": "material",
+      "grade": "yellow",
       "level": 20,
+      "materialCategory": "ore",
+      "materialValues": {
+        "elements": {
+          "earth": 20,
+          "metal": 10
+        }
+      },
       "desc": "厚石里最密最实的一截岩心，炼体和护甲都用得上。",
-      "grade": "yellow"
+      "tags": [
+        "矿石",
+        "矿材"
+      ]
     },
     {
       "itemId": "equip.shieldvein_stone",
@@ -10959,9 +11110,16 @@
       "itemId": "mat.returnspring_leaf",
       "name": "回春叶",
       "type": "material",
-      "level": 20,
-      "desc": "叶背常藏一线回生青气，晒干后仍能缓慢吐纳木息。",
       "grade": "yellow",
+      "level": 20,
+      "materialCategory": "herb",
+      "materialValues": {
+        "elements": {
+          "wood": 20,
+          "water": 10
+        }
+      },
+      "desc": "叶背常藏一线回生青气，晒干后仍能缓慢吐纳木息。",
       "tags": [
         "药材"
       ]
@@ -10994,6 +11152,13 @@
       "name": "魂墨",
       "type": "material",
       "level": 9,
+      "materialCategory": "exotic",
+      "materialValues": {
+        "elements": {
+          "water": 5,
+          "earth": 3
+        }
+      },
       "desc": "古碑残魂凝结出的墨色灵液。",
       "tags": [
         "异材"
@@ -11005,6 +11170,13 @@
       "type": "material",
       "grade": "mystic",
       "level": 3,
+      "materialCategory": "herb",
+      "materialValues": {
+        "elements": {
+          "wood": 6,
+          "metal": 3
+        }
+      },
       "desc": "细长苇芯中藏着轻灵风息，常用来炼制轻身类丹药。",
       "tags": [
         "药材"
@@ -11022,17 +11194,34 @@
       "itemId": "sword_pellet",
       "name": "剑丸",
       "type": "material",
+      "grade": "yellow",
       "level": 20,
+      "materialCategory": "exotic",
+      "materialValues": {
+        "elements": {
+          "metal": 20,
+          "fire": 10
+        }
+      },
       "desc": "断剑堆中凝出的锋气丸珠，是金行低阶炼材。",
-      "grade": "yellow"
+      "tags": [
+        "异材"
+      ]
     },
     {
       "itemId": "mat.goldthread_briar",
       "name": "金芒棘",
       "type": "material",
-      "level": 20,
-      "desc": "棘藤细刺泛着淡金光，轻折便能闻到锋锐药香。",
       "grade": "yellow",
+      "level": 20,
+      "materialCategory": "herb",
+      "materialValues": {
+        "elements": {
+          "metal": 20,
+          "wood": 10
+        }
+      },
+      "desc": "棘藤细刺泛着淡金光，轻折便能闻到锋锐药香。",
       "tags": [
         "药材"
       ]
@@ -11042,9 +11231,17 @@
       "name": "晶尘",
       "type": "material",
       "level": 6,
+      "materialCategory": "ore",
+      "materialValues": {
+        "elements": {
+          "metal": 3,
+          "water": 2
+        }
+      },
       "desc": "晶背蝠掉落的微光粉末。",
       "tags": [
-        "异材"
+        "矿石",
+        "矿材"
       ]
     },
     {
@@ -11065,9 +11262,16 @@
       "itemId": "cleantide_essence",
       "name": "净潮水精",
       "type": "material",
-      "level": 26,
-      "desc": "多层寒潮反复淘洗后留下的净水精华，是洗脉与寒性法衣的核心炼材。",
       "grade": "mystic",
+      "level": 26,
+      "materialCategory": "exotic",
+      "materialValues": {
+        "elements": {
+          "water": 52,
+          "wood": 26
+        }
+      },
+      "desc": "多层寒潮反复淘洗后留下的净水精华，是洗脉与寒性法衣的核心炼材。",
       "tags": [
         "异材"
       ]
@@ -11084,6 +11288,13 @@
       "type": "material",
       "grade": "earth",
       "level": 4,
+      "materialCategory": "herb",
+      "materialValues": {
+        "elements": {
+          "wood": 16,
+          "earth": 8
+        }
+      },
       "desc": "入口极苦，药劲却最能逼出修者经脉里的勤修之意。",
       "tags": [
         "药材"
@@ -11093,7 +11304,8 @@
       "itemId": "pill.bitter_cultivation_elixir",
       "name": "苦修丹",
       "type": "consumable",
-      "level": 18,
+      "level": 20,
+      "grade": "yellow",
       "desc": "强行催运行功，3000 息内境界修为 +25%、功法经验 +25%，但移动速度 -12%。",
       "consumeBuffs": [
         {
@@ -11142,6 +11354,13 @@
       "name": "狼牙",
       "type": "material",
       "level": 8,
+      "materialCategory": "exotic",
+      "materialValues": {
+        "elements": {
+          "metal": 4,
+          "earth": 2
+        }
+      },
       "desc": "噬灵狼的利牙。",
       "tags": [
         "异材"
@@ -11289,14 +11508,35 @@
       "name": "灵铁碎片",
       "type": "material",
       "level": 14,
-      "desc": "蕴灵玄铁的碎片。"
+      "materialCategory": "ore",
+      "materialValues": {
+        "elements": {
+          "metal": 7,
+          "earth": 4
+        }
+      },
+      "desc": "蕴灵玄铁的碎片。",
+      "tags": [
+        "矿石",
+        "矿材"
+      ]
     },
     {
       "itemId": "ridge_beast_claw",
       "name": "岭兽爪",
       "type": "material",
       "level": 12,
-      "desc": "灵岭猛兽留下的巨大爪痕骨。"
+      "materialCategory": "exotic",
+      "materialValues": {
+        "elements": {
+          "metal": 6,
+          "earth": 3
+        }
+      },
+      "desc": "灵岭猛兽留下的巨大爪痕骨。",
+      "tags": [
+        "异材"
+      ]
     },
     {
       "itemId": "equip.ridgewall_armor",
@@ -11352,11 +11592,19 @@
       "itemId": "furnace_red_crystal",
       "name": "炉心赤晶",
       "type": "material",
-      "level": 26,
-      "desc": "炉心台深处结出的赤色晶核，常被拿来压成烈性器坠或爆发药引。",
       "grade": "mystic",
+      "level": 26,
+      "materialCategory": "ore",
+      "materialValues": {
+        "elements": {
+          "fire": 52,
+          "metal": 26
+        }
+      },
+      "desc": "炉心台深处结出的赤色晶核，常被拿来压成烈性器坠或爆发药引。",
       "tags": [
-        "异材"
+        "矿石",
+        "矿材"
       ]
     },
     {
@@ -11439,6 +11687,7 @@
       "name": "明目丹",
       "type": "consumable",
       "level": 13,
+      "grade": "mystic",
       "tags": [
         "战斗丹药"
       ],
@@ -11465,6 +11714,13 @@
       "type": "material",
       "grade": "mystic",
       "level": 3,
+      "materialCategory": "herb",
+      "materialValues": {
+        "elements": {
+          "wood": 6,
+          "water": 3
+        }
+      },
       "desc": "花香清冽，炼入丹中常能扶正心神、澄明五感。",
       "tags": [
         "药材"
@@ -11574,9 +11830,17 @@
       "type": "material",
       "grade": "mystic",
       "level": 3,
+      "materialCategory": "ore",
+      "materialValues": {
+        "elements": {
+          "metal": 6,
+          "fire": 3
+        }
+      },
       "desc": "从旧阵裂缝里筛出的细砂，药性带着轻微撕裂感。",
       "tags": [
-        "药材"
+        "矿石",
+        "矿材"
       ]
     },
     {
@@ -11584,6 +11848,7 @@
       "name": "破阵丹",
       "type": "consumable",
       "level": 12,
+      "grade": "mystic",
       "tags": [
         "战斗丹药"
       ],
@@ -11618,6 +11883,13 @@
       "type": "material",
       "grade": "yellow",
       "level": 2,
+      "materialCategory": "herb",
+      "materialValues": {
+        "elements": {
+          "wood": 2,
+          "water": 1
+        }
+      },
       "desc": "蕴有淡薄灵机的草茎，常作聚气和缓冲药引。",
       "tags": [
         "药材"
@@ -11678,9 +11950,19 @@
       "itemId": "verdant_vine",
       "name": "青髓藤",
       "type": "material",
+      "grade": "yellow",
       "level": 20,
+      "materialCategory": "exotic",
+      "materialValues": {
+        "elements": {
+          "wood": 20,
+          "water": 10
+        }
+      },
       "desc": "青萝谷深处长出的韧藤，内里带着温和却不断生发的木行气。",
-      "grade": "yellow"
+      "tags": [
+        "异材"
+      ]
     },
     {
       "itemId": "map.bamboo_forest",
@@ -11695,6 +11977,7 @@
       "name": "轻身丹",
       "type": "consumable",
       "level": 11,
+      "grade": "mystic",
       "tags": [
         "战斗丹药"
       ],
@@ -11738,6 +12021,13 @@
       "type": "material",
       "grade": "earth",
       "level": 4,
+      "materialCategory": "herb",
+      "materialValues": {
+        "elements": {
+          "fire": 16,
+          "earth": 8
+        }
+      },
       "desc": "在炽热岩缝里长成的赤金种子，蕴着强横烈阳药引。",
       "tags": [
         "药材"
@@ -11788,9 +12078,16 @@
       "itemId": "spiritwood_heart",
       "name": "生灵木心",
       "type": "material",
-      "level": 26,
-      "desc": "老藤与木魅在地脉交汇处凝出的木心，最适合做续航与养脉法器。",
       "grade": "mystic",
+      "level": 26,
+      "materialCategory": "exotic",
+      "materialValues": {
+        "elements": {
+          "wood": 52,
+          "earth": 26
+        }
+      },
+      "desc": "老藤与木魅在地脉交汇处凝出的木心，最适合做续航与养脉法器。",
       "tags": [
         "异材"
       ]
@@ -11895,6 +12192,13 @@
       "name": "鼠尾",
       "type": "material",
       "level": 2,
+      "materialCategory": "exotic",
+      "materialValues": {
+        "elements": {
+          "water": 1,
+          "wood": 1
+        }
+      },
       "desc": "灰尾鼠的尾巴。",
       "tags": [
         "异材"
@@ -11905,7 +12209,17 @@
       "name": "霜华精粹",
       "type": "material",
       "level": 13,
-      "desc": "极寒灵气凝结的蓝白晶滴。"
+      "materialCategory": "exotic",
+      "materialValues": {
+        "elements": {
+          "water": 7,
+          "metal": 4
+        }
+      },
+      "desc": "极寒灵气凝结的蓝白晶滴。",
+      "tags": [
+        "异材"
+      ]
     },
     {
       "itemId": "pill.shatter_spirit",
@@ -11919,7 +12233,17 @@
       "name": "螳锋",
       "type": "material",
       "level": 10,
-      "desc": "刃螳前臂外骨，可作刀坯。"
+      "materialCategory": "exotic",
+      "materialValues": {
+        "elements": {
+          "metal": 5,
+          "wood": 3
+        }
+      },
+      "desc": "刃螳前臂外骨，可作刀坯。",
+      "tags": [
+        "异材"
+      ]
     },
     {
       "itemId": "sky_seal_core",
@@ -11947,15 +12271,32 @@
       "name": "天纹残页",
       "type": "material",
       "level": 16,
-      "desc": "记录古天宫阵纹的残页。"
+      "materialCategory": "exotic",
+      "materialValues": {
+        "elements": {
+          "metal": 8,
+          "wood": 4
+        }
+      },
+      "desc": "记录古天宫阵纹的残页。",
+      "tags": [
+        "异材"
+      ]
     },
     {
       "itemId": "mat.ironvein_caltrop",
       "name": "铁脉蒺",
       "type": "material",
-      "level": 20,
-      "desc": "生在埋锋砂地的硬刺草，药性紧收，最宜淬锋。",
       "grade": "yellow",
+      "level": 20,
+      "materialCategory": "herb",
+      "materialValues": {
+        "elements": {
+          "metal": 20,
+          "earth": 10
+        }
+      },
+      "desc": "生在埋锋砂地的硬刺草，药性紧收，最宜淬锋。",
       "tags": [
         "药材"
       ]
@@ -12031,9 +12372,23 @@
       "itemId": "fivephase_dust",
       "name": "五炁尘",
       "type": "material",
+      "grade": "earth",
       "level": 29,
+      "materialCategory": "ore",
+      "materialValues": {
+        "elements": {
+          "metal": 58,
+          "wood": 58,
+          "water": 58,
+          "fire": 58,
+          "earth": 58
+        }
+      },
       "desc": "归藏脉窟里五行乱炁磨出来的细尘，握在掌心都会互相顶撞。",
-      "grade": "earth"
+      "tags": [
+        "矿石",
+        "矿材"
+      ]
     },
     {
       "itemId": "equip.soot_lamp_hood",
@@ -12083,14 +12438,35 @@
       "name": "星陨金",
       "type": "material",
       "level": 15,
-      "desc": "坠星坑深处采得的高纯灵金。"
+      "materialCategory": "ore",
+      "materialValues": {
+        "elements": {
+          "metal": 8,
+          "fire": 4
+        }
+      },
+      "desc": "坠星坑深处采得的高纯灵金。",
+      "tags": [
+        "矿石",
+        "矿材"
+      ]
     },
     {
       "itemId": "void_shard",
       "name": "虚蚀碎片",
       "type": "material",
       "level": 14,
-      "desc": "虚空妖物躯壳剥落的暗晶。"
+      "materialCategory": "exotic",
+      "materialValues": {
+        "elements": {
+          "water": 7,
+          "earth": 4
+        }
+      },
+      "desc": "虚空妖物躯壳剥落的暗晶。",
+      "tags": [
+        "异材"
+      ]
     },
     {
       "itemId": "formation_disk.mystic",
@@ -12106,7 +12482,18 @@
       "name": "玄铁矿块",
       "type": "material",
       "level": 11,
-      "desc": "可用于炼器的粗矿。"
+      "materialCategory": "ore",
+      "materialValues": {
+        "elements": {
+          "metal": 6,
+          "earth": 3
+        }
+      },
+      "desc": "可用于炼器的粗矿。",
+      "tags": [
+        "矿石",
+        "矿材"
+      ]
     },
     {
       "itemId": "stone.blood_essence",
@@ -12129,15 +12516,32 @@
       "name": "血羽",
       "type": "material",
       "level": 17,
-      "desc": "血羽鸦留下的邪异翎羽。"
+      "materialCategory": "exotic",
+      "materialValues": {
+        "elements": {
+          "fire": 9,
+          "wood": 5
+        }
+      },
+      "desc": "血羽鸦留下的邪异翎羽。",
+      "tags": [
+        "异材"
+      ]
     },
     {
       "itemId": "mat.stonecore_lingzhi",
       "name": "岩髓芝",
       "type": "material",
-      "level": 20,
-      "desc": "贴石而生的灰芝，内蕴绵长土息，是护脉丹常见主材。",
       "grade": "yellow",
+      "level": 20,
+      "materialCategory": "herb",
+      "materialValues": {
+        "elements": {
+          "earth": 20,
+          "wood": 10
+        }
+      },
+      "desc": "贴石而生的灰芝，内蕴绵长土息，是护脉丹常见主材。",
       "tags": [
         "药材"
       ]
@@ -12146,17 +12550,34 @@
       "itemId": "embershard_char",
       "name": "炎髓炭",
       "type": "material",
+      "grade": "yellow",
       "level": 20,
+      "materialCategory": "exotic",
+      "materialValues": {
+        "elements": {
+          "fire": 20,
+          "earth": 10
+        }
+      },
       "desc": "火脉熬出来的深色炭芯，最适合做淬体和爆发类耗材。",
-      "grade": "yellow"
+      "tags": [
+        "异材"
+      ]
     },
     {
       "itemId": "mat.flamegrain_spike",
       "name": "炎穗芒",
       "type": "material",
-      "level": 20,
-      "desc": "火穗结出的细芒，入炉后能把火行药势拉成一线。",
       "grade": "yellow",
+      "level": 20,
+      "materialCategory": "herb",
+      "materialValues": {
+        "elements": {
+          "fire": 20,
+          "wood": 10
+        }
+      },
+      "desc": "火穗结出的细芒，入炉后能把火行药势拉成一线。",
       "tags": [
         "药材"
       ]
@@ -12174,9 +12595,19 @@
       "itemId": "nurturing_leaf",
       "name": "养脉叶",
       "type": "material",
+      "grade": "yellow",
       "level": 20,
+      "materialCategory": "herb",
+      "materialValues": {
+        "elements": {
+          "wood": 20,
+          "water": 10
+        }
+      },
       "desc": "晾干后仍能缓慢吐出草木气息，是养脉药最常用的底材。",
-      "grade": "yellow"
+      "tags": [
+        "药材"
+      ]
     },
     {
       "itemId": "equip.vineguide_staff",
@@ -12219,13 +12650,30 @@
       "name": "妖狼骨",
       "type": "material",
       "level": 15,
-      "desc": "兽谷妖狼的坚骨。"
+      "materialCategory": "exotic",
+      "materialValues": {
+        "elements": {
+          "earth": 8,
+          "fire": 4
+        }
+      },
+      "desc": "兽谷妖狼的坚骨。",
+      "tags": [
+        "异材"
+      ]
     },
     {
       "itemId": "mat.beast_bone",
       "name": "妖兽骨",
       "type": "material",
       "level": 1,
+      "materialCategory": "exotic",
+      "materialValues": {
+        "elements": {
+          "earth": 1,
+          "wood": 1
+        }
+      },
       "desc": "山野妖兽遗骨，可留作后用。",
       "tags": [
         "异材"
@@ -12256,6 +12704,13 @@
       "name": "阴沼丝",
       "type": "material",
       "level": 3,
+      "materialCategory": "exotic",
+      "materialValues": {
+        "elements": {
+          "water": 2,
+          "wood": 1
+        }
+      },
       "desc": "沼泽妖蛛吐出的坚韧蛛丝。",
       "tags": [
         "异材"
@@ -12325,17 +12780,35 @@
       "itemId": "moonwell_frost_sand",
       "name": "月井冰砂",
       "type": "material",
+      "grade": "yellow",
       "level": 20,
+      "materialCategory": "ore",
+      "materialValues": {
+        "elements": {
+          "water": 20,
+          "earth": 10
+        }
+      },
       "desc": "月井边结出的细砂，带着迟滞与收敛两种水性。",
-      "grade": "yellow"
+      "tags": [
+        "矿石",
+        "矿材"
+      ]
     },
     {
       "itemId": "mat.moonwell_stamen",
       "name": "月井蕊",
       "type": "material",
-      "level": 20,
-      "desc": "月井寒莲退花后留下的细蕊，最善收束散乱水气。",
       "grade": "yellow",
+      "level": 20,
+      "materialCategory": "herb",
+      "materialValues": {
+        "elements": {
+          "water": 20,
+          "wood": 10
+        }
+      },
+      "desc": "月井寒莲退花后留下的细蕊，最善收束散乱水气。",
       "tags": [
         "药材"
       ]
@@ -12346,6 +12819,13 @@
       "type": "material",
       "grade": "mortal",
       "level": 1,
+      "materialCategory": "herb",
+      "materialValues": {
+        "elements": {
+          "water": 1,
+          "wood": 1
+        }
+      },
       "desc": "清晨叶尖常挂月白露珠，是最常见的温和药底。",
       "tags": [
         "药材"
@@ -12418,15 +12898,33 @@
       "itemId": "ember_sand",
       "name": "陨火砂",
       "type": "material",
+      "grade": "yellow",
       "level": 20,
+      "materialCategory": "ore",
+      "materialValues": {
+        "elements": {
+          "fire": 20,
+          "earth": 10
+        }
+      },
       "desc": "赤陨庭地火烤出的细砂，捏在指间都还能感到余烫。",
-      "grade": "yellow"
+      "tags": [
+        "矿石",
+        "矿材"
+      ]
     },
     {
       "itemId": "lizard_scale",
       "name": "泽鳞",
       "type": "material",
       "level": 4,
+      "materialCategory": "exotic",
+      "materialValues": {
+        "elements": {
+          "water": 2,
+          "earth": 1
+        }
+      },
       "desc": "泽鳞蜥脱落的鳞片。",
       "tags": [
         "异材"
@@ -12436,9 +12934,16 @@
       "itemId": "mat.longvein_vine",
       "name": "长脉藤",
       "type": "material",
-      "level": 20,
-      "desc": "沿谷壁攀出的韧藤，藤芯温润，最擅长牵引木行药力深入经脉。",
       "grade": "yellow",
+      "level": 20,
+      "materialCategory": "herb",
+      "materialValues": {
+        "elements": {
+          "wood": 20,
+          "water": 10
+        }
+      },
+      "desc": "沿谷壁攀出的韧藤，藤芯温润，最擅长牵引木行药力深入经脉。",
       "tags": [
         "药材"
       ]
@@ -12510,11 +13015,19 @@
       "itemId": "stonegall_core",
       "name": "镇岳石胆",
       "type": "material",
-      "level": 26,
-      "desc": "石胆久受土行重压而成，最适合做稳脉、镇岳一类的核心炼材。",
       "grade": "mystic",
+      "level": 26,
+      "materialCategory": "ore",
+      "materialValues": {
+        "elements": {
+          "earth": 52,
+          "water": 26
+        }
+      },
+      "desc": "石胆久受土行重压而成，最适合做稳脉、镇岳一类的核心炼材。",
       "tags": [
-        "异材"
+        "矿石",
+        "矿材"
       ]
     },
     {
@@ -12522,6 +13035,13 @@
       "name": "彘牙",
       "type": "material",
       "level": 3,
+      "materialCategory": "exotic",
+      "materialValues": {
+        "elements": {
+          "metal": 2,
+          "earth": 1
+        }
+      },
       "desc": "獠牙野彘的尖牙。",
       "tags": [
         "异材"
@@ -12532,6 +13052,13 @@
       "name": "竹蛇胆",
       "type": "material",
       "level": 6,
+      "materialCategory": "exotic",
+      "materialValues": {
+        "elements": {
+          "water": 3,
+          "wood": 2
+        }
+      },
       "desc": "青鳞竹蛇的胆囊。",
       "tags": [
         "异材"
@@ -12613,9 +13140,16 @@
       "itemId": "mat.scorchheart_petal",
       "name": "灼心瓣",
       "type": "material",
-      "level": 20,
-      "desc": "贴着地火边缘生出的赤瓣，药性炽而不躁，适合做烈性主药。",
       "grade": "yellow",
+      "level": 20,
+      "materialCategory": "herb",
+      "materialValues": {
+        "elements": {
+          "fire": 20,
+          "wood": 10
+        }
+      },
+      "desc": "贴着地火边缘生出的赤瓣，药性炽而不躁，适合做烈性主药。",
       "tags": [
         "药材"
       ]
@@ -14413,6 +14947,7 @@
           "name": "轻身丹",
           "type": "consumable",
           "level": 11,
+          "grade": "mystic",
           "tags": [
             "战斗丹药"
           ],
@@ -14539,7 +15074,8 @@
           "itemId": "pure_yang_pill",
           "name": "纯阳丹",
           "type": "consumable",
-          "level": 16,
+          "level": 20,
+          "grade": "yellow",
           "desc": "烈阳药引直入气海，立刻恢复 72% 真气。",
           "qiPercent": 0.72,
           "count": 2
@@ -14597,6 +15133,7 @@
           "name": "大还灵丹",
           "type": "consumable",
           "level": 8,
+          "grade": "yellow",
           "desc": "药力更浑厚，立刻恢复 32% 真气。",
           "qiPercent": 0.32,
           "count": 2
@@ -14644,6 +15181,7 @@
           "name": "明目丹",
           "type": "consumable",
           "level": 13,
+          "grade": "mystic",
           "tags": [
             "战斗丹药"
           ],
@@ -14710,6 +15248,7 @@
           "name": "大还灵丹",
           "type": "consumable",
           "level": 8,
+          "grade": "yellow",
           "desc": "药力更浑厚，立刻恢复 32% 真气。",
           "qiPercent": 0.32,
           "count": 1
@@ -14718,7 +15257,8 @@
           "itemId": "pill.bitter_cultivation_elixir",
           "name": "苦修丹",
           "type": "consumable",
-          "level": 18,
+          "level": 20,
+          "grade": "yellow",
           "desc": "强行催运行功，3000 息内境界修为 +25%、功法经验 +25%，但移动速度 -12%。",
           "consumeBuffs": [
             {
@@ -14742,6 +15282,7 @@
           "name": "明目丹",
           "type": "consumable",
           "level": 13,
+          "grade": "mystic",
           "tags": [
             "战斗丹药"
           ],
@@ -14871,6 +15412,7 @@
           "name": "明目丹",
           "type": "consumable",
           "level": 13,
+          "grade": "mystic",
           "tags": [
             "战斗丹药"
           ],
@@ -14933,7 +15475,8 @@
           "itemId": "pure_yang_pill",
           "name": "纯阳丹",
           "type": "consumable",
-          "level": 16,
+          "level": 20,
+          "grade": "yellow",
           "desc": "烈阳药引直入气海，立刻恢复 72% 真气。",
           "qiPercent": 0.72,
           "count": 1
@@ -15003,7 +15546,8 @@
           "itemId": "pill.bitter_cultivation_elixir",
           "name": "苦修丹",
           "type": "consumable",
-          "level": 18,
+          "level": 20,
+          "grade": "yellow",
           "desc": "强行催运行功，3000 息内境界修为 +25%、功法经验 +25%，但移动速度 -12%。",
           "consumeBuffs": [
             {
@@ -15064,7 +15608,8 @@
           "itemId": "pure_yang_pill",
           "name": "纯阳丹",
           "type": "consumable",
-          "level": 16,
+          "level": 20,
+          "grade": "yellow",
           "desc": "烈阳药引直入气海，立刻恢复 72% 真气。",
           "qiPercent": 0.72,
           "count": 2
@@ -15073,7 +15618,8 @@
           "itemId": "pill.bitter_cultivation_elixir",
           "name": "苦修丹",
           "type": "consumable",
-          "level": 18,
+          "level": 20,
+          "grade": "yellow",
           "desc": "强行催运行功，3000 息内境界修为 +25%、功法经验 +25%，但移动速度 -12%。",
           "consumeBuffs": [
             {
@@ -15251,6 +15797,7 @@
           "name": "破阵丹",
           "type": "consumable",
           "level": 12,
+          "grade": "mystic",
           "tags": [
             "战斗丹药"
           ],
@@ -15363,6 +15910,7 @@
           "name": "赤芽丹",
           "type": "consumable",
           "level": 7,
+          "grade": "yellow",
           "tags": [
             "战斗丹药"
           ],
@@ -15426,6 +15974,7 @@
           "name": "赤芽丹",
           "type": "consumable",
           "level": 7,
+          "grade": "yellow",
           "tags": [
             "战斗丹药"
           ],
@@ -15489,6 +16038,7 @@
           "name": "明目丹",
           "type": "consumable",
           "level": 13,
+          "grade": "mystic",
           "tags": [
             "战斗丹药"
           ],
@@ -15633,7 +16183,8 @@
           "itemId": "pure_yang_pill",
           "name": "纯阳丹",
           "type": "consumable",
-          "level": 16,
+          "level": 20,
+          "grade": "yellow",
           "desc": "烈阳药引直入气海，立刻恢复 72% 真气。",
           "qiPercent": 0.72,
           "count": 1
@@ -15643,6 +16194,7 @@
           "name": "破阵丹",
           "type": "consumable",
           "level": 12,
+          "grade": "mystic",
           "tags": [
             "战斗丹药"
           ],
@@ -15820,6 +16372,7 @@
           "name": "破阵丹",
           "type": "consumable",
           "level": 12,
+          "grade": "mystic",
           "tags": [
             "战斗丹药"
           ],
@@ -15946,7 +16499,8 @@
           "itemId": "pure_yang_pill",
           "name": "纯阳丹",
           "type": "consumable",
-          "level": 16,
+          "level": 20,
+          "grade": "yellow",
           "desc": "烈阳药引直入气海，立刻恢复 72% 真气。",
           "qiPercent": 0.72,
           "count": 2
@@ -15993,6 +16547,7 @@
           "name": "大还灵丹",
           "type": "consumable",
           "level": 8,
+          "grade": "yellow",
           "desc": "药力更浑厚，立刻恢复 32% 真气。",
           "qiPercent": 0.32,
           "count": 1
@@ -16002,6 +16557,7 @@
           "name": "破阵丹",
           "type": "consumable",
           "level": 12,
+          "grade": "mystic",
           "tags": [
             "战斗丹药"
           ],
@@ -16230,6 +16786,7 @@
           "name": "赤芽丹",
           "type": "consumable",
           "level": 7,
+          "grade": "yellow",
           "tags": [
             "战斗丹药"
           ],
@@ -16255,6 +16812,7 @@
           "name": "轻身丹",
           "type": "consumable",
           "level": 11,
+          "grade": "mystic",
           "tags": [
             "战斗丹药"
           ],
@@ -16328,6 +16886,7 @@
           "name": "大还灵丹",
           "type": "consumable",
           "level": 8,
+          "grade": "yellow",
           "desc": "药力更浑厚，立刻恢复 32% 真气。",
           "qiPercent": 0.32,
           "count": 2
@@ -16431,6 +16990,7 @@
           "name": "破阵丹",
           "type": "consumable",
           "level": 12,
+          "grade": "mystic",
           "tags": [
             "战斗丹药"
           ],
@@ -16514,6 +17074,7 @@
           "name": "明目丹",
           "type": "consumable",
           "level": 13,
+          "grade": "mystic",
           "tags": [
             "战斗丹药"
           ],
@@ -16580,6 +17141,7 @@
           "name": "破阵丹",
           "type": "consumable",
           "level": 12,
+          "grade": "mystic",
           "tags": [
             "战斗丹药"
           ],
@@ -16768,6 +17330,7 @@
           "name": "轻身丹",
           "type": "consumable",
           "level": 11,
+          "grade": "mystic",
           "tags": [
             "战斗丹药"
           ],
@@ -16900,6 +17463,7 @@
           "name": "赤芽丹",
           "type": "consumable",
           "level": 7,
+          "grade": "yellow",
           "tags": [
             "战斗丹药"
           ],
@@ -16964,6 +17528,7 @@
           "name": "大还灵丹",
           "type": "consumable",
           "level": 8,
+          "grade": "yellow",
           "desc": "药力更浑厚，立刻恢复 32% 真气。",
           "qiPercent": 0.32,
           "count": 1
@@ -17091,6 +17656,7 @@
           "name": "大还灵丹",
           "type": "consumable",
           "level": 8,
+          "grade": "yellow",
           "desc": "药力更浑厚，立刻恢复 32% 真气。",
           "qiPercent": 0.32,
           "count": 1
@@ -17223,6 +17789,7 @@
           "name": "大还灵丹",
           "type": "consumable",
           "level": 8,
+          "grade": "yellow",
           "desc": "药力更浑厚，立刻恢复 32% 真气。",
           "qiPercent": 0.32,
           "count": 2
@@ -17232,6 +17799,7 @@
           "name": "破阵丹",
           "type": "consumable",
           "level": 12,
+          "grade": "mystic",
           "tags": [
             "战斗丹药"
           ],
@@ -17258,6 +17826,7 @@
           "name": "寒心膏",
           "type": "consumable",
           "level": 10,
+          "grade": "mystic",
           "desc": "寒性药膏可稳住伤处，立刻恢复 42% 气血。",
           "healPercent": 0.42,
           "count": 2
@@ -17306,6 +17875,7 @@
           "name": "大还灵丹",
           "type": "consumable",
           "level": 8,
+          "grade": "yellow",
           "desc": "药力更浑厚，立刻恢复 32% 真气。",
           "qiPercent": 0.32,
           "count": 1
@@ -17315,6 +17885,7 @@
           "name": "轻身丹",
           "type": "consumable",
           "level": 11,
+          "grade": "mystic",
           "tags": [
             "战斗丹药"
           ],
@@ -17340,7 +17911,8 @@
           "itemId": "pill.bitter_cultivation_elixir",
           "name": "苦修丹",
           "type": "consumable",
-          "level": 18,
+          "level": 20,
+          "grade": "yellow",
           "desc": "强行催运行功，3000 息内境界修为 +25%、功法经验 +25%，但移动速度 -12%。",
           "consumeBuffs": [
             {
@@ -17402,6 +17974,7 @@
           "name": "寒心膏",
           "type": "consumable",
           "level": 10,
+          "grade": "mystic",
           "desc": "寒性药膏可稳住伤处，立刻恢复 42% 气血。",
           "healPercent": 0.42,
           "count": 2
@@ -17411,6 +17984,7 @@
           "name": "赤芽丹",
           "type": "consumable",
           "level": 7,
+          "grade": "yellow",
           "tags": [
             "战斗丹药"
           ],
@@ -17498,6 +18072,7 @@
           "name": "明目丹",
           "type": "consumable",
           "level": 13,
+          "grade": "mystic",
           "tags": [
             "战斗丹药"
           ],
@@ -17562,6 +18137,7 @@
           "name": "大还灵丹",
           "type": "consumable",
           "level": 8,
+          "grade": "yellow",
           "desc": "药力更浑厚，立刻恢复 32% 真气。",
           "qiPercent": 0.32,
           "count": 2
@@ -17619,6 +18195,7 @@
           "name": "轻身丹",
           "type": "consumable",
           "level": 11,
+          "grade": "mystic",
           "tags": [
             "战斗丹药"
           ],
@@ -17645,6 +18222,7 @@
           "name": "大还灵丹",
           "type": "consumable",
           "level": 8,
+          "grade": "yellow",
           "desc": "药力更浑厚，立刻恢复 32% 真气。",
           "qiPercent": 0.32,
           "count": 1
@@ -17691,6 +18269,7 @@
           "name": "轻身丹",
           "type": "consumable",
           "level": 11,
+          "grade": "mystic",
           "tags": [
             "战斗丹药"
           ],
@@ -17756,6 +18335,7 @@
           "name": "破阵丹",
           "type": "consumable",
           "level": 12,
+          "grade": "mystic",
           "tags": [
             "战斗丹药"
           ],
@@ -17821,7 +18401,8 @@
           "itemId": "pill.bitter_cultivation_elixir",
           "name": "苦修丹",
           "type": "consumable",
-          "level": 18,
+          "level": 20,
+          "grade": "yellow",
           "desc": "强行催运行功，3000 息内境界修为 +25%、功法经验 +25%，但移动速度 -12%。",
           "consumeBuffs": [
             {
@@ -17845,7 +18426,18 @@
           "name": "灵铁碎片",
           "type": "material",
           "level": 14,
+          "materialCategory": "ore",
+          "materialValues": {
+            "elements": {
+              "metal": 7,
+              "earth": 4
+            }
+          },
           "desc": "蕴灵玄铁的碎片。",
+          "tags": [
+            "矿石",
+            "矿材"
+          ],
           "count": 6
         }
       ],
@@ -17890,6 +18482,7 @@
           "name": "大还灵丹",
           "type": "consumable",
           "level": 8,
+          "grade": "yellow",
           "desc": "药力更浑厚，立刻恢复 32% 真气。",
           "qiPercent": 0.32,
           "count": 1
@@ -17992,6 +18585,7 @@
           "name": "大还灵丹",
           "type": "consumable",
           "level": 8,
+          "grade": "yellow",
           "desc": "药力更浑厚，立刻恢复 32% 真气。",
           "qiPercent": 0.32,
           "count": 2
@@ -18001,6 +18595,7 @@
           "name": "明目丹",
           "type": "consumable",
           "level": 13,
+          "grade": "mystic",
           "tags": [
             "战斗丹药"
           ],
@@ -18066,6 +18661,7 @@
           "name": "明目丹",
           "type": "consumable",
           "level": 13,
+          "grade": "mystic",
           "tags": [
             "战斗丹药"
           ],
@@ -18191,6 +18787,7 @@
           "name": "寒心膏",
           "type": "consumable",
           "level": 10,
+          "grade": "mystic",
           "desc": "寒性药膏可稳住伤处，立刻恢复 42% 气血。",
           "healPercent": 0.42,
           "count": 2
@@ -18200,6 +18797,7 @@
           "name": "明目丹",
           "type": "consumable",
           "level": 13,
+          "grade": "mystic",
           "tags": [
             "战斗丹药"
           ],
@@ -18274,6 +18872,7 @@
           "name": "寒心膏",
           "type": "consumable",
           "level": 10,
+          "grade": "mystic",
           "desc": "寒性药膏可稳住伤处，立刻恢复 42% 气血。",
           "healPercent": 0.42,
           "count": 2
@@ -18283,6 +18882,7 @@
           "name": "明目丹",
           "type": "consumable",
           "level": 13,
+          "grade": "mystic",
           "tags": [
             "战斗丹药"
           ],

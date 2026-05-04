@@ -4,6 +4,13 @@
     "name": "妖兽骨",
     "type": "material",
     "level": 1,
+    "materialCategory": "exotic",
+    "materialValues": {
+      "elements": {
+        "earth": 1,
+        "wood": 1
+      }
+    },
     "desc": "山野妖兽遗骨，可留作后用。"
   },
   {
@@ -17,6 +24,13 @@
     "name": "狼牙",
     "type": "material",
     "level": 8,
+    "materialCategory": "exotic",
+    "materialValues": {
+      "elements": {
+        "metal": 4,
+        "earth": 2
+      }
+    },
     "desc": "噬灵狼的利牙。"
   },
   {
@@ -24,6 +38,13 @@
     "name": "竹蛇胆",
     "type": "material",
     "level": 6,
+    "materialCategory": "exotic",
+    "materialValues": {
+      "elements": {
+        "water": 3,
+        "wood": 2
+      }
+    },
     "desc": "青鳞竹蛇的胆囊。"
   },
   {
@@ -31,6 +52,13 @@
     "name": "玄铁矿块",
     "type": "material",
     "level": 11,
+    "materialCategory": "ore",
+    "materialValues": {
+      "elements": {
+        "metal": 6,
+        "earth": 3
+      }
+    },
     "desc": "可用于炼器的粗矿。"
   },
   {
@@ -38,6 +66,13 @@
     "name": "晶尘",
     "type": "material",
     "level": 6,
+    "materialCategory": "ore",
+    "materialValues": {
+      "elements": {
+        "metal": 3,
+        "water": 2
+      }
+    },
     "desc": "晶背蝠掉落的微光粉末。"
   },
   {
@@ -51,6 +86,13 @@
     "name": "断纹石片",
     "type": "material",
     "level": 12,
+    "materialCategory": "ore",
+    "materialValues": {
+      "elements": {
+        "earth": 6,
+        "metal": 3
+      }
+    },
     "desc": "遗迹傀儡体内剥落的残纹。"
   },
   {
@@ -58,6 +100,13 @@
     "name": "妖狼骨",
     "type": "material",
     "level": 15,
+    "materialCategory": "exotic",
+    "materialValues": {
+      "elements": {
+        "earth": 8,
+        "fire": 4
+      }
+    },
     "desc": "兽谷妖狼的坚骨。"
   },
   {
@@ -65,6 +114,13 @@
     "name": "血羽",
     "type": "material",
     "level": 17,
+    "materialCategory": "exotic",
+    "materialValues": {
+      "elements": {
+        "fire": 9,
+        "wood": 5
+      }
+    },
     "desc": "血羽鸦留下的邪异翎羽。"
   },
   {
@@ -78,6 +134,13 @@
     "name": "灵铁碎片",
     "type": "material",
     "level": 14,
+    "materialCategory": "ore",
+    "materialValues": {
+      "elements": {
+        "metal": 7,
+        "earth": 4
+      }
+    },
     "desc": "蕴灵玄铁的碎片。"
   },
   {
@@ -85,6 +148,13 @@
     "name": "鼠尾",
     "type": "material",
     "level": 2,
+    "materialCategory": "exotic",
+    "materialValues": {
+      "elements": {
+        "water": 1,
+        "wood": 1
+      }
+    },
     "desc": "灰尾鼠的尾巴。"
   },
   {
@@ -92,6 +162,13 @@
     "name": "彘牙",
     "type": "material",
     "level": 3,
+    "materialCategory": "exotic",
+    "materialValues": {
+      "elements": {
+        "metal": 2,
+        "earth": 1
+      }
+    },
     "desc": "獠牙野彘的尖牙。"
   },
   {
@@ -99,6 +176,13 @@
     "name": "泽鳞",
     "type": "material",
     "level": 4,
+    "materialCategory": "exotic",
+    "materialValues": {
+      "elements": {
+        "water": 2,
+        "earth": 1
+      }
+    },
     "desc": "泽鳞蜥脱落的鳞片。"
   },
   {
@@ -106,6 +190,13 @@
     "name": "匪徒腰牌",
     "type": "material",
     "level": 2,
+    "materialCategory": "exotic",
+    "materialValues": {
+      "elements": {
+        "metal": 1,
+        "earth": 1
+      }
+    },
     "desc": "荒野匪徒身份的金属牌。"
   },
   {
@@ -113,6 +204,13 @@
     "name": "翠竹心",
     "type": "material",
     "level": 5,
+    "materialCategory": "exotic",
+    "materialValues": {
+      "elements": {
+        "wood": 3,
+        "earth": 2
+      }
+    },
     "desc": "竹灵聚气形成的核心髓结。"
   },
   {
@@ -120,6 +218,13 @@
     "name": "阴沼丝",
     "type": "material",
     "level": 3,
+    "materialCategory": "exotic",
+    "materialValues": {
+      "elements": {
+        "water": 2,
+        "wood": 1
+      }
+    },
     "desc": "沼泽妖蛛吐出的坚韧蛛丝。"
   },
   {
@@ -127,6 +232,13 @@
     "name": "螳锋",
     "type": "material",
     "level": 10,
+    "materialCategory": "exotic",
+    "materialValues": {
+      "elements": {
+        "metal": 5,
+        "wood": 3
+      }
+    },
     "desc": "刃螳前臂外骨，可作刀坯。"
   },
   {
@@ -152,6 +264,13 @@
     "name": "魂墨",
     "type": "material",
     "level": 9,
+    "materialCategory": "exotic",
+    "materialValues": {
+      "elements": {
+        "water": 5,
+        "earth": 3
+      }
+    },
     "desc": "古碑残魂凝结出的墨色灵液。"
   },
   {
@@ -159,6 +278,13 @@
     "name": "谷蛇逆鳞",
     "type": "material",
     "level": 11,
+    "materialCategory": "exotic",
+    "materialValues": {
+      "elements": {
+        "water": 6,
+        "metal": 3
+      }
+    },
     "desc": "兽谷异蛇的逆鳞碎片。"
   },
   {
@@ -172,6 +298,13 @@
     "name": "岭兽爪",
     "type": "material",
     "level": 12,
+    "materialCategory": "exotic",
+    "materialValues": {
+      "elements": {
+        "metal": 6,
+        "earth": 3
+      }
+    },
     "desc": "灵岭猛兽留下的巨大爪痕骨。"
   },
   {
@@ -179,6 +312,13 @@
     "name": "霜华精粹",
     "type": "material",
     "level": 13,
+    "materialCategory": "exotic",
+    "materialValues": {
+      "elements": {
+        "water": 7,
+        "metal": 4
+      }
+    },
     "desc": "极寒灵气凝结的蓝白晶滴。"
   },
   {
@@ -192,6 +332,13 @@
     "name": "虚蚀碎片",
     "type": "material",
     "level": 14,
+    "materialCategory": "exotic",
+    "materialValues": {
+      "elements": {
+        "water": 7,
+        "earth": 4
+      }
+    },
     "desc": "虚空妖物躯壳剥落的暗晶。"
   },
   {
@@ -199,6 +346,13 @@
     "name": "星陨金",
     "type": "material",
     "level": 15,
+    "materialCategory": "ore",
+    "materialValues": {
+      "elements": {
+        "metal": 8,
+        "fire": 4
+      }
+    },
     "desc": "坠星坑深处采得的高纯灵金。"
   },
   {
@@ -206,6 +360,13 @@
     "name": "天纹残页",
     "type": "material",
     "level": 16,
+    "materialCategory": "exotic",
+    "materialValues": {
+      "elements": {
+        "metal": 8,
+        "wood": 4
+      }
+    },
     "desc": "记录古天宫阵纹的残页。"
   },
   {
@@ -220,6 +381,13 @@
     "type": "material",
     "grade": "mortal",
     "level": 1,
+    "materialCategory": "herb",
+    "materialValues": {
+      "elements": {
+        "water": 1,
+        "wood": 1
+      }
+    },
     "desc": "清晨叶尖常挂月白露珠，是最常见的温和药底。"
   },
   {
@@ -228,6 +396,13 @@
     "type": "material",
     "grade": "yellow",
     "level": 2,
+    "materialCategory": "herb",
+    "materialValues": {
+      "elements": {
+        "fire": 2,
+        "wood": 1
+      }
+    },
     "desc": "叶脉似有火线流过，微温不烈，常用来提振炉火药性。"
   },
   {
@@ -236,6 +411,13 @@
     "type": "material",
     "grade": "yellow",
     "level": 2,
+    "materialCategory": "herb",
+    "materialValues": {
+      "elements": {
+        "wood": 2,
+        "water": 1
+      }
+    },
     "desc": "蕴有淡薄灵机的草茎，常作聚气和缓冲药引。"
   },
   {
@@ -244,6 +426,13 @@
     "type": "material",
     "grade": "mystic",
     "level": 3,
+    "materialCategory": "herb",
+    "materialValues": {
+      "elements": {
+        "water": 6,
+        "wood": 3
+      }
+    },
     "desc": "带着寒雾水汽的薄瓣，能压住燥烈药势。"
   },
   {
@@ -252,6 +441,13 @@
     "type": "material",
     "grade": "mystic",
     "level": 3,
+    "materialCategory": "herb",
+    "materialValues": {
+      "elements": {
+        "wood": 6,
+        "water": 3
+      }
+    },
     "desc": "花香清冽，炼入丹中常能扶正心神、澄明五感。"
   },
   {
@@ -260,6 +456,13 @@
     "type": "material",
     "grade": "yellow",
     "level": 2,
+    "materialCategory": "herb",
+    "materialValues": {
+      "elements": {
+        "fire": 2,
+        "wood": 1
+      }
+    },
     "desc": "果肉辛甜，药气偏热，最适合催发血气。"
   },
   {
@@ -268,6 +471,13 @@
     "type": "material",
     "grade": "mystic",
     "level": 3,
+    "materialCategory": "ore",
+    "materialValues": {
+      "elements": {
+        "metal": 6,
+        "fire": 3
+      }
+    },
     "desc": "从旧阵裂缝里筛出的细砂，药性带着轻微撕裂感。"
   },
   {
@@ -276,6 +486,13 @@
     "type": "material",
     "grade": "mystic",
     "level": 3,
+    "materialCategory": "herb",
+    "materialValues": {
+      "elements": {
+        "wood": 6,
+        "metal": 3
+      }
+    },
     "desc": "细长苇芯中藏着轻灵风息，常用来炼制轻身类丹药。"
   },
   {
@@ -284,6 +501,13 @@
     "type": "material",
     "grade": "earth",
     "level": 4,
+    "materialCategory": "herb",
+    "materialValues": {
+      "elements": {
+        "wood": 16,
+        "earth": 8
+      }
+    },
     "desc": "入口极苦，药劲却最能逼出修者经脉里的勤修之意。"
   },
   {
@@ -292,6 +516,13 @@
     "type": "material",
     "grade": "earth",
     "level": 4,
+    "materialCategory": "herb",
+    "materialValues": {
+      "elements": {
+        "fire": 16,
+        "earth": 8
+      }
+    },
     "desc": "在炽热岩缝里长成的赤金种子，蕴着强横烈阳药引。"
   }
 ]

@@ -67,6 +67,9 @@ interface WorldGatewayActionDeps {
       enqueueCastSkillTargetRef(playerId: string, actionId: string, target: string, deps: unknown): void;
     };
   };
+  worldSyncService?: {
+    emitDeltaSync(playerId: string, socketOverride?: Socket): void;
+  };
 }
 
 /** 世界 socket 小型 action helper：收敛 redeem / portal / cultivate / cast skill 入口。 */
@@ -185,11 +188,16 @@ export class WorldGatewayActionHelper {
       return;
     }
 
-    this.emitProtocolActionResult(
-      client,
+    const result = this.gateway.worldRuntimeService.worldRuntimeCommandIntakeFacadeService.executeAction(
       playerId,
-      this.gateway.worldRuntimeService.worldRuntimeCommandIntakeFacadeService.executeAction(playerId, actionId, undefined, this.gateway.worldRuntimeService),
+      actionId,
+      undefined,
+      this.gateway.worldRuntimeService,
     );
+    this.emitProtocolActionResult(client, playerId, result);
+    if (actionId === 'portal:travel') {
+      this.gateway.worldSyncService?.emitDeltaSync(playerId, client);
+    }
   }
 
   private resolveActionId(payload: ClientToServerEventPayload<typeof C2S.UseAction>): string {
@@ -249,6 +257,7 @@ export class WorldGatewayActionHelper {
 
     try {
       this.gateway.worldRuntimeService.worldRuntimeCommandIntakeFacadeService.usePortal(playerId, this.gateway.worldRuntimeService);
+      this.gateway.worldSyncService?.emitDeltaSync(playerId, client);
     } catch (error) {
       this.gateway.worldClientEventService.emitGatewayError(client, 'PORTAL_FAILED', error);
     }

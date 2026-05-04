@@ -10,7 +10,7 @@ class WorldGatewayClientEmitHelper {
  * gateway：gateway相关字段。
  */
 
-    gateway;    
+    gateway;
     /**
  * 构造器：初始化 当前 实例并建立基础状态。
  * @param gateway 参数说明。
@@ -19,7 +19,7 @@ class WorldGatewayClientEmitHelper {
 
     constructor(gateway) {
         this.gateway = gateway;
-    }    
+    }
     /**
  * markMainline：处理主线协议标记并更新相关状态。
  * @param client 参数说明。
@@ -28,7 +28,7 @@ class WorldGatewayClientEmitHelper {
 
     markProtocolClient(client) {
         this.gateway.worldClientEventService.markProtocol(client, 'mainline');
-    }    
+    }
     /**
  * emitMainlineQuests：处理主线任务并更新相关状态。
  * @param client 参数说明。
@@ -39,7 +39,7 @@ class WorldGatewayClientEmitHelper {
     emitQuests(client, payload) {
         this.markProtocolClient(client);
         this.gateway.worldClientEventService.emitQuests(client, toQuestSyncPayload(payload));
-    }    
+    }
     /**
  * emitMainlineSuggestionUpdate：处理主线 SuggestionUpdate 并更新相关状态。
  * @param client 参数说明。
@@ -50,7 +50,7 @@ class WorldGatewayClientEmitHelper {
     emitSuggestionUpdate(client, suggestions) {
         this.markProtocolClient(client);
         this.gateway.worldClientEventService.emitSuggestionUpdate(client, suggestions);
-    }    
+    }
     /**
  * emitMainlineMailSummary：处理主线邮件摘要并更新相关状态。
  * @param client 参数说明。
@@ -61,7 +61,7 @@ class WorldGatewayClientEmitHelper {
     emitProtocolMailSummary(client, summary) {
         this.markProtocolClient(client);
         this.gateway.worldClientEventService.emitMailSummary(client, summary);
-    }    
+    }
     /**
  * emitMainlineMailSummaryForPlayer：处理主线邮件摘要并更新相关状态。
  * @param client 参数说明。
@@ -72,7 +72,7 @@ class WorldGatewayClientEmitHelper {
     async emitMailSummaryForPlayer(client, playerId) {
         this.markProtocolClient(client);
         await this.gateway.worldClientEventService.emitMailSummaryForPlayer(client, playerId);
-    }    
+    }
     /**
  * emitMainlineMailPage：处理主线邮件分页并更新相关状态。
  * @param client 参数说明。
@@ -83,7 +83,7 @@ class WorldGatewayClientEmitHelper {
     emitMailPage(client, page) {
         this.markProtocolClient(client);
         this.gateway.worldClientEventService.emitMailPage(client, page);
-    }    
+    }
     /**
  * emitMainlineMailDetail：处理主线邮件详情并更新相关状态。
  * @param client 参数说明。
@@ -94,7 +94,7 @@ class WorldGatewayClientEmitHelper {
     emitMailDetail(client, detail) {
         this.markProtocolClient(client);
         this.gateway.worldClientEventService.emitMailDetail(client, detail);
-    }    
+    }
     /**
  * emitMainlineMailOperationResult：处理主线邮件操作结果并更新相关状态。
  * @param client 参数说明。
@@ -105,7 +105,7 @@ class WorldGatewayClientEmitHelper {
     emitMailOperationResult(client, payload) {
         this.markProtocolClient(client);
         this.gateway.worldClientEventService.emitMailOperationResult(client, payload);
-    }    
+    }
     /**
  * emitMainlineMarketUpdate：处理主线坊市更新并更新相关状态。
  * @param client 参数说明。
@@ -116,7 +116,7 @@ class WorldGatewayClientEmitHelper {
     emitMarketUpdate(client, payload) {
         this.markProtocolClient(client);
         this.gateway.worldClientEventService.emitMarketUpdate(client, payload);
-    }    
+    }
     /**
  * emitMainlineMarketListings：读取主线坊市列表并返回结果。
  * @param client 参数说明。
@@ -127,7 +127,18 @@ class WorldGatewayClientEmitHelper {
     emitMarketListings(client, payload) {
         this.markProtocolClient(client);
         this.gateway.worldClientEventService.emitMarketListings(client, payload);
-    }    
+    }
+    /**
+ * emitMainlineAuctionListings：读取主线拍卖行列表并返回结果。
+ * @param client 参数说明。
+ * @param payload 载荷参数。
+ * @returns 无返回值，直接更新主线拍卖行列表相关状态。
+ */
+
+    emitAuctionListings(client, payload) {
+        this.markProtocolClient(client);
+        this.gateway.worldClientEventService.emitAuctionListings(client, payload);
+    }
     /**
  * emitMainlineMarketOrders：处理主线坊市订单并更新相关状态。
  * @param client 参数说明。
@@ -138,7 +149,7 @@ class WorldGatewayClientEmitHelper {
     emitMarketOrders(client, payload) {
         this.markProtocolClient(client);
         this.gateway.worldClientEventService.emitMarketOrders(client, payload);
-    }    
+    }
     /**
  * emitMainlineMarketStorage：处理主线坊市仓储并更新相关状态。
  * @param client 参数说明。
@@ -149,7 +160,7 @@ class WorldGatewayClientEmitHelper {
     emitMarketStorage(client, payload) {
         this.markProtocolClient(client);
         this.gateway.worldClientEventService.emitMarketStorage(client, payload);
-    }    
+    }
     /**
  * emitMainlineMarketItemBook：处理主线坊市道具图鉴并更新相关状态。
  * @param client 参数说明。
@@ -160,7 +171,7 @@ class WorldGatewayClientEmitHelper {
     emitMarketItemBook(client, payload) {
         this.markProtocolClient(client);
         this.gateway.worldClientEventService.emitMarketItemBook(client, payload);
-    }    
+    }
     /**
  * emitMainlineMarketTradeHistory：处理主线坊市成交历史并更新相关状态。
  * @param client 参数说明。
@@ -171,7 +182,7 @@ class WorldGatewayClientEmitHelper {
     emitMarketTradeHistory(client, payload) {
         this.markProtocolClient(client);
         this.gateway.worldClientEventService.emitMarketTradeHistory(client, payload);
-    }    
+    }
     /**
  * emitMainlineNpcShop：处理主线 NPC 商店并更新相关状态。
  * @param client 参数说明。
@@ -182,7 +193,7 @@ class WorldGatewayClientEmitHelper {
     emitNpcShop(client, payload) {
         this.markProtocolClient(client);
         this.gateway.worldClientEventService.emitNpcShop(client, payload);
-    }    
+    }
     /**
  * flushMarketResult：处理刷新坊市结果并更新相关状态。
  * @param result 返回结果。
@@ -192,9 +203,10 @@ class WorldGatewayClientEmitHelper {
     flushMarketResult(result) {
         this.gateway.worldClientEventService.flushMarketResult(this.gateway.gatewaySessionStateHelper.getMarketSubscribers(), result, {
             marketListingRequests: this.gateway.gatewaySessionStateHelper.getMarketListingRequests(),
+            auctionListingRequests: this.gateway.gatewaySessionStateHelper.getAuctionListingRequests(),
             marketTradeHistoryRequests: this.gateway.gatewaySessionStateHelper.getMarketTradeHistoryRequests(),
         });
-    }    
+    }
     /**
  * emitMailSummary：处理邮件摘要并更新相关状态。
  * @param client 参数说明。
@@ -204,7 +216,7 @@ class WorldGatewayClientEmitHelper {
 
     async emitMailSummary(client, playerId) {
         await this.gateway.worldClientEventService.emitMailSummaryForPlayer(client, playerId);
-    }    
+    }
     /**
  * broadcastSuggestions：执行broadcastSuggestion相关逻辑。
  * @returns 无返回值，直接更新broadcastSuggestion相关状态。

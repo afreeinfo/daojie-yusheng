@@ -12,6 +12,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.WorldSyncService = void 0;
 const common_1 = require("@nestjs/common");
+const shared_1 = require("@mud/shared");
 const world_runtime_service_1 = require("../runtime/world/world-runtime.service");
 const player_runtime_service_1 = require("../runtime/player/player-runtime.service");
 const world_sync_quest_loot_service_1 = require("./world-sync-quest-loot.service");
@@ -54,6 +55,7 @@ let WorldSyncService = class WorldSyncService {
         this.emitAuxInitialSync(binding.playerId, socket, view, player);
         this.worldSyncQuestLootService.emitQuestSync(socket, binding.playerId, player.quests.revision);
         this.emitPendingNotices(binding.playerId, socket);
+        this.emitPendingPlayerStatisticRecords(binding.playerId, socket);
     }
         emitDeltaSync(playerId, socketOverride = undefined) {
   // 关键分支按状态与边界条件处理，非法路径会被提前拦截。
@@ -73,6 +75,7 @@ let WorldSyncService = class WorldSyncService {
         this.emitAuxDeltaSync(binding.playerId, socket, view, player);
         this.worldSyncQuestLootService.emitQuestSyncIfChanged(socket, binding.playerId, player.quests.revision);
         this.emitPendingNotices(binding.playerId, socket);
+        this.emitPendingPlayerStatisticRecords(binding.playerId, socket);
     }
         flushConnectedPlayers() {
   // 关键分支按状态与边界条件处理，非法路径会被提前拦截。
@@ -90,6 +93,7 @@ let WorldSyncService = class WorldSyncService {
             this.emitAuxDeltaSync(binding.playerId, socket, view, player);
             this.worldSyncQuestLootService.emitQuestSyncIfChanged(socket, binding.playerId, player.quests.revision);
             this.emitPendingNotices(binding.playerId, socket);
+            this.emitPendingPlayerStatisticRecords(binding.playerId, socket);
         }
     }
         emitEnvelope(socket, envelope) {
@@ -133,6 +137,24 @@ let WorldSyncService = class WorldSyncService {
             return;
         }
         this.worldSyncProtocolService.sendNotices(socket, items);
+    }
+    emitPendingPlayerStatisticRecords(playerId, socket) {
+        const records = typeof this.playerRuntimeService.getPendingPlayerStatisticRecords === 'function'
+            ? this.playerRuntimeService.getPendingPlayerStatisticRecords(playerId)
+            : [];
+        const totals = typeof this.playerRuntimeService.consumePlayerStatisticTotalsForEmit === 'function'
+            ? this.playerRuntimeService.consumePlayerStatisticTotalsForEmit(playerId)
+            : null;
+        if (typeof socket?.emit !== 'function') {
+            return;
+        }
+        if ((!Array.isArray(records) || records.length === 0) && !totals) {
+            return;
+        }
+        socket.emit(shared_1.S2C.OfflineGainReports, {
+            reports: Array.isArray(records) ? records : [],
+            ...(totals ? { totals } : {}),
+        });
     }
 };
 exports.WorldSyncService = WorldSyncService;

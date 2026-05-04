@@ -35,6 +35,25 @@ function isTerminalAutoCombatTargetFailure(message) {
     return message === '该目标无法被攻击' || message === '没有可命中的目标';
 }
 
+function resolveCommandTargetRef(command) {
+    const targetPlayerId = typeof command?.targetPlayerId === 'string' ? command.targetPlayerId.trim() : '';
+    if (targetPlayerId) {
+        return `player:${targetPlayerId}`;
+    }
+    const targetMonsterId = typeof command?.targetMonsterId === 'string' ? command.targetMonsterId.trim() : '';
+    if (targetMonsterId) {
+        return targetMonsterId;
+    }
+    const targetRef = typeof command?.targetRef === 'string' ? command.targetRef.trim() : '';
+    if (targetRef) {
+        return targetRef;
+    }
+    if (Number.isFinite(command?.targetX) && Number.isFinite(command?.targetY)) {
+        return `tile:${Math.trunc(command.targetX)}:${Math.trunc(command.targetY)}`;
+    }
+    return null;
+}
+
 /** world-runtime pending command state：承接玩家待执行命令队列所有权与消费。 */
 let WorldRuntimePendingCommandService = class WorldRuntimePendingCommandService {
 /**
@@ -72,11 +91,19 @@ let WorldRuntimePendingCommandService = class WorldRuntimePendingCommandService 
  * @returns 无返回值。
  */
 
-    clearAutoCombatTargetAfterFailure(playerId, deps) {
+    clearAutoCombatTargetAfterFailure(playerId, deps, command = undefined) {
         const currentTick = typeof deps.resolveCurrentTickForPlayerId === 'function'
             ? deps.resolveCurrentTickForPlayerId(playerId)
             : 0;
         deps.playerRuntimeService?.clearManualEngagePending?.(playerId);
+        const player = deps.playerRuntimeService?.getPlayer?.(playerId);
+        const currentTargetRef = typeof player?.combat?.combatTargetId === 'string'
+            ? player.combat.combatTargetId.trim()
+            : '';
+        const commandTargetRef = resolveCommandTargetRef(command);
+        if (currentTargetRef && commandTargetRef && currentTargetRef !== commandTargetRef) {
+            return;
+        }
         deps.playerRuntimeService?.clearCombatTarget?.(playerId, currentTick);
     }
     /**
@@ -216,7 +243,7 @@ let WorldRuntimePendingCommandService = class WorldRuntimePendingCommandService 
                 }
                 const message = error instanceof Error ? error.message : String(error);
                 if (this.isAutoCombatCommand(command) && isTerminalAutoCombatTargetFailure(message)) {
-                    this.clearAutoCombatTargetAfterFailure(playerId, deps);
+                    this.clearAutoCombatTargetAfterFailure(playerId, deps, command);
                 }
                 const noticeMessage = normalizePendingCommandNoticeMessage(command, message);
                 deps.logger.warn(`处理玩家 ${playerId} 的待执行指令失败：${command.kind}（${message}）`);

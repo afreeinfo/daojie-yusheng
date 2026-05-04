@@ -10,6 +10,7 @@ import type {
 } from './entity-detail-types';
 import type { GmStateView } from './gm-runtime-types';
 import type { NoticeItemView, NoticeView, SystemMessageView } from './notice-types';
+import type { OfflineGainReportsView } from './offline-gain-types';
 import type {
   BootstrapView,
   EnterView,
@@ -30,6 +31,7 @@ import type {
   MailOpResultView,
   MailPageSyncView,
   MailSummarySyncView,
+  AuctionListingsView,
   MarketItemBookView,
   MarketListingsView,
   MarketOrdersView,
@@ -90,6 +92,8 @@ export interface S2C_MapEnter extends MapEnterView {}
 export interface S2C_NoticeItem extends NoticeItemView {}
 /** 通知消息批次。 */
 export interface S2C_Notice extends NoticeView {}
+/** 离线挂机收益报告批次。 */
+export interface S2C_OfflineGainReports extends OfflineGainReportsView {}
 /** 境界面板快照。 */
 export interface S2C_Realm extends RealmView {}
 /** 世界增量中的玩家实体补丁。 */
@@ -250,6 +254,8 @@ export interface S2C_NpcShop extends NpcShopSyncView {}
 export interface S2C_MarketUpdate extends MarketUpdateView {}
 /** 坊市分页列表。 */
 export interface S2C_MarketListings extends MarketListingsView {}
+/** 拍卖行分页列表。 */
+export interface S2C_AuctionListings extends AuctionListingsView {}
 /** 玩家自己的坊市订单列表。 */
 export interface S2C_MarketOrders extends MarketOrdersView {}
 /** 坊市寄存仓库同步。 */

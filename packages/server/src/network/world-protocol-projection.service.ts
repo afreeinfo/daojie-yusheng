@@ -1,59 +1,40 @@
-// @ts-nocheck
-"use strict";
-var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+import { Inject, Injectable } from '@nestjs/common';
+import { S2C, type S2C_PayloadMap } from '@mud/shared';
+import type { Socket } from 'socket.io';
 
-    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
-    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
-    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
-    return c > 3 && r && Object.defineProperty(target, key, r), r;
-};
+import { WorldClientEventService } from './world-client-event.service';
 
-var __metadata = (this && this.__metadata) || function (k, v) {
-    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.WorldProtocolProjectionService = void 0;
+type TileDetailPayload = S2C_PayloadMap[typeof S2C.TileDetail];
 
-const common_1 = require("@nestjs/common");
+interface WorldClientEventEmitter {
+  emitLootWindowUpdate(client: Socket, playerId: string, x: number, y: number): void;
+}
 
-const shared_1 = require("@mud/shared");
+export interface ProjectionEmission {
+  protocol: 'mainline';
+  emitMainline: true;
+}
 
-const world_client_event_service_1 = require("./world-client-event.service");
+@Injectable()
+export class WorldProtocolProjectionService {
+  constructor(
+    @Inject(WorldClientEventService)
+    private readonly worldClientEventService: WorldClientEventEmitter,
+  ) {}
 
-/** 协议投影服务：把世界层的局部视图转成 主线 Socket 事件。 */
-let WorldProtocolProjectionService = class WorldProtocolProjectionService {
-    /** 复用客户端事件服务发送拾取窗口等联动事件。 */
-    worldClientEventService;    
-    /**
- * 构造器：初始化 当前 实例并建立基础状态。
- * @param worldClientEventService 参数说明。
- * @returns 无返回值，完成实例初始化。
- */
+  emitTileDetail(client: Socket, payload: TileDetailPayload): void {
+    client.emit(S2C.TileDetail, payload);
+  }
 
-    constructor(worldClientEventService) {
-        this.worldClientEventService = worldClientEventService;
-    }
-    /** 下发单个格子的详情数据。 */
-    emitTileDetail(client, payload) {
-        client.emit(shared_1.S2C.TileDetail, payload);
-    }
-    /** 下发格子详情并联动拾取窗口。 */
-    emitTileLootInteraction(client, playerId, payload) {
-        this.emitTileDetail(client, payload);
-        this.worldClientEventService.emitLootWindowUpdate(client, playerId, payload.x, payload.y);
-    }
-    /** 当前投影固定收敛到 mainline 协议。 */
-    resolveProjectionEmission(client) {
-        return {
-            protocol: 'mainline',
-            emitMainline: true,
-        };
-    }
-};
-exports.WorldProtocolProjectionService = WorldProtocolProjectionService;
-exports.WorldProtocolProjectionService = WorldProtocolProjectionService = __decorate([
-    (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [world_client_event_service_1.WorldClientEventService])
-], WorldProtocolProjectionService);
+  emitTileLootInteraction(client: Socket, playerId: string, payload: TileDetailPayload): void {
+    this.emitTileDetail(client, payload);
+    this.worldClientEventService.emitLootWindowUpdate(client, playerId, payload.x, payload.y);
+  }
 
-export { WorldProtocolProjectionService };
+  resolveProjectionEmission(_client: Socket): ProjectionEmission {
+    return {
+      protocol: 'mainline',
+      emitMainline: true,
+    };
+  }
+}

@@ -349,6 +349,9 @@ function main() {
   assert.equal(sectService.findSectById(player.sectId).applications.some((entry) => entry.playerId === deputyPlayerId && entry.status === "pending"), false);
   assert.equal(previousSect.members.some((entry) => entry.playerId === deputyPlayerId), false);
   assert.equal(mails.some((entry) => entry.playerId === deputyPlayerId && /已准你入山/.test(entry.fallbackTitle)), true);
+  deputyPlayer.sectId = null;
+  assert.equal(sectService.reconcilePlayerSectId(deputyPlayerId), player.sectId);
+  assert.equal(deputyPlayer.sectId, player.sectId);
   const sameSectEntranceActions = sectService.buildSectEntranceActions({
     playerId: deputyPlayerId,
     self: { x: 4, y: 4 },

@@ -1,19 +1,13 @@
-// @ts-nocheck
-"use strict";
+import type { CombatEffect } from '@mud/shared';
 
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.createPlayerRuntimeStateStore = void 0;
-/**
- * createPlayerRuntimeStateStore：构建并返回目标对象。
- * @returns 无返回值，直接更新玩家运行态状态存储相关状态。
- */
-
-
-function createPlayerRuntimeStateStore() {
-    return {
-        players: new Map(),
-        pendingCombatEffectsByPlayerId: new Map(),
-    };
+export interface PlayerRuntimeStateStore<TPlayer = unknown> {
+  players: Map<string, TPlayer>;
+  pendingCombatEffectsByPlayerId: Map<string, CombatEffect[]>;
 }
-exports.createPlayerRuntimeStateStore = createPlayerRuntimeStateStore;
-export { createPlayerRuntimeStateStore };
+
+export function createPlayerRuntimeStateStore<TPlayer = unknown>(): PlayerRuntimeStateStore<TPlayer> {
+  return {
+    players: new Map<string, TPlayer>(),
+    pendingCombatEffectsByPlayerId: new Map<string, CombatEffect[]>(),
+  };
+}

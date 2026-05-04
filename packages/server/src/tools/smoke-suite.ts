@@ -99,6 +99,7 @@ const smokeCases = [
     { name: 'runtime', scriptFile: 'runtime-smoke.js' },
     { name: 'progression', scriptFile: 'progression-smoke.js' },
     { name: 'combat', scriptFile: 'combat-smoke.js' },
+    { name: 'world-runtime-auto-combat', scriptFile: 'world-runtime-auto-combat-smoke.js', standalone: true },
     { name: 'loot', scriptFile: 'loot-smoke.js' },
     { name: 'auth-bootstrap', scriptFile: 'auth-bootstrap-smoke.js' },
     { name: 'auth-bootstrap-native', scriptFile: 'auth-bootstrap-smoke.js' },
@@ -159,6 +160,7 @@ const PARALLEL_STANDALONE_CASES = new Set([
     'strong-persistence-lease',
     'player-columnar-schema',
     'player-dirty-domain-coverage',
+    'world-runtime-auto-combat',
     'world-runtime-instance-capability-guard',
     'world-runtime-player-session-no-auto-instance',
 ]);
