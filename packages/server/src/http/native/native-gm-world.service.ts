@@ -137,6 +137,10 @@ interface NativeGmMapQueryServiceLike {
 interface NativeGmMapRuntimeQueryServiceLike {
   getMapRuntime(mapId: string, x?: unknown, y?: unknown, w?: unknown, h?: unknown): unknown;
   getInstanceRuntime(instanceId: string, x?: unknown, y?: unknown, w?: unknown, h?: unknown): unknown;
+  getInstanceBuildingState(instanceId: string): unknown;
+  getInstanceBuildingCellState(instanceId: string, x: unknown, y: unknown): unknown;
+  recalculateInstanceBuildingState(instanceId: string): unknown;
+  repairInstanceBuildingState(instanceId: string): unknown;
 }
 /**
  * NativeGmSuggestionQueryServiceLike：定义接口结构约束，明确可交付字段含义。
@@ -163,6 +167,7 @@ interface WorldRuntimeGmQueueLike {
 
 interface WorldRuntimeServiceLike {
   getRuntimeSummary(): unknown;
+  listBuildingOperationAudit?(limit?: number): unknown[];
   getInstanceLeaseStatus(instanceId: string): Promise<unknown>;
   freezeInstanceWriting(instanceId: string, reason?: string): void;
   unfreezeInstanceWriting(instanceId: string): { ok: boolean; reason?: string };
@@ -624,6 +629,32 @@ export class NativeGmWorldService {
     }
 
     return this.nextGmMapRuntimeQueryService.getInstanceRuntime(instanceId, x, y, w, h);
+  }
+
+  getWorldInstanceBuildingState(instanceId: string) {
+    return this.nextGmMapRuntimeQueryService.getInstanceBuildingState(instanceId);
+  }
+
+  getWorldInstanceBuildingCellState(instanceId: string, x: unknown, y: unknown) {
+    return this.nextGmMapRuntimeQueryService.getInstanceBuildingCellState(instanceId, x, y);
+  }
+
+  getWorldBuildingOperationAudit(limit?: unknown) {
+    const normalizedLimit = Math.min(200, Math.max(1, Math.trunc(Number(limit) || 50)));
+    return {
+      limit: normalizedLimit,
+      items: typeof this.worldRuntimeService.listBuildingOperationAudit === 'function'
+        ? this.worldRuntimeService.listBuildingOperationAudit(normalizedLimit)
+        : [],
+    };
+  }
+
+  recalculateWorldInstanceBuildingState(instanceId: string) {
+    return this.nextGmMapRuntimeQueryService.recalculateInstanceBuildingState(instanceId);
+  }
+
+  repairWorldInstanceBuildingState(instanceId: string) {
+    return this.nextGmMapRuntimeQueryService.repairInstanceBuildingState(instanceId);
   }
   /**
  * createWorldInstance：创建手动分线实例。

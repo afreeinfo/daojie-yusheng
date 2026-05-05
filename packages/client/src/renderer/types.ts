@@ -1,6 +1,6 @@
 /** 渲染器能力约束，确保 TextRenderer 与其他实现保持一致。 */
 
-import { GameTimeState, GridPoint, NpcQuestMarker, RenderEntity, TargetingShape, Tile, VisibleBuffState } from '@mud/shared';
+import { GameTimeState, GridPoint, NpcQuestMarker, RenderEntity, TargetingShape, Tile, VisibleBuffState, type FengShuiGrade } from '@mud/shared';
 import { Camera } from './camera';
 
 /** 浮动文本可选样式。 */
@@ -85,6 +85,21 @@ export interface SenseQiOverlayState {
   levelBaseValue?: number;
 }
 
+export interface BuildPreviewOverlayState {
+  cells: Array<{ x: number; y: number; ok: boolean; warning?: boolean }>;
+}
+
+export interface FengShuiOverlayState {
+  cells: Array<{
+    x: number;
+    y: number;
+    roomId: string;
+    score: number;
+    grade: FengShuiGrade;
+    revision: number;
+  }>;
+}
+
 /** 渲染器统一接口，当前由 TextRenderer 实现，未来可替换为 SpriteRenderer。 */
 export interface IRenderer {
   init(canvas: HTMLCanvasElement): void;
@@ -103,6 +118,8 @@ export interface IRenderer {
   setTargetingOverlay(state: TargetingOverlayState | null): void;
   setFormationRangeOverlay(state: FormationRangeOverlayState | null): void;
   setSenseQiOverlay(state: SenseQiOverlayState | null): void;
+  setBuildPreviewOverlay(state: BuildPreviewOverlayState | null): void;
+  setFengShuiOverlay(state: FengShuiOverlayState | null): void;
   renderWorld(
     camera: Camera,
     tileCache: ReadonlyMap<string, Tile>,

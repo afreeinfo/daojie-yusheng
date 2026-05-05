@@ -1,0 +1,194 @@
+// @ts-nocheck
+"use strict";
+
+const assert = require("node:assert/strict");
+
+const { PlayerRuntimeService } = require("../runtime/player/player-runtime.service");
+
+function createService() {
+  const contentTemplateRepository = {
+    getItemName(itemId) {
+      return itemId;
+    },
+  };
+  const playerAttributesService = {
+    recalculate() {},
+  };
+  const playerProgressionService = {
+    gainRealmProgress(player, amount) {
+      const gain = Math.max(0, Math.trunc(Number(amount) || 0));
+      player.realm.progress = Math.min(player.realm.progressToNext, player.realm.progress + gain);
+      return {
+        changed: gain > 0,
+        notices: [],
+        actionsDirty: false,
+        dirtyDomains: ["progression"],
+      };
+    },
+    advanceCultivation(player) {
+      player.realm.progress = Math.min(player.realm.progressToNext, player.realm.progress + 120);
+      return {
+        changed: true,
+        notices: [],
+        actionsDirty: false,
+        dirtyDomains: ["progression"],
+      };
+    },
+    refineRootFoundation(player) {
+      const consumed = Math.min(100, player.realm.progress);
+      player.realm.progress -= consumed;
+      return {
+        changed: consumed > 0,
+        notices: [],
+        actionsDirty: true,
+        dirtyDomains: ["progression"],
+      };
+    },
+  };
+  return new PlayerRuntimeService(
+    contentTemplateRepository,
+    {},
+    playerAttributesService,
+    playerProgressionService,
+    undefined,
+  );
+}
+
+function createPlayer(overrides = {}) {
+  return {
+    playerId: "player:offline-gain-smoke",
+    sessionId: "sid:online",
+    hp: 100,
+    maxHp: 100,
+    qi: 100,
+    maxQi: 100,
+    realm: {
+      realmLv: 19,
+      level: 19,
+      progress: 36_000,
+      exp: 36_000,
+      progressToNext: 120_000,
+      expToNext: 120_000,
+      breakthroughReady: false,
+    },
+    foundation: 0,
+    rootFoundation: 0,
+    combatExp: 0,
+    bodyTraining: {
+      level: 0,
+      exp: 0,
+      expToNext: 100,
+    },
+    inventory: {
+      revision: 1,
+      items: [],
+    },
+    techniques: {
+      revision: 1,
+      techniques: [],
+      cultivatingTechId: null,
+    },
+    alchemySkill: null,
+    gatherSkill: null,
+    enhancementSkill: null,
+    buffs: {
+      revision: 1,
+      buffs: [],
+    },
+    combat: {
+      cultivationActive: true,
+      autoIdleCultivation: true,
+      lastActiveTick: 0,
+      cooldownReadyTickBySkillId: {},
+    },
+    attrs: {
+      numericStats: {
+        realmExpPerTick: 120,
+        techniqueExpPerTick: 0,
+        playerExpRate: 0,
+        techniqueExpRate: 0,
+      },
+    },
+    actions: {
+      revision: 1,
+      actions: [],
+      contextActions: [],
+    },
+    notices: {
+      nextId: 1,
+      queue: [],
+    },
+    dirtyDomains: new Set(),
+    selfRevision: 1,
+    persistentRevision: 1,
+    ...overrides,
+  };
+}
+
+async function testOfflineAccumulatedGainWinsOverSnapshotLoss() {
+  const service = createService();
+  const player = createPlayer();
+  service.players.set(player.playerId, player);
+
+  service.detachSession(player.playerId);
+  await service.beginOfflineGainSession(player.playerId, 1_000);
+  service.advanceSinglePlayerTick(player, 1);
+  service.advanceSinglePlayerTick(player, 2);
+
+  player.realm.progress = 0;
+  const report = await service.finalizeOfflineGainSessionForPlayer(player, 10_000);
+  const realmRow = report.progress.find((entry) => entry.kind === "realmExp");
+
+  assert.ok(realmRow, "expected accumulated offline cultivation gain row");
+  assert.equal(realmRow.gained, 240);
+  assert.equal(realmRow.lost, 0);
+  assert.equal(realmRow.net, 240);
+  assert.equal(report.durationMs, 2_000);
+}
+
+async function testOfflineGlobalStatisticsKeepGainAndLossSeparated() {
+  const service = createService();
+  const player = createPlayer();
+  service.players.set(player.playerId, player);
+
+  service.detachSession(player.playerId);
+  await service.beginOfflineGainSession(player.playerId, 1_000);
+
+  service.gainRealmProgress(player.playerId, 100);
+  service.refineRootFoundation(player.playerId, 2);
+
+  const report = await service.finalizeOfflineGainSessionForPlayer(player, 10_000);
+  const realmRow = report.progress.find((entry) => entry.kind === "realmExp");
+
+  assert.ok(realmRow, "expected realm progress row");
+  assert.equal(realmRow.gained, 100);
+  assert.equal(realmRow.lost, 100);
+  assert.equal(realmRow.net, 0);
+  assert.equal(report.durationMs, 2_000);
+}
+
+async function testOfflineSnapshotFallbackDoesNotFabricateStoppedServerChanges() {
+  const service = createService();
+  const player = createPlayer();
+  service.players.set(player.playerId, player);
+
+  service.detachSession(player.playerId);
+  await service.beginOfflineGainSession(player.playerId, 1_000);
+
+  player.realm.progress = 35_900;
+  const report = await service.finalizeOfflineGainSessionForPlayer(player, 10_000);
+
+  assert.equal(report.progress.some((entry) => entry.kind === "realmExp"), false);
+}
+
+async function main() {
+  await testOfflineAccumulatedGainWinsOverSnapshotLoss();
+  await testOfflineGlobalStatisticsKeepGainAndLossSeparated();
+  await testOfflineSnapshotFallbackDoesNotFabricateStoppedServerChanges();
+  console.log("offline-gain-statistics-smoke passed");
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

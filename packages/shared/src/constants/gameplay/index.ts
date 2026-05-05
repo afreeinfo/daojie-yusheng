@@ -9,6 +9,8 @@
  * - `combat`：战斗成长与境界压制规则常量。
  * - `terrain`：地形恢复与耐久流转规则。
  * - `house-terrain`：房屋轮廓与院落装饰地块定义。
+ * - `building`：动态建筑/家具配置编译与拓扑常量。
+ * - `fengshui`：房间风水元素、等级与评分常量。
  * - `inventory`：背包与地面掉落规则。
  * - `quest`：任务系统键集合与顺序。
  * - `attributes`：角色基础数值与六维换算。
@@ -28,6 +30,8 @@ export * from './qi';
 export * from './combat';
 export * from './terrain';
 export * from './house-terrain';
+export * from './building';
+export * from './fengshui';
 export * from './inventory';
 export * from './quest';
 export * from './attributes';

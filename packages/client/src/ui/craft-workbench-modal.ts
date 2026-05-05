@@ -39,11 +39,14 @@ import { bindInlineItemTooltips, renderInlineItemChip } from './item-inline-tool
 
 type CraftWorkbenchCallbacks = {
   onRequestAlchemy: (knownCatalogVersion?: number) => void;
+  onRequestForging: (knownCatalogVersion?: number) => void;
   onRequestEnhancement: () => void;
   onSaveAlchemyPreset: (payload: C2S_SaveAlchemyPreset) => void;
   onDeleteAlchemyPreset: (presetId: string) => void;
   onStartAlchemy: (recipeId: string, ingredients: Array<{ itemId: string; count: number }>, quantity: number, queueMode: CraftQueueStartMode) => void;
+  onStartForging: (recipeId: string, ingredients: Array<{ itemId: string; count: number }>, quantity: number, queueMode: CraftQueueStartMode) => void;
   onCancelAlchemy: () => void;
+  onCancelForging: () => void;
   onStartEnhancement: (payload: C2S_StartEnhancement) => void;
   onCancelEnhancement: () => void;
 };
@@ -72,6 +75,14 @@ type EnhancementViewState = {
   historyTop: number;
   selectedTargetKey: string | null;
 };
+
+const FORGING_INITIAL_RECIPES = [
+  { outputItemId: 'equip.copper_enhancement_hammer', outputName: '铜强化锤', note: '强化入门工具' },
+  { outputItemId: 'equip.copper_pill_furnace', outputName: '铜胎丹炉', note: '炼丹入门工具' },
+  { outputItemId: 'equip.copper_forging_tool', outputName: '铜炼器钳', note: '炼器入门工具' },
+  { outputItemId: 'equip.copper_building_hammer', outputName: '铜营造锤', note: '营造入门工具' },
+  { outputItemId: 'equip.copper_array_plate', outputName: '铜纹阵盘', note: '阵法入门器具' },
+] as const;
 
 function escapeHtml(value: string): string {
   return value
@@ -238,6 +249,7 @@ export class CraftWorkbenchModal {
   openAlchemy(): void {
     this.activeMode = 'alchemy';
     this.loading = true;
+    this.alchemyCatalogVersion = 0;
     this.selectedAlchemyPresetId = null;
     this.confirmStartRequest = null;
     this.render();
@@ -246,10 +258,15 @@ export class CraftWorkbenchModal {
 
   openForging(): void {
     this.activeMode = 'forging';
-    this.loading = false;
+    this.loading = true;
+    this.alchemyCatalogVersion = 0;
+    this.activeAlchemyCategory = 'special';
+    this.activeAlchemyTab = 'full';
+    this.selectedAlchemyPresetId = null;
     this.confirmStartRequest = null;
     confirmModalHost.close(CraftWorkbenchModal.ALCHEMY_CONFIRM_OWNER);
     this.render();
+    this.callbacks?.onRequestForging(this.alchemyCatalogVersion || undefined);
   }
 
   openEnhancement(): void {
@@ -261,6 +278,13 @@ export class CraftWorkbenchModal {
   }
 
   updateAlchemy(data: S2C_AlchemyPanel): void {
+    if (data.kind === 'forging') {
+      this.updateForging(data);
+      return;
+    }
+    if (this.activeMode === 'forging') {
+      return;
+    }
     this.alchemyPanel = data;
     this.alchemyCatalogVersion = Math.max(0, Math.floor(data.catalogVersion ?? this.alchemyCatalogVersion));
     if (Array.isArray(data.catalog)) {
@@ -272,6 +296,29 @@ export class CraftWorkbenchModal {
     this.ensureAlchemySelection();
     this.ensureAlchemyDraft();
     if (this.activeMode === 'alchemy') {
+      this.loading = false;
+      this.render();
+    }
+    this.syncAlchemyConfirmModal();
+  }
+
+  updateForging(data: S2C_AlchemyPanel): void {
+    if (this.activeMode !== 'forging') {
+      return;
+    }
+    this.alchemyPanel = data;
+    this.alchemyCatalogVersion = Math.max(0, Math.floor(data.catalogVersion ?? this.alchemyCatalogVersion));
+    if (Array.isArray(data.catalog)) {
+      this.alchemyCatalog = data.catalog.map((entry) => ({
+        ...entry,
+        category: 'special',
+        ingredients: entry.ingredients.map((ingredient) => ({ ...ingredient })),
+      }));
+    }
+    this.activeAlchemyCategory = 'special';
+    this.ensureAlchemySelection();
+    this.ensureAlchemyDraft();
+    if (this.activeMode === 'forging') {
       this.loading = false;
       this.render();
     }
@@ -316,7 +363,7 @@ export class CraftWorkbenchModal {
     if (this.activeMode === 'alchemy') {
       this.callbacks?.onRequestAlchemy(this.alchemyCatalogVersion || undefined);
     } else if (this.activeMode === 'forging') {
-      this.render();
+      this.callbacks?.onRequestForging(this.alchemyCatalogVersion || undefined);
     } else if (this.activeMode === 'enhancement') {
       this.callbacks?.onRequestEnhancement();
     }
@@ -487,7 +534,7 @@ export class CraftWorkbenchModal {
       return `炼丹 Lv.${formatDisplayInteger(this.alchemySkillLevel)}`;
     }
     if (this.activeMode === 'forging') {
-      return '炼器 · 尚未接入配方';
+      return `炼器 Lv.${formatDisplayInteger(this.alchemySkillLevel)}`;
     }
     if (this.activeMode === 'enhancement') {
       return `强化 Lv.${formatDisplayInteger(this.enhancementSkillLevel)}`;
@@ -516,7 +563,7 @@ export class CraftWorkbenchModal {
   }
 
   private renderCraftActiveBody(): string {
-    if (this.activeMode === 'alchemy') {
+    if (this.activeMode === 'alchemy' || this.activeMode === 'forging') {
       return this.renderAlchemyBody();
     }
     if (this.activeMode === 'enhancement') {
@@ -574,7 +621,7 @@ export class CraftWorkbenchModal {
   private renderCraftModeTabs(): string {
     const tabs: Array<{ mode: Exclude<CraftMode, null>; label: string; note: string }> = [
       { mode: 'alchemy', label: '炼丹', note: `Lv.${formatDisplayInteger(this.alchemySkillLevel)}` },
-      { mode: 'forging', label: '炼器', note: '待接入' },
+      { mode: 'forging', label: '炼器', note: '入门器方' },
       { mode: 'enhancement', label: '强化', note: `Lv.${formatDisplayInteger(this.enhancementSkillLevel)}` },
     ];
     return tabs.map((tab) => `
@@ -588,8 +635,17 @@ export class CraftWorkbenchModal {
   private renderForgingPlaceholder(): string {
     return `
       <div class="craft-placeholder-panel">
-        <div class="craft-placeholder-title">炼器配方尚未接入</div>
-        <div class="craft-placeholder-text">通用制造界面已经预留炼器入口；后续炼器会复用左侧职业说明、当前任务队列和三种启动队列方式。</div>
+        <div class="craft-placeholder-title">入门器方</div>
+        <div class="craft-placeholder-text">当前炼器只开放最低级工具类器方；未装备炼器工具时可以进入菜单，但不会获得工具加成。</div>
+        <div class="craft-queue-list">
+          ${FORGING_INITIAL_RECIPES.map((recipe) => `
+            <div class="craft-queue-item">
+              <span>${escapeHtml(recipe.note)}</span>
+              <strong>${escapeHtml(recipe.outputName)}</strong>
+              <em>${escapeHtml(recipe.outputItemId)}</em>
+            </div>
+          `).join('')}
+        </div>
       </div>
     `;
   }
@@ -612,7 +668,7 @@ export class CraftWorkbenchModal {
       return '以丹方、主药和辅药炼成丹药，可批量制造并接入后续任务队列。';
     }
     if (this.activeMode === 'forging') {
-      return '以器方、主材和辅材制造装备本体，当前只预留通用入口。';
+      return '以器方和玄铁制造入门技艺工具，成功率与加速规则和炼丹一致。';
     }
     if (this.activeMode === 'enhancement') {
       return '以强化锤、材料和保护物提升装备强化等级，操作区复用现有强化规则。';
@@ -631,9 +687,10 @@ export class CraftWorkbenchModal {
     const active: CraftQueueItemView[] = [];
     if (activeAlchemyJob) {
       const recipe = this.alchemyCatalog.find((entry) => entry.recipeId === activeAlchemyJob.recipeId);
+      const jobKind = activeAlchemyJob.jobType === 'forging' ? 'forging' : 'alchemy';
       active.push({
-        queueId: activeAlchemyJob.jobRunId ?? `active:alchemy:${activeAlchemyJob.startedAt}`,
-        kind: 'alchemy',
+        queueId: activeAlchemyJob.jobRunId ?? `active:${jobKind}:${activeAlchemyJob.startedAt}`,
+        kind: jobKind,
         label: recipe?.outputName ?? activeAlchemyJob.outputItemId,
         quantity: Math.max(1, activeAlchemyJob.quantity - activeAlchemyJob.completedCount),
         createdAt: activeAlchemyJob.startedAt,
@@ -748,6 +805,9 @@ export class CraftWorkbenchModal {
         return;
       }
       if (action === 'alchemy-save-preset') {
+        if (this.activeMode === 'forging') {
+          return;
+        }
         const recipe = this.getSelectedAlchemyRecipe();
         if (!recipe) {
           return;
@@ -765,6 +825,9 @@ export class CraftWorkbenchModal {
         return;
       }
       if (action === 'alchemy-delete-preset') {
+        if (this.activeMode === 'forging') {
+          return;
+        }
         const presetId = (target.dataset.presetId ?? '').trim();
         if (presetId) {
           this.callbacks?.onDeleteAlchemyPreset(presetId);
@@ -788,7 +851,11 @@ export class CraftWorkbenchModal {
         return;
       }
       if (action === 'cancel-alchemy') {
-        this.callbacks?.onCancelAlchemy();
+        if (this.activeMode === 'forging') {
+          this.callbacks?.onCancelForging();
+        } else {
+          this.callbacks?.onCancelAlchemy();
+        }
         return;
       }
       if (action === 'enhancement-refresh') {
@@ -893,6 +960,9 @@ export class CraftWorkbenchModal {
   }
 
   private getVisibleAlchemyRecipes(): AlchemyRecipeCatalogEntry[] {
+    if (this.activeMode === 'forging') {
+      return this.alchemyCatalog.filter((entry) => getAlchemyRealmTab(entry.outputLevel) === this.activeAlchemyRealm);
+    }
     return this.alchemyCatalog.filter((entry) => (
       entry.category === this.activeAlchemyCategory
       && getAlchemyRealmTab(entry.outputLevel) === this.activeAlchemyRealm
@@ -903,6 +973,9 @@ export class CraftWorkbenchModal {
     const recipe = this.alchemyCatalog.find((entry) => entry.recipeId === this.selectedAlchemyRecipeId) ?? null;
     if (!recipe) {
       return null;
+    }
+    if (this.activeMode === 'forging') {
+      return getAlchemyRealmTab(recipe.outputLevel) === this.activeAlchemyRealm ? recipe : null;
     }
     return recipe.category === this.activeAlchemyCategory && getAlchemyRealmTab(recipe.outputLevel) === this.activeAlchemyRealm
       ? recipe
@@ -920,7 +993,9 @@ export class CraftWorkbenchModal {
       const recipe = this.alchemyCatalog.find((entry) => entry.recipeId === job.recipeId) ?? null;
       return `当前任务：${recipe?.outputName ?? job.outputItemId} · ${formatDisplayInteger(job.completedCount)} / ${formatDisplayInteger(job.quantity)} 炉`;
     }
-    return `炼丹 Lv.${formatDisplayInteger(this.alchemySkillLevel)} · 采集 Lv.${formatDisplayInteger(this.gatherSkillLevel)}`;
+    return this.activeMode === 'forging'
+      ? `炼器 Lv.${formatDisplayInteger(this.alchemySkillLevel)} · 技艺器方`
+      : `炼丹 Lv.${formatDisplayInteger(this.alchemySkillLevel)} · 采集 Lv.${formatDisplayInteger(this.gatherSkillLevel)}`;
   }
 
   private captureAlchemyViewState(body: HTMLElement): AlchemyViewState {
@@ -1054,16 +1129,23 @@ export class CraftWorkbenchModal {
   }
 
   private renderAlchemyTopbar(): string {
+    const isForging = this.activeMode === 'forging';
     return `
       <div class="alchemy-topbar-main">
-        <span class="alchemy-topbar-label">炼丹等级</span>
+        <span class="alchemy-topbar-label">${isForging ? '炼器等级' : '炼丹等级'}</span>
         <strong class="alchemy-topbar-value">LV ${formatDisplayInteger(this.alchemySkillLevel)}</strong>
       </div>
-      <div class="alchemy-topbar-note">悬浮或点按药名可查看效果与来源</div>
+      <div class="alchemy-topbar-note">悬浮或点按${isForging ? '器物' : '药名'}可查看效果与来源</div>
     `;
   }
 
   private renderAlchemyTabButtons(): string {
+    if (this.activeMode === 'forging') {
+      return `
+        <button class="alchemy-tab-btn ${this.activeAlchemyTab === 'full' ? 'active' : ''}" type="button" data-craft-action="alchemy-switch-tab" data-tab="full">完整器方</button>
+        <button class="alchemy-tab-btn ${this.activeAlchemyTab === 'simple' ? 'active' : ''}" type="button" data-craft-action="alchemy-switch-tab" data-tab="simple">简易器方</button>
+      `;
+    }
     return `
       <button class="alchemy-tab-btn ${this.activeAlchemyTab === 'full' ? 'active' : ''}" type="button" data-craft-action="alchemy-switch-tab" data-tab="full">完整丹方</button>
       <button class="alchemy-tab-btn ${this.activeAlchemyTab === 'simple' ? 'active' : ''}" type="button" data-craft-action="alchemy-switch-tab" data-tab="simple">简易丹方</button>
@@ -1074,7 +1156,8 @@ export class CraftWorkbenchModal {
     const visibleRecipes = this.getVisibleAlchemyRecipes();
     const selectedRecipe = this.getSelectedAlchemyRecipe();
     if (visibleRecipes.length === 0) {
-      return `<div class="alchemy-recipe-list-empty">${escapeHtml(this.loading ? '丹方与炉火查探中...' : (this.alchemyPanel?.error ?? '当前分类下还没有可炼制的丹方。'))}</div>`;
+      const noun = this.activeMode === 'forging' ? '器方' : '丹方';
+      return `<div class="alchemy-recipe-list-empty">${escapeHtml(this.loading ? `${noun}与炉火查探中...` : (this.alchemyPanel?.error ?? `当前分类下还没有可炼制的${noun}。`))}</div>`;
     }
     return visibleRecipes
       .map((recipe) => this.renderAlchemyRecipeItem(recipe, recipe.recipeId === selectedRecipe?.recipeId))
@@ -1088,7 +1171,8 @@ export class CraftWorkbenchModal {
       ? state?.presets.filter((preset) => preset.recipeId === selectedRecipe.recipeId) ?? []
       : [];
     if (!selectedRecipe) {
-      return `<div class="alchemy-recipe-list-empty">${escapeHtml(this.loading ? '丹方与炉火查探中...' : (this.alchemyPanel?.error ?? '当前没有可用丹方。'))}</div>`;
+      const noun = this.activeMode === 'forging' ? '器方' : '丹方';
+      return `<div class="alchemy-recipe-list-empty">${escapeHtml(this.loading ? `${noun}与炉火查探中...` : (this.alchemyPanel?.error ?? `当前没有可用${noun}。`))}</div>`;
     }
     return this.activeAlchemyTab === 'full'
       ? this.renderAlchemyFullTab(selectedRecipe)
@@ -1227,6 +1311,7 @@ export class CraftWorkbenchModal {
   }
 
   private renderAlchemyBody(): string {
+    const recipeTypeLabel = this.activeMode === 'forging' ? '器方类型' : '丹方类型';
     return `
       <div class="alchemy-modal-shell" data-alchemy-shell="true">
         <div data-alchemy-job-card-host="true">${this.renderAlchemyJobCard(this.alchemyPanel?.state?.job ?? null)}</div>
@@ -1241,7 +1326,7 @@ export class CraftWorkbenchModal {
             </div>
           </div>
           <div class="alchemy-control-group alchemy-control-group--tabs">
-            <span class="alchemy-control-label">丹方类型</span>
+            <span class="alchemy-control-label">${recipeTypeLabel}</span>
             <div class="alchemy-modal-tabs" data-alchemy-tab-host="true">
               ${this.renderAlchemyTabButtons()}
             </div>
@@ -1265,6 +1350,15 @@ export class CraftWorkbenchModal {
   }
 
   private renderAlchemyCategoryTabs(): string {
+    if (this.activeMode === 'forging') {
+      const count = this.alchemyCatalog.filter((entry) => getAlchemyRealmTab(entry.outputLevel) === this.activeAlchemyRealm).length;
+      return `
+        <button class="alchemy-category-btn active" type="button" data-craft-action="alchemy-switch-category" data-category="special">
+          技艺
+          <span class="alchemy-category-count">${formatDisplayInteger(count)}</span>
+        </button>
+      `;
+    }
     const categories: Array<{ category: AlchemyRecipeCategory; label: string }> = [
       { category: 'recovery', label: '回复' },
       { category: 'buff', label: '增益' },
@@ -1314,8 +1408,12 @@ export class CraftWorkbenchModal {
   }
 
   private renderAlchemyJobCard(job: NonNullable<NonNullable<S2C_AlchemyPanel['state']>['job']> | null): string {
+    const isForging = this.activeMode === 'forging' || job?.jobType === 'forging';
+    const activityName = isForging ? '炼器' : '炼丹';
+    const unit = isForging ? '件' : '枚';
+    const successLabel = isForging ? '单件成器率' : '单枚成丹率';
     if (!job) {
-      return '<section class="alchemy-job-card empty" data-alchemy-job-card="true" data-alchemy-job-key="empty"><div class="alchemy-job-title">当前炉火</div><div class="alchemy-job-text">当前没有进行中的炼丹任务。</div></section>';
+      return `<section class="alchemy-job-card empty" data-alchemy-job-card="true" data-alchemy-job-key="empty"><div class="alchemy-job-title">当前炉火</div><div class="alchemy-job-text">当前没有进行中的${activityName}任务。</div></section>`;
     }
     const recipe = this.alchemyCatalog.find((entry) => entry.recipeId === job.recipeId) ?? null;
     const progressPercent = Math.max(0, Math.min(100, (1 - (job.remainingTicks / Math.max(1, job.totalTicks))) * 100));
@@ -1330,9 +1428,9 @@ export class CraftWorkbenchModal {
           <div class="alchemy-job-metrics">
             <span class="alchemy-metric-chip alchemy-job-phase-chip ${phaseClass}">${escapeHtml(getAlchemyPhaseLabel(job.phase))}</span>
             <span class="alchemy-metric-chip">数量 ${formatDisplayInteger(job.quantity)} 炉</span>
-            <span class="alchemy-metric-chip">一炉 ${formatDisplayInteger(job.outputCount)} 枚</span>
+            <span class="alchemy-metric-chip">一炉 ${formatDisplayInteger(job.outputCount)} ${unit}</span>
             <span class="alchemy-metric-chip">灵石 ${formatDisplayInteger(job.spiritStoneCost)}</span>
-            <span class="alchemy-metric-chip">单枚成丹率 ${escapeHtml(formatRate(job.successRate))}</span>
+            <span class="alchemy-metric-chip">${successLabel} ${escapeHtml(formatRate(job.successRate))}</span>
           </div>
         </div>
         <div class="alchemy-job-progress">
@@ -1362,7 +1460,7 @@ export class CraftWorkbenchModal {
           </div>
         </div>
         <div class="alchemy-actions alchemy-actions--job">
-          <button class="small-btn ghost" type="button" data-craft-action="cancel-alchemy">取消炼制</button>
+          <button class="small-btn ghost" type="button" data-craft-action="cancel-alchemy">取消${activityName}</button>
         </div>
       </section>
     `;
@@ -1371,6 +1469,9 @@ export class CraftWorkbenchModal {
   private renderAlchemyFullTab(recipe: AlchemyRecipeCatalogEntry): string {
     const metrics = this.buildAlchemyMetricSnapshot(recipe, 'full');
     const ingredients = this.getFullAlchemyIngredients(recipe.recipeId);
+    const mainRoleLabel = this.activeMode === 'forging' ? '主材' : '主药';
+    const auxRoleLabel = this.activeMode === 'forging' ? '辅材' : '辅药';
+    const powerLabel = this.activeMode === 'forging' ? '单份契合' : '单份药力';
     return `
       <div class="alchemy-tab-stack">
         ${this.renderAlchemySummaryCard(recipe, 'full', metrics)}
@@ -1378,13 +1479,13 @@ export class CraftWorkbenchModal {
           ${recipe.ingredients.map((ingredient) => `
             <div class="alchemy-ingredient-row" data-alchemy-ingredient-item-id="${escapeHtml(ingredient.itemId)}">
               <div class="alchemy-ingredient-main">
-                <span class="alchemy-ingredient-role ${ingredient.role === 'main' ? 'main' : 'aux'}">${ingredient.role === 'main' ? '主药' : '辅药'}</span>
+                <span class="alchemy-ingredient-role ${ingredient.role === 'main' ? 'main' : 'aux'}">${ingredient.role === 'main' ? mainRoleLabel : auxRoleLabel}</span>
                 <span class="alchemy-ingredient-name">${this.renderAlchemyItemReference(ingredient.itemId, ingredient.name, 'material')}</span>
                 <span class="alchemy-ingredient-owned" data-alchemy-owned="true">持有 ${formatDisplayInteger(this.getAlchemyInventoryCount(ingredient.itemId))}</span>
               </div>
               <div class="alchemy-ingredient-meta">
                 <span>数量 ${formatDisplayInteger(ingredient.count)}</span>
-                <span>单份药力 ${formatDisplayInteger(ingredient.powerPerUnit)}</span>
+                <span>${powerLabel} ${formatDisplayInteger(ingredient.powerPerUnit)}</span>
               </div>
             </div>
           `).join('')}
@@ -1401,6 +1502,11 @@ export class CraftWorkbenchModal {
     const selectedPreset = this.selectedAlchemyPresetId
       ? presets.find((preset) => preset.presetId === this.selectedAlchemyPresetId) ?? null
       : null;
+    const mainRoleLabel = this.activeMode === 'forging' ? '主材' : '主药';
+    const auxRoleLabel = this.activeMode === 'forging' ? '辅材' : '辅药';
+    const emptyPresetText = this.activeMode === 'forging'
+      ? '当前器物还没有保存的简易器方。'
+      : '当前丹药还没有保存的简易丹方。';
     return `
       <div class="alchemy-tab-stack">
         ${this.renderAlchemySummaryCard(recipe, 'simple', metrics)}
@@ -1415,13 +1521,13 @@ export class CraftWorkbenchModal {
                 ${escapeHtml(preset.name)}
               </button>
             `).join('')
-            : '<span class="alchemy-preset-empty">当前丹药还没有保存的简易丹方。</span>'}
+            : `<span class="alchemy-preset-empty">${emptyPresetText}</span>`}
         </div>
         <div class="alchemy-ingredient-section" data-alchemy-ingredients="true">
           ${recipe.ingredients.map((ingredient) => `
             <div class="alchemy-ingredient-row" data-alchemy-ingredient-item-id="${escapeHtml(ingredient.itemId)}">
               <div class="alchemy-ingredient-main">
-                <span class="alchemy-ingredient-role ${ingredient.role === 'main' ? 'main' : 'aux'}">${ingredient.role === 'main' ? '主药' : '辅药'}</span>
+                <span class="alchemy-ingredient-role ${ingredient.role === 'main' ? 'main' : 'aux'}">${ingredient.role === 'main' ? mainRoleLabel : auxRoleLabel}</span>
                 <span class="alchemy-ingredient-name">${this.renderAlchemyItemReference(ingredient.itemId, ingredient.name, 'material')}</span>
                 <span class="alchemy-ingredient-owned" data-alchemy-owned="true">持有 ${formatDisplayInteger(this.getAlchemyInventoryCount(ingredient.itemId))}</span>
               </div>
@@ -1451,19 +1557,23 @@ export class CraftWorkbenchModal {
     mode: AlchemyTab,
     metrics: { powerText: string; successText: string; brewTimeText: string },
   ): string {
+    const isForging = this.activeMode === 'forging';
+    const recipeLabel = isForging
+      ? (mode === 'simple' ? '简易器方' : '完整器方')
+      : (mode === 'simple' ? '简易丹方' : '完整丹方');
     return `
       <div class="alchemy-summary-card" data-alchemy-summary-card="true">
         <div class="alchemy-summary-head">
           <div class="alchemy-summary-title">${this.renderAlchemyItemReference(recipe.outputItemId, recipe.outputName, 'reward')}</div>
-          <span class="alchemy-summary-mode">${mode === 'simple' ? '简易丹方' : '完整丹方'}</span>
+          <span class="alchemy-summary-mode">${recipeLabel}</span>
         </div>
         <div class="alchemy-summary-metrics">
           <div class="alchemy-summary-metric alchemy-summary-metric--power">
-            <span class="alchemy-summary-metric-label">药力百分比</span>
+            <span class="alchemy-summary-metric-label">${isForging ? '技艺契合度' : '药力百分比'}</span>
             <strong class="alchemy-summary-metric-value" data-alchemy-metric="power">${escapeHtml(metrics.powerText)}</strong>
           </div>
           <div class="alchemy-summary-metric alchemy-summary-metric--success">
-            <span class="alchemy-summary-metric-label">单枚成丹率</span>
+            <span class="alchemy-summary-metric-label">${isForging ? '单件成器率' : '单枚成丹率'}</span>
             <strong class="alchemy-summary-metric-value" data-alchemy-metric="success">${escapeHtml(metrics.successText)}</strong>
           </div>
           <div class="alchemy-summary-metric alchemy-summary-metric--time">
@@ -1485,37 +1595,42 @@ export class CraftWorkbenchModal {
       hasSelectedPreset?: boolean;
     },
   ): string {
+    const isForging = this.activeMode === 'forging';
     const state = this.alchemyPanel?.state ?? null;
     const maxQuantity = this.getAlchemyMaxCraftQuantity(recipe, ingredients);
     const spiritStoneCost = this.getAlchemySpiritStoneCost(recipe, 1);
     const batchBrewTicks = this.getAlchemyAdjustedBrewTicks(recipe, ingredients);
     const startDisabled = state?.job || maxQuantity <= 0;
+    const fullStartLabel = isForging ? '按完整器方炼制' : '按完整丹方炼制';
+    const simpleTabLabel = isForging ? '去简易器方调整' : '去简易丹方调整';
+    const simpleStartLabel = isForging ? '开始炼器' : '开始炼制';
+    const unit = isForging ? '件' : '枚';
     return `
       <div class="alchemy-actions" data-alchemy-actions="true" data-tab-mode="${mode}">
         <div class="alchemy-action-buttons">
           ${mode === 'full'
-            ? `<button class="small-btn" type="button" data-craft-action="alchemy-start-full"${startDisabled ? ' disabled' : ''}>按完整丹方炼制</button>
-               <button class="small-btn ghost" type="button" data-craft-action="alchemy-switch-tab" data-tab="simple">去简易丹方调整</button>`
-            : `<button class="small-btn" type="button" data-craft-action="alchemy-start-draft"${startDisabled ? ' disabled' : ''}>开始炼制</button>
-               <button class="small-btn ghost" type="button" data-craft-action="alchemy-save-preset"> ${options?.hasSelectedPreset ? '覆盖当前简方' : '保存简方'} </button>
+            ? `<button class="small-btn" type="button" data-craft-action="alchemy-start-full"${startDisabled ? ' disabled' : ''}>${fullStartLabel}</button>
+               <button class="small-btn ghost" type="button" data-craft-action="alchemy-switch-tab" data-tab="simple">${simpleTabLabel}</button>`
+            : `<button class="small-btn" type="button" data-craft-action="alchemy-start-draft"${startDisabled ? ' disabled' : ''}>${simpleStartLabel}</button>
+               ${isForging ? '' : `<button class="small-btn ghost" type="button" data-craft-action="alchemy-save-preset"> ${options?.hasSelectedPreset ? '覆盖当前简方' : '保存简方'} </button>`}
                <button class="small-btn ghost" type="button" data-craft-action="alchemy-reset-draft">重置投料</button>
-               ${options?.selectedPresetId ? `<button class="small-btn danger" type="button" data-craft-action="alchemy-delete-preset" data-preset-id="${escapeHtml(options.selectedPresetId)}">删除已选</button>` : ''}`}
+               ${!isForging && options?.selectedPresetId ? `<button class="small-btn danger" type="button" data-craft-action="alchemy-delete-preset" data-preset-id="${escapeHtml(options.selectedPresetId)}">删除已选</button>` : ''}`}
           ${mode === 'full'
             ? ''
             : ''}
           ${state?.job
-            ? '<button class="small-btn ghost" type="button" data-craft-action="cancel-alchemy">取消炼制</button>'
+            ? `<button class="small-btn ghost" type="button" data-craft-action="cancel-alchemy">取消${isForging ? '炼器' : '炼制'}</button>`
             : ''}
         </div>
         <div class="alchemy-action-note">${escapeHtml(
           state?.job
-            ? '炉火正旺，新丹方确认后即入队列。'
+            ? `炉火正旺，新${isForging ? '器方' : '丹方'}确认后即入队列。`
             : maxQuantity > 0
-              ? `择量开炉，至多 ${maxQuantity} 炉，每炉 ${this.getAlchemyBatchOutputCount(recipe)} 枚，起炉 ${ALCHEMY_PREPARATION_TICKS} 息。`
+              ? `择量开炉，至多 ${maxQuantity} 炉，每炉 ${this.getAlchemyBatchOutputCount(recipe)} ${unit}，起炉 ${ALCHEMY_PREPARATION_TICKS} 息。`
               : '材料或灵石不足，当前无法开炉。',
         )}</div>
-        ${options?.exactRecipe ? '<span class="alchemy-inline-note">当前投料已等同完整丹方。</span>' : ''}
-        <span class="alchemy-inline-note">单炉固定 ${formatDisplayInteger(this.getAlchemyBatchOutputCount(recipe))} 枚，每枚独立判定；单炉需灵石 ${formatDisplayInteger(spiritStoneCost)} 枚，单炉耗时 ${formatTicks(batchBrewTicks)}。</span>
+        ${options?.exactRecipe ? `<span class="alchemy-inline-note">当前投料已等同完整${isForging ? '器方' : '丹方'}。</span>` : ''}
+        <span class="alchemy-inline-note">单炉固定 ${formatDisplayInteger(this.getAlchemyBatchOutputCount(recipe))} ${unit}，每${unit}独立判定；单炉需灵石 ${formatDisplayInteger(spiritStoneCost)} 枚，单炉耗时 ${formatTicks(batchBrewTicks)}。</span>
       </div>
     `;
   }
@@ -1946,6 +2061,11 @@ export class CraftWorkbenchModal {
   }
 
   private getAlchemyFurnaceBonuses(): { successRate: number; speedRate: number } {
+    const expectedTag = this.activeMode === 'forging' ? 'forging_tool' : 'alchemy_furnace';
+    const tags = this.equipment.weapon?.tags ?? [];
+    if (!tags.includes(expectedTag)) {
+      return { successRate: 0, speedRate: 0 };
+    }
     return {
       successRate: Number.isFinite(this.equipment.weapon?.alchemySuccessRate) ? Number(this.equipment.weapon?.alchemySuccessRate) : 0,
       speedRate: Number.isFinite(this.equipment.weapon?.alchemySpeedRate) ? Number(this.equipment.weapon?.alchemySpeedRate) : 0,
@@ -1982,7 +2102,10 @@ export class CraftWorkbenchModal {
 
   private buildAlchemyRecipeMetaText(recipe: AlchemyRecipeCatalogEntry): string {
     const simpleCount = this.getAlchemyRecipePresets(recipe.recipeId).length;
-    return `一炉 ${this.getAlchemyBatchOutputCount(recipe)} 枚 · 基时 ${recipe.baseBrewTicks * this.getAlchemyBatchOutputSize(recipe)} 息 · 简方 ${simpleCount}`;
+    const unit = this.activeMode === 'forging' ? '件' : '枚';
+    const presetLabel = this.activeMode === 'forging' ? '器方' : '简方';
+    const presetText = this.activeMode === 'forging' ? presetLabel : `${presetLabel} ${simpleCount}`;
+    return `一炉 ${this.getAlchemyBatchOutputCount(recipe)} ${unit} · 基时 ${recipe.baseBrewTicks * this.getAlchemyBatchOutputSize(recipe)} 息 · ${presetText}`;
   }
 
   private buildAlchemyMetricSnapshot(
@@ -2125,14 +2248,20 @@ export class CraftWorkbenchModal {
     mode: AlchemyTab,
     state: ReturnType<CraftWorkbenchModal['buildAlchemyConfirmState']>,
   ): string {
+    const isForging = this.activeMode === 'forging';
+    const itemLabel = isForging ? '器物' : '丹药';
+    const recipeLabel = isForging
+      ? (mode === 'full' ? '完整器方' : '简易器方')
+      : (mode === 'full' ? '完整丹方' : '简易丹方');
+    const unit = isForging ? '件' : '枚';
     return `
       <div class="alchemy-confirm-shell">
         <div class="market-trade-dialog-section">
           <div class="market-trade-dialog-field">
-            <span>丹药</span>
+            <span>${itemLabel}</span>
             <div class="market-price-display">
               <strong>${escapeHtml(recipe.outputName)}</strong>
-              <span>${mode === 'full' ? '完整丹方' : '简易丹方'} · 一炉 ${this.getAlchemyBatchOutputCount(recipe)} 枚</span>
+              <span>${recipeLabel} · 一炉 ${this.getAlchemyBatchOutputCount(recipe)} ${unit}</span>
             </div>
           </div>
         </div>
@@ -2176,7 +2305,7 @@ export class CraftWorkbenchModal {
             <strong data-alchemy-confirm-total-ticks="true">${state.totalTicks === null ? '--' : state.totalTicks} 息</strong>
           </div>
         </div>
-        <div class="market-action-hint" data-alchemy-confirm-hint="true">${escapeHtml(`至多 ${String(state.maxQuantity)} 炉，炉产 ${String(this.getAlchemyBatchOutputCount(recipe))} 枚，备炉 ${String(ALCHEMY_PREPARATION_TICKS)} 息。动则断炼。`)}</div>
+        <div class="market-action-hint" data-alchemy-confirm-hint="true">${escapeHtml(`至多 ${String(state.maxQuantity)} 炉，炉产 ${String(this.getAlchemyBatchOutputCount(recipe))} ${unit}，备炉 ${String(ALCHEMY_PREPARATION_TICKS)} 息。动则断炼。`)}</div>
         <div class="craft-start-mode-row">
           <button class="small-btn" data-alchemy-confirm-start-mode="replace" type="button" ${state.startDisabled ? 'disabled' : ''}>开始</button>
           <button class="small-btn ghost" data-alchemy-confirm-start-mode="preserve" type="button" ${state.startDisabled ? 'disabled' : ''}>开始(保留现有队列)</button>
@@ -2261,7 +2390,8 @@ export class CraftWorkbenchModal {
       totalTicksNode.parentElement?.classList.toggle('error', Boolean(state.errorText));
     }
     if (hintNode) {
-      hintNode.textContent = `至多 ${state.maxQuantity} 炉，炉产 ${this.getAlchemyBatchOutputCount(recipe)} 枚，备炉 ${ALCHEMY_PREPARATION_TICKS} 息。动则断炼。`;
+      const unit = this.activeMode === 'forging' ? '件' : '枚';
+      hintNode.textContent = `至多 ${state.maxQuantity} 炉，炉产 ${this.getAlchemyBatchOutputCount(recipe)} ${unit}，备炉 ${ALCHEMY_PREPARATION_TICKS} 息。动则断炼。`;
     }
     if (maxButton) {
       maxButton.dataset.alchemyConfirmQuickQty = String(Math.max(1, state.maxQuantity));
@@ -2300,7 +2430,10 @@ export class CraftWorkbenchModal {
     }
     this.setAlchemySelectedQuantity(latestRecipe, latestRequest.ingredients, latestState.quantity);
     this.confirmStartRequest = null;
-    this.callbacks?.onStartAlchemy(
+    const start = this.activeMode === 'forging'
+      ? this.callbacks?.onStartForging
+      : this.callbacks?.onStartAlchemy;
+    start?.(
       latestRequest.recipeId,
       latestRequest.ingredients.map((entry) => ({ itemId: entry.itemId, count: entry.count })),
       latestState.quantity,
@@ -2312,18 +2445,19 @@ export class CraftWorkbenchModal {
   private syncAlchemyConfirmModal(): void {
     const request = this.confirmStartRequest;
     const recipe = request ? this.alchemyCatalog.find((entry) => entry.recipeId === request.recipeId) ?? null : null;
-    if (!request || !recipe || !detailModalHost.isOpenFor(CraftWorkbenchModal.MODAL_OWNER) || this.activeMode !== 'alchemy') {
+    if (!request || !recipe || !detailModalHost.isOpenFor(CraftWorkbenchModal.MODAL_OWNER) || (this.activeMode !== 'alchemy' && this.activeMode !== 'forging')) {
       this.confirmStartRequest = null;
       confirmModalHost.close(CraftWorkbenchModal.ALCHEMY_CONFIRM_OWNER);
       return;
     }
+    const isForging = this.activeMode === 'forging';
     const state = this.buildAlchemyConfirmState(recipe, request.ingredients);
     confirmModalHost.open({
       ownerId: CraftWorkbenchModal.ALCHEMY_CONFIRM_OWNER,
-      title: '选择炼制数量',
-      subtitle: `${recipe.outputName} · ${request.mode === 'full' ? '完整丹方' : '简易丹方'}`,
+      title: isForging ? '选择炼器数量' : '选择炼制数量',
+      subtitle: `${recipe.outputName} · ${isForging ? (request.mode === 'full' ? '完整器方' : '简易器方') : (request.mode === 'full' ? '完整丹方' : '简易丹方')}`,
       bodyHtml: this.renderAlchemyConfirmBody(recipe, request.mode, state),
-      confirmLabel: '开始炼制',
+      confirmLabel: isForging ? '开始炼器' : '开始炼制',
       confirmDisabled: state.startDisabled,
       onConfirm: () => {
         this.submitAlchemyConfirm('replace');

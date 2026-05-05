@@ -145,6 +145,7 @@ type MainStartupBindingsOptions = {
  */
 
       onRequestAlchemy: (knownCatalogVersion?: number) => void;
+      onRequestForging: (knownCatalogVersion?: number) => void;
       /**
  * onSaveAlchemyPreset：onSave炼丹预设相关字段。
  */
@@ -173,11 +174,15 @@ type MainStartupBindingsOptions = {
  * count：数量或计量字段。
  */
  count: number }>, quantity: number, queueMode?: Parameters<SocketPanelSender['sendStartAlchemy']>[0]['queueMode']) => void;
+      onStartForging: (recipeId: string, ingredients: Array<{
+ itemId: string;
+ count: number }>, quantity: number, queueMode?: Parameters<SocketPanelSender['sendStartForging']>[0]['queueMode']) => void;
  /**
  * onCancelAlchemy：onCancel炼丹相关字段。
  */
 
       onCancelAlchemy: () => void;
+      onCancelForging: () => void;
       /**
  * onStartEnhancement：onStart强化相关字段。
  */
@@ -297,11 +302,14 @@ type MainStartupBindingsOptions = {
     | 'sendRequestNpcShop'
     | 'sendBuyNpcShopItem'
     | 'sendRequestAlchemyPanel'
+    | 'sendRequestForgingPanel'
     | 'sendSaveAlchemyPreset'
     | 'sendDeleteAlchemyPreset'
     | 'sendRequestEnhancementPanel'
     | 'sendStartAlchemy'
+    | 'sendStartForging'
     | 'sendCancelAlchemy'
+    | 'sendCancelForging'
     | 'sendStartEnhancement'
     | 'sendCancelEnhancement'
   >;
@@ -424,11 +432,14 @@ export function bindMainStartup(options: MainStartupBindingsOptions): void {
 
   options.craftWorkbenchModal.setCallbacks({
     onRequestAlchemy: (knownCatalogVersion) => options.panelSender.sendRequestAlchemyPanel(knownCatalogVersion),
+    onRequestForging: (knownCatalogVersion) => options.panelSender.sendRequestForgingPanel(knownCatalogVersion),
     onSaveAlchemyPreset: (payload) => options.panelSender.sendSaveAlchemyPreset(payload),
     onDeleteAlchemyPreset: (presetId) => options.panelSender.sendDeleteAlchemyPreset(presetId),
     onRequestEnhancement: () => options.panelSender.sendRequestEnhancementPanel(),
     onStartAlchemy: (recipeId, ingredients, quantity, queueMode) => options.panelSender.sendStartAlchemy({ recipeId, ingredients, quantity, queueMode }),
+    onStartForging: (recipeId, ingredients, quantity, queueMode) => options.panelSender.sendStartForging({ recipeId, ingredients, quantity, queueMode }),
     onCancelAlchemy: () => options.panelSender.sendCancelAlchemy(),
+    onCancelForging: () => options.panelSender.sendCancelForging(),
     onStartEnhancement: (payload) => options.panelSender.sendStartEnhancement(payload),
     onCancelEnhancement: () => options.panelSender.sendCancelEnhancement(),
   });

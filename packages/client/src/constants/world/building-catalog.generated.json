@@ -1,0 +1,246 @@
+[
+  {
+    "id": "stone_wall",
+    "name": "石墙",
+    "layer": "structure",
+    "allowRotate": true,
+    "footprint": [
+      {
+        "dx": 0,
+        "dy": 0
+      }
+    ],
+    "cost": [
+      {
+        "itemId": "stone",
+        "count": 1
+      }
+    ],
+    "traits": [
+      "structure.wall",
+      "material.stone"
+    ],
+    "elementVector": {
+      "earth": 10
+    }
+  },
+  {
+    "id": "wooden_door",
+    "name": "木门",
+    "layer": "structure",
+    "allowRotate": true,
+    "footprint": [
+      {
+        "dx": 0,
+        "dy": 0
+      }
+    ],
+    "cost": [
+      {
+        "itemId": "wood",
+        "count": 1
+      }
+    ],
+    "traits": [
+      "opening.door"
+    ],
+    "elementVector": {
+      "wood": 4
+    }
+  },
+  {
+    "id": "wooden_window",
+    "name": "木窗",
+    "layer": "structure",
+    "allowRotate": true,
+    "footprint": [
+      {
+        "dx": 0,
+        "dy": 0
+      }
+    ],
+    "cost": [
+      {
+        "itemId": "wood",
+        "count": 1
+      }
+    ],
+    "traits": [
+      "opening.window"
+    ],
+    "elementVector": {
+      "wood": 3
+    }
+  },
+  {
+    "id": "plain_floor",
+    "name": "地板",
+    "layer": "floor",
+    "allowRotate": true,
+    "footprint": [
+      {
+        "dx": 0,
+        "dy": 0
+      }
+    ],
+    "cost": [
+      {
+        "itemId": "wood",
+        "count": 1
+      }
+    ],
+    "traits": [
+      "floor.basic"
+    ],
+    "elementVector": {}
+  },
+  {
+    "id": "meditation_mat",
+    "name": "蒲团",
+    "layer": "furniture",
+    "allowRotate": true,
+    "footprint": [
+      {
+        "dx": 0,
+        "dy": 0
+      }
+    ],
+    "cost": [
+      {
+        "itemId": "cloth",
+        "count": 1
+      }
+    ],
+    "traits": [
+      "facility.meditation",
+      "comfort.seat"
+    ],
+    "elementVector": {
+      "water": 8,
+      "wood": 4
+    }
+  },
+  {
+    "id": "wooden_bed",
+    "name": "木床",
+    "layer": "furniture",
+    "allowRotate": true,
+    "footprint": [
+      {
+        "dx": 0,
+        "dy": 0
+      }
+    ],
+    "cost": [
+      {
+        "itemId": "wood",
+        "count": 2
+      }
+    ],
+    "traits": [
+      "comfort.rest"
+    ],
+    "elementVector": {
+      "wood": 12,
+      "earth": 4
+    }
+  },
+  {
+    "id": "alchemy_furnace",
+    "name": "丹炉",
+    "layer": "facility",
+    "allowRotate": true,
+    "footprint": [
+      {
+        "dx": 0,
+        "dy": 0
+      }
+    ],
+    "cost": [
+      {
+        "itemId": "stone",
+        "count": 2
+      }
+    ],
+    "traits": [
+      "facility.alchemy.heat_source"
+    ],
+    "elementVector": {
+      "fire": 20,
+      "earth": 6
+    }
+  },
+  {
+    "id": "storage_shelf",
+    "name": "储物架",
+    "layer": "furniture",
+    "allowRotate": true,
+    "footprint": [
+      {
+        "dx": 0,
+        "dy": 0
+      }
+    ],
+    "cost": [
+      {
+        "itemId": "wood",
+        "count": 2
+      }
+    ],
+    "traits": [
+      "storage.shelf"
+    ],
+    "elementVector": {
+      "earth": 10,
+      "metal": 5
+    }
+  },
+  {
+    "id": "spirit_screen",
+    "name": "影壁",
+    "layer": "structure",
+    "allowRotate": true,
+    "footprint": [
+      {
+        "dx": 0,
+        "dy": 0
+      }
+    ],
+    "cost": [
+      {
+        "itemId": "stone",
+        "count": 1
+      }
+    ],
+    "traits": [
+      "sha.screen"
+    ],
+    "elementVector": {
+      "earth": 8
+    }
+  },
+  {
+    "id": "covered_corridor",
+    "name": "回廊",
+    "layer": "floor",
+    "allowRotate": true,
+    "footprint": [
+      {
+        "dx": 0,
+        "dy": 0
+      }
+    ],
+    "cost": [
+      {
+        "itemId": "wood",
+        "count": 1
+      }
+    ],
+    "traits": [
+      "semi_outdoor.corridor"
+    ],
+    "elementVector": {
+      "wood": 5
+    }
+  }
+]

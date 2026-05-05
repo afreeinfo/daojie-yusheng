@@ -1,0 +1,62 @@
+[
+  {
+    "recipeId": "forging.copper_enhancement_hammer",
+    "outputItemId": "equip.copper_enhancement_hammer",
+    "outputCount": 1,
+    "level": 1,
+    "grade": "yellow",
+    "category": "special",
+    "baseBrewTicks": 10,
+    "ingredients": [
+      { "itemId": "black_iron_chunk", "count": 10, "role": "main" }
+    ]
+  },
+  {
+    "recipeId": "forging.copper_pill_furnace",
+    "outputItemId": "equip.copper_pill_furnace",
+    "outputCount": 1,
+    "level": 1,
+    "grade": "yellow",
+    "category": "special",
+    "baseBrewTicks": 10,
+    "ingredients": [
+      { "itemId": "black_iron_chunk", "count": 10, "role": "main" }
+    ]
+  },
+  {
+    "recipeId": "forging.copper_forging_tool",
+    "outputItemId": "equip.copper_forging_tool",
+    "outputCount": 1,
+    "level": 1,
+    "grade": "yellow",
+    "category": "special",
+    "baseBrewTicks": 10,
+    "ingredients": [
+      { "itemId": "black_iron_chunk", "count": 10, "role": "main" }
+    ]
+  },
+  {
+    "recipeId": "forging.copper_building_hammer",
+    "outputItemId": "equip.copper_building_hammer",
+    "outputCount": 1,
+    "level": 1,
+    "grade": "yellow",
+    "category": "special",
+    "baseBrewTicks": 10,
+    "ingredients": [
+      { "itemId": "black_iron_chunk", "count": 10, "role": "main" }
+    ]
+  },
+  {
+    "recipeId": "forging.copper_array_plate",
+    "outputItemId": "equip.copper_array_plate",
+    "outputCount": 1,
+    "level": 1,
+    "grade": "yellow",
+    "category": "special",
+    "baseBrewTicks": 10,
+    "ingredients": [
+      { "itemId": "black_iron_chunk", "count": 10, "role": "main" }
+    ]
+  }
+]

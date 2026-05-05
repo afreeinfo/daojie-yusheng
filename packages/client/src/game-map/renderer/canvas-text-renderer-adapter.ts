@@ -73,6 +73,8 @@ export class CanvasTextRendererAdapter {
     this.renderer.setTargetingOverlay(scene.overlays.targeting);
     this.renderer.setFormationRangeOverlay(scene.overlays.formationRange);
     this.renderer.setSenseQiOverlay(scene.overlays.senseQi);
+    this.renderer.setBuildPreviewOverlay(scene.overlays.buildPreview);
+    this.renderer.setFengShuiOverlay(scene.overlays.fengShui);
     this.renderer.setGroundPiles(scene.groundPiles);
     const settleEntityId = transition?.settleMotion === true ? scene.player?.id : undefined;
     this.renderer.updateEntities(
@@ -123,6 +125,8 @@ export class CanvasTextRendererAdapter {
     this.renderer.setTargetingOverlay(null);
     this.renderer.setFormationRangeOverlay(null);
     this.renderer.setSenseQiOverlay(null);
+    this.renderer.setBuildPreviewOverlay(null);
+    this.renderer.setFengShuiOverlay(null);
   }  
   /**
  * render：执行render相关逻辑。

@@ -10,7 +10,7 @@ import {
   isTileTypeWalkable,
 } from '@mud/shared';
 import type { GameTimeState, MapTimeConfig, TimePaletteEntry, TimePhaseId } from '@mud/shared';
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { getTileIndex, MapTemplateRepository } from '../../runtime/map/map-template.repository';
 import { RuntimeMapConfigService } from '../../runtime/map/runtime-map-config.service';
 import { PlayerRuntimeService } from '../../runtime/player/player-runtime.service';
@@ -235,6 +235,15 @@ interface InternalRuntimeInstanceLike {
   getTileAura(x: number, y: number): number | undefined;
   listTileResources?(x: number, y: number): Array<{ resourceKey: string; value: number; sourceValue?: number }> | undefined;
   listMonsters(): RuntimeMonsterLike[];
+  listBuildingSummaries?(): unknown[];
+  listRoomSummaries?(): unknown[];
+  fengShuiByRoomId?: Map<string, unknown>;
+  rebuildBuildingRoomFengShuiState?(): { roomCount: number; fengShuiCount: number };
+  repairBuildingRoomFengShuiState?(): unknown;
+  getBuildingRoomFengShuiAt?(x: unknown, y: unknown): unknown;
+  lastBuildingRoomRebuildStats?: unknown;
+  buildingRoomDeferredStartCells?: unknown[];
+  getPersistenceRevision?(): number;
 }
 /**
  * StaticMapEntityLike：定义接口结构约束，明确可交付字段含义。
@@ -576,6 +585,105 @@ export class NativeGmMapRuntimeQueryService {
 
     this.mapTemplateRepository.getOrThrow(mapId);
     return this.getInstanceRuntime(buildPublicInstanceId(mapId), x, y, w, h);
+  }
+
+  getInstanceBuildingState(instanceId: string) {
+    const runtimeInstance = this.worldRuntimeService.getInstance(instanceId);
+    if (!runtimeInstance) {
+      throw new NotFoundException(`目标实例不存在：${instanceId}`);
+    }
+    const internalInstance = this.worldRuntimeService.getInstanceRuntime?.(instanceId)
+      ?? this.worldRuntimeService.instances?.get(instanceId)
+      ?? null;
+    if (!internalInstance) {
+      throw new NotFoundException(`目标实例运行态不存在：${instanceId}`);
+    }
+    const buildings = typeof internalInstance.listBuildingSummaries === 'function'
+      ? internalInstance.listBuildingSummaries()
+      : [];
+    const rooms = typeof internalInstance.listRoomSummaries === 'function'
+      ? internalInstance.listRoomSummaries()
+      : [];
+    const fengShui = internalInstance.fengShuiByRoomId instanceof Map
+      ? Array.from(internalInstance.fengShuiByRoomId.values())
+      : [];
+    return {
+      instanceId,
+      revision: typeof internalInstance.getPersistenceRevision === 'function' ? internalInstance.getPersistenceRevision() : 0,
+      stats: {
+        buildingCount: buildings.length,
+        roomCount: rooms.length,
+        fengShuiCount: fengShui.length,
+        deferredCount: Array.isArray(internalInstance.buildingRoomDeferredStartCells)
+          ? internalInstance.buildingRoomDeferredStartCells.length
+          : 0,
+      },
+      rebuildStats: internalInstance.lastBuildingRoomRebuildStats ?? null,
+      buildings,
+      rooms,
+      fengShui,
+    };
+  }
+
+  recalculateInstanceBuildingState(instanceId: string) {
+    const runtimeInstance = this.worldRuntimeService.getInstance(instanceId);
+    if (!runtimeInstance) {
+      throw new NotFoundException(`目标实例不存在：${instanceId}`);
+    }
+    const internalInstance = this.worldRuntimeService.getInstanceRuntime?.(instanceId)
+      ?? this.worldRuntimeService.instances?.get(instanceId)
+      ?? null;
+    if (!internalInstance || typeof internalInstance.rebuildBuildingRoomFengShuiState !== 'function') {
+      throw new NotFoundException(`目标实例不支持建筑房间重算：${instanceId}`);
+    }
+    const result = internalInstance.rebuildBuildingRoomFengShuiState();
+    return {
+      instanceId,
+      ok: true,
+      result,
+      revision: typeof internalInstance.getPersistenceRevision === 'function' ? internalInstance.getPersistenceRevision() : 0,
+    };
+  }
+
+  getInstanceBuildingCellState(instanceId: string, xInput: unknown, yInput: unknown) {
+    const x = Math.trunc(Number(xInput));
+    const y = Math.trunc(Number(yInput));
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      throw new BadRequestException('x/y 必须是有效坐标');
+    }
+    const runtimeInstance = this.worldRuntimeService.getInstance(instanceId);
+    if (!runtimeInstance) {
+      throw new NotFoundException(`目标实例不存在：${instanceId}`);
+    }
+    const internalInstance = this.worldRuntimeService.getInstanceRuntime?.(instanceId)
+      ?? this.worldRuntimeService.instances?.get(instanceId)
+      ?? null;
+    if (!internalInstance || typeof internalInstance.getBuildingRoomFengShuiAt !== 'function') {
+      throw new NotFoundException(`目标实例不支持建筑房间 cell 查询：${instanceId}`);
+    }
+    return {
+      instanceId,
+      cell: internalInstance.getBuildingRoomFengShuiAt(x, y),
+    };
+  }
+
+  repairInstanceBuildingState(instanceId: string) {
+    const runtimeInstance = this.worldRuntimeService.getInstance(instanceId);
+    if (!runtimeInstance) {
+      throw new NotFoundException(`目标实例不存在：${instanceId}`);
+    }
+    const internalInstance = this.worldRuntimeService.getInstanceRuntime?.(instanceId)
+      ?? this.worldRuntimeService.instances?.get(instanceId)
+      ?? null;
+    if (!internalInstance || typeof internalInstance.repairBuildingRoomFengShuiState !== 'function') {
+      throw new NotFoundException(`目标实例不支持建筑房间修复：${instanceId}`);
+    }
+    return {
+      instanceId,
+      ok: true,
+      result: internalInstance.repairBuildingRoomFengShuiState(),
+      revision: typeof internalInstance.getPersistenceRevision === 'function' ? internalInstance.getPersistenceRevision() : 0,
+    };
   }
 
   /**

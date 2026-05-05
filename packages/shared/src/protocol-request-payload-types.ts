@@ -91,6 +91,12 @@ import type {
   FormationCreatePayload,
   FormationRefillPayload,
 } from './formation-types';
+import type {
+  BuildDeconstructIntentView,
+  BuildPlaceIntentView,
+  FengShuiObserveRequestView,
+  RoomSetRoleRequestView,
+} from './fengshui-types';
 
 /** 握手就绪声明：当前仅允许已登录主线会话进入引导链路。 */
 export interface C2S_Hello extends HelloRequestView {}
@@ -232,6 +238,14 @@ export interface C2S_SetFormationActive extends FormationControlPayload {
 }
 /** 补充阵法灵力。 */
 export interface C2S_RefillFormation extends FormationRefillPayload {}
+/** 建筑放置意图：服务端裁定权限、材料和占位。 */
+export interface C2S_BuildPlaceIntent extends BuildPlaceIntentView {}
+/** 建筑拆除意图：服务端裁定返还、审计和重算。 */
+export interface C2S_BuildDeconstruct extends BuildDeconstructIntentView {}
+/** 设置房间用途：低频房间规则变更。 */
+export interface C2S_RoomSetRole extends RoomSetRoleRequestView {}
+/** 请求风水详情或 overlay：只在玩家打开风水视图时使用。 */
+export interface C2S_FengShuiObserve extends FengShuiObserveRequestView {}
 /** 丢弃背包物品。 */
 export interface C2S_DropItem extends DropItemView {}
 /** 彻底摧毁背包物品。 */

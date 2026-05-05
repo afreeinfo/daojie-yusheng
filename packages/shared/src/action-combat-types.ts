@@ -5,7 +5,7 @@ import type { GridPoint } from './targeting';
  */
 
 /** 行动类型。 */
-export type ActionType = 'skill' | 'gather' | 'interact' | 'quest' | 'toggle' | 'battle' | 'travel' | 'breakthrough';
+export type ActionType = 'skill' | 'gather' | 'craft' | 'interact' | 'quest' | 'toggle' | 'battle' | 'travel' | 'breakthrough';
 
 /** 行动定义。 */
 export interface ActionDef {

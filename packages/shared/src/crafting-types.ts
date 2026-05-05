@@ -175,7 +175,7 @@ export interface PlayerAlchemyJob {
  * jobType：任务类型。
  */
 
-  jobType?: 'alchemy';
+  jobType?: 'alchemy' | 'forging';
   /**
  * jobVersion：活跃任务版本。
  */

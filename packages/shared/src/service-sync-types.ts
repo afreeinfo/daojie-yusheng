@@ -329,6 +329,11 @@ export interface NpcShopSyncView {
 /** 炼制面板同步视图。 */
 export interface AlchemyPanelSyncView {
 /**
+ * kind：制造面板类型；默认炼丹，forging 表示炼器同构面板。
+ */
+
+  kind?: 'alchemy' | 'forging';
+/**
  * state：状态状态或数据块。
  */
 

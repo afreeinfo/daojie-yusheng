@@ -56,7 +56,6 @@ let CraftPanelEnhancementQueryService = class CraftPanelEnhancementQueryService 
         const state = this.buildEnhancementPanelState(player, enhancementConfigs);
         return {
             state,
-            error: state ? undefined : '尚未装备强化锤。',
         };
     }    
     /**
@@ -71,9 +70,6 @@ let CraftPanelEnhancementQueryService = class CraftPanelEnhancementQueryService 
 
         const hammer = getWeapon(player);
         const hammerItemId = hammer?.tags?.includes(ENHANCEMENT_HAMMER_TAG) ? hammer.itemId : undefined;
-        if (!hammerItemId && !player.enhancementJob) {
-            return null;
-        }
         return {
             hammerItemId,
             enhancementSkillLevel: Math.max(1, Math.floor(Number(player.enhancementSkill?.level ?? player.enhancementSkillLevel) || 1)),

@@ -872,7 +872,7 @@ export class ActionPanel {
       types: string[];
     }> = [
       { id: 'dialogue', label: '交互', types: ['quest', 'interact', 'travel'] },
-      { id: 'skill', label: '技能', types: ['skill', 'battle', 'gather'] },
+      { id: 'skill', label: '技能', types: ['skill', 'battle', 'gather', 'craft'] },
       { id: 'toggle', label: '开关', types: ['toggle'] },
       { id: 'utility', label: '行动', types: ['toggle'] },
     ];
@@ -1732,7 +1732,7 @@ export class ActionPanel {
     const affinityChip = skillContext ? this.renderActionSkillAffinityChip(skillContext.skill) : '';
     const executeLabel = action.id === 'sect:manage' ? '打开' : '执行';
 
-    return `<div class="action-item ${onCd ? 'cooldown' : ''} ${isAutoBattleSkill ? 'action-item-draggable' : ''}" data-action-row="${action.id}"${rowAttrs}>
+    return `<div class="action-item ${onCd ? 'cooldown' : ''} ${isAutoBattleSkill ? 'action-item-draggable' : ''}" data-action-row="${action.id}" data-action-card="${action.id}" role="button" tabindex="0"${rowAttrs}>
       <div class="action-copy ${skillContext ? 'action-copy-tooltip' : ''} ${affinityChip ? 'action-copy--with-affinity' : ''}"${tooltipAttrs}>
         <div>
           <span class="action-name">${escapeHtml(action.name)}</span>
@@ -2073,16 +2073,22 @@ export class ActionPanel {
 
   /** 点击卡片本体时直接触发动作。 */
   private bindActionCardEvents(root: HTMLElement, signal: AbortSignal): void {
-    root.querySelectorAll<HTMLElement>('[data-action-card]').forEach((button) => {
-      button.addEventListener('click', () => {
-        if (button.dataset.bindAction) return;
-        const actionId = button.dataset.actionCard;
+    root.querySelectorAll<HTMLElement>('[data-action-card]').forEach((card) => {
+      card.addEventListener('click', (event) => {
+        const target = event.target;
+        if (target instanceof HTMLElement && target.closest('button, a, input, select, textarea')) {
+          return;
+        }
+        const actionId = card.dataset.actionCard;
         if (!actionId) return;
         if (actionId === 'sect:manage') {
           this.openSectManagementModal();
           return;
         }
         const action = this.currentActions.find((entry) => entry.id === actionId);
+        if (action && action.cooldownLeft > 0) {
+          return;
+        }
         this.onAction?.(actionId, action?.requiresTarget, action?.targetMode, action?.range, action?.name ?? actionId);
       }, { signal });
     });
@@ -2091,7 +2097,9 @@ export class ActionPanel {
   /** 绑定执行按钮，读取 data-* 参数后交给外部回调。 */
   private bindActionExecEvents(root: HTMLElement, signal: AbortSignal): void {
     root.querySelectorAll<HTMLElement>('[data-action]').forEach((button) => {
-      button.addEventListener('click', () => {
+      button.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
         const actionId = button.dataset.action!;
         if (actionId === 'sect:manage') {
           this.openSectManagementModal();

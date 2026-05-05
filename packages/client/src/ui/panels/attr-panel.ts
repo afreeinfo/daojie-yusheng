@@ -61,6 +61,7 @@ import {
 
 type AttrPanelCallbacks = {
   onRequestDetail?: () => void;
+  onOpenCraftSkill?: (key: string) => void;
 };
 
 type DisplayQiDescriptor = {
@@ -840,6 +841,11 @@ interface AttrCraftSkillSnapshot {
  */
 
   tooltipDetail: string;
+  /**
+ * openable：是否可点击打开对应技艺 UI。
+ */
+
+  openable: boolean;
 }
 
 /** 生活技能页的渲染快照，按技能列表展示。 */
@@ -1594,6 +1600,7 @@ export class AttrPanel {
         `经验：${progress}`,
         `距下一级还需 ${formatDisplayInteger(remain)}`,
       ].join('\n'),
+      openable: key !== 'gather',
     };
   }  
   /**
@@ -1615,6 +1622,8 @@ export class AttrPanel {
     const skills = [
       this.buildCraftSkillSnapshot('alchemy', '炼丹', alchemySkill),
       this.buildCraftSkillSnapshot('gather', '采集', gatherSkill),
+      this.buildCraftSkillSnapshot('forging', '炼器', { level: 1, exp: 0, expToNext: 60 }),
+      this.buildCraftSkillSnapshot('building', '营造', { level: 1, exp: 0, expToNext: 60 }),
       this.buildCraftSkillSnapshot('enhancement', '强化', enhancementSkill),
     ].filter((entry): entry is AttrCraftSkillSnapshot => Boolean(entry));
     if (skills.length === 0) {
@@ -1675,7 +1684,7 @@ export class AttrPanel {
     if (snapshot.kind === 'craft') {
       return `<div class="attr-craft-list" data-pane-kind="craft">
         ${snapshot.skills.map((skill) => `
-          <section class="attr-craft-row" data-craft-skill="${escapeHtml(skill.key)}" data-tooltip-title="${escapeHtml(skill.tooltipTitle)}" data-tooltip-detail="${escapeHtml(skill.tooltipDetail)}">
+          <section class="attr-craft-row" data-craft-skill="${escapeHtml(skill.key)}"${skill.openable ? ` data-craft-open="${escapeHtml(skill.key)}" role="button" tabindex="0"` : ''} data-tooltip-title="${escapeHtml(skill.tooltipTitle)}" data-tooltip-detail="${escapeHtml(skill.tooltipDetail)}">
             ${renderCraftAtlasIcon(skill.key)}
             <span class="attr-craft-label" data-craft-label="true">${escapeHtml(skill.label)}</span>
             <strong class="attr-craft-level" data-craft-level="true">${escapeHtml(skill.level)}</strong>
@@ -1847,6 +1856,15 @@ export class AttrPanel {
         }
         skillNode.setAttribute('data-tooltip-title', skill.tooltipTitle);
         skillNode.setAttribute('data-tooltip-detail', skill.tooltipDetail);
+        if (skill.openable) {
+          skillNode.setAttribute('data-craft-open', skill.key);
+          skillNode.setAttribute('role', 'button');
+          skillNode.setAttribute('tabindex', '0');
+        } else {
+          skillNode.removeAttribute('data-craft-open');
+          skillNode.removeAttribute('role');
+          skillNode.removeAttribute('tabindex');
+        }
         labelNode.textContent = skill.label;
         levelNode.textContent = skill.level;
         progressNode.textContent = skill.progress;
@@ -1990,6 +2008,18 @@ export class AttrPanel {
       if (!(target instanceof HTMLElement)) {
         return;
       }
+      const craftSkillRow = target.closest<HTMLElement>('[data-craft-open]');
+      if (craftSkillRow) {
+        const key = craftSkillRow.dataset.craftOpen;
+        if (key) {
+          this.tooltipTarget = null;
+          this.tooltip.hide(true);
+          this.callbacks?.onOpenCraftSkill?.(key);
+          event.preventDefault();
+          event.stopPropagation();
+        }
+        return;
+      }
       const button = target.closest<HTMLElement>('[data-attr-tab]');
       if (!button) {
         return;
@@ -2005,6 +2035,25 @@ export class AttrPanel {
       if (this.lastSnapshot && !this.patchPane(tab, this.lastSnapshot.panes[tab])) {
         this.render(this.lastSnapshot);
       }
+    });
+    this.pane.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') {
+        return;
+      }
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+      const craftSkillRow = target.closest<HTMLElement>('[data-craft-open]');
+      const key = craftSkillRow?.dataset.craftOpen;
+      if (!key) {
+        return;
+      }
+      this.tooltipTarget = null;
+      this.tooltip.hide(true);
+      this.callbacks?.onOpenCraftSkill?.(key);
+      event.preventDefault();
+      event.stopPropagation();
     });
   }
 
@@ -2293,6 +2342,9 @@ export class AttrPanel {
       }
       const target = event.target;
       if (!(target instanceof Element)) {
+        return;
+      }
+      if (target.closest('[data-craft-open]')) {
         return;
       }
       const tooltipNode = target.closest<HTMLElement>('[data-tooltip-title]');

@@ -8,6 +8,10 @@ const shared_1 = require("@mud/shared");
 const env_alias_1 = require("../../config/env-alias");
 const map_template_repository_1 = require("../map/map-template.repository");
 const runtime_tile_plane_1 = require("../map/runtime-tile-plane");
+const building_topology_index_service_1 = require("../building/building-topology-index.service");
+const room_detection_service_1 = require("../building/room-detection.service");
+const fengshui_calculator_service_1 = require("../building/fengshui-calculator.service");
+const building_default_content_1 = require("../building/building-default-content");
 
 const DEFAULT_TILE_AURA_RESOURCE_KEY = (0, shared_1.buildQiResourceKey)(shared_1.DEFAULT_QI_RESOURCE_DESCRIPTOR);
 
@@ -346,6 +350,45 @@ class MapInstanceRuntime {
     compositeSightResolver = null;    
     /** runtimePortals：运行时动态传送点，例如宗门入口。 */
     runtimePortals = [];
+    /** buildingCatalog：动态建筑/家具编译配置，只在低频建造链路读取。 */
+    buildingCatalog = null;
+    /** fengShuiRules：已编译风水规则表。 */
+    fengShuiRules = [];
+    /** buildingById：实例内长期建筑对象。 */
+    buildingById = new Map();
+    /** buildingCellsById：建筑 footprint 对应 cell 索引。 */
+    buildingCellsById = new Map();
+    /** buildingPreviousTileTypeById：建筑投影前地块类型，用于拆除恢复。 */
+    buildingPreviousTileTypeById = new Map();
+    /** buildingIdByCell：cell 上的建筑 ID 集合，低频查询用。 */
+    buildingIdByCell = new Map();
+    /** buildingTopologyIndex：cell 拓扑能力索引。 */
+    buildingTopologyIndex = null;
+    /** roomsById：当前房间派生快照。 */
+    roomsById = new Map();
+    /** roomIdByCell：cell -> room handle。 */
+    roomIdByCell = new Int32Array(1);
+    /** roomIdsByHandle：room handle -> roomId。 */
+    roomIdsByHandle = [];
+    /** roomCellIndicesById：roomId -> cell index 列表，用于单房间风水重算避免扫全图。 */
+    roomCellIndicesById = new Map();
+    /** roomAggregatesById：房间聚合快照。 */
+    roomAggregatesById = new Map();
+    /** fengShuiByRoomId：房间风水派生快照。 */
+    fengShuiByRoomId = new Map();
+    /** buildingRoomDeferredStartCells：超预算房间识别延迟队列起点。 */
+    buildingRoomDeferredStartCells = [];
+    /** lastBuildingRoomRebuildStats：最近一次建筑/房间/风水重算指标。 */
+    lastBuildingRoomRebuildStats = {
+        reason: 'init',
+        fullTopologyRebuild: false,
+        dirtyCellCount: 0,
+        roomCount: 0,
+        fengShuiCount: 0,
+        deferredCount: 0,
+        durationMs: 0,
+        updatedAtTick: 0,
+    };
     /**
  * 构造器：初始化 当前 实例并建立基础状态。
  * @param request 请求参数。
@@ -389,6 +432,11 @@ class MapInstanceRuntime {
         this.tilePlane = runtime_tile_plane_1.RuntimeTilePlane.fromTemplate(request.template);
         const initialCellCapacity = this.tilePlane.getCellCapacity();
         this.occupancy = new Uint32Array(initialCellCapacity);
+        this.buildingTopologyIndex = new building_topology_index_service_1.BuildingTopologyIndex(initialCellCapacity);
+        this.roomIdByCell = new Int32Array(initialCellCapacity);
+        const defaultBuildingRuntime = (0, building_default_content_1.getDefaultBuildingRuntime)();
+        this.buildingCatalog = defaultBuildingRuntime.catalog;
+        this.fengShuiRules = defaultBuildingRuntime.rules;
         this.auraByTile = new Int32Array(initialCellCapacity);
         this.auraByTile.set(request.template.baseAuraByTile);
         this.tileResourceBuckets.set(DEFAULT_TILE_AURA_RESOURCE_KEY, this.auraByTile);
@@ -515,6 +563,7 @@ class MapInstanceRuntime {
             }
         }
         this.initializeMonsterSpawnAccelerationStates();
+        this.rebuildBuildingRoomFengShuiState({ reason: 'instance_init_static_room_scan' });
     }
     /** playerCount：当前实例中的在线玩家数量。 */
     get playerCount() {
@@ -777,6 +826,10 @@ class MapInstanceRuntime {
         this.worldRevision += 1;
         this.persistentRevision += 1;
         this.markPersistenceDirtyDomains(['tile_cell']);
+        if (this.shouldRecalculateRoomsForTileMutation(tileIndex, shared_1.TileType.Floor, tileType)) {
+            this.recalculateRoomsAndFengShuiAfterTopologyChange({ reason: 'runtime_tile_activated', dirtyCellCount: 1 });
+            this.markPersistenceDirtyDomains(['room', 'fengshui']);
+        }
         return { created: true, tileIndex };
     }
     /** forEachRuntimeTile：遍历当前运行时真实存在的地块坐标。 */
@@ -788,6 +841,795 @@ class MapInstanceRuntime {
         for (let tileIndex = 0; tileIndex < count; tileIndex += 1) {
             visitor(this.tilePlane.getX(tileIndex), this.tilePlane.getY(tileIndex), tileIndex);
         }
+    }
+    /** configureBuildingRuntime：挂载建筑/风水编译配置并重建派生索引。 */
+    configureBuildingRuntime(catalog, fengShuiRules = []) {
+        this.buildingCatalog = catalog ?? null;
+        this.fengShuiRules = Array.isArray(fengShuiRules) ? fengShuiRules : [];
+        this.rebuildBuildingRoomFengShuiState({ reason: 'configure' });
+    }
+    /** placeBuildingInstance：服务端权威放置建筑，调用方负责玩家权限和材料事务。 */
+    placeBuildingInstance(input) {
+        const catalog = this.buildingCatalog;
+        if (!catalog?.defById) {
+            return { ok: false, reason: 'building_catalog_missing' };
+        }
+        const defId = typeof input?.defId === 'string' ? input.defId.trim() : '';
+        const compiled = catalog.defById.get(defId);
+        if (!compiled) {
+            return { ok: false, reason: 'building_def_not_found' };
+        }
+        const x = Math.trunc(Number(input?.x));
+        const y = Math.trunc(Number(input?.y));
+        if (!Number.isFinite(x) || !Number.isFinite(y)) {
+            return { ok: false, reason: 'invalid_coordinate' };
+        }
+        const rotation = normalizeBuildingRotation(input?.rotation);
+        const footprint = compiled.footprintByRotation[rotationToIndex(rotation)] ?? compiled.footprintByRotation[0];
+        const cells = [];
+        for (let index = 0; index < footprint.length; index += 2) {
+            const cellX = x + footprint[index];
+            const cellY = y + footprint[index + 1];
+            const cellIndex = this.toTileIndex(cellX, cellY);
+            if (cellIndex < 0) {
+                return { ok: false, reason: 'out_of_bounds', x: cellX, y: cellY };
+            }
+            if (this.occupancy[cellIndex] !== INVALID_OCCUPANCY && input?.ignoreOccupancy !== true) {
+                return { ok: false, reason: 'occupied', x: cellX, y: cellY };
+            }
+            if (compiled.layerId === 1 && this.buildingTopologyIndex?.structureHandleByCell?.[cellIndex] > 0) {
+                return { ok: false, reason: 'structure_overlap', x: cellX, y: cellY };
+            }
+            cells.push(cellIndex);
+        }
+        const buildingId = normalizeBuildingId(input?.buildingId)
+            || normalizeBuildingId(input?.requestId)
+            || `building:${this.meta.instanceId}:${this.tick}:${this.buildingById.size + 1}`;
+        if (this.buildingById.has(buildingId)) {
+            return { ok: true, duplicate: true, building: this.buildingById.get(buildingId) };
+        }
+        const previousTileTypes = [];
+        const wasInRoomInfluence = cells.some((cellIndex) => this.isCellInRoomInfluence(cellIndex));
+        if (compiled.visualTileType) {
+            for (const cellIndex of cells) {
+                previousTileTypes.push([cellIndex, this.tilePlane.getTileType(cellIndex)]);
+                this.tilePlane.setTileType(cellIndex, compiled.visualTileType);
+            }
+        }
+        const building = {
+            id: buildingId,
+            defId: compiled.id,
+            defHandle: compiled.handle,
+            instanceId: this.meta.instanceId,
+            x,
+            y,
+            rotation,
+            ownerPlayerId: typeof input?.ownerPlayerId === 'string' && input.ownerPlayerId.trim() ? input.ownerPlayerId.trim() : null,
+            ownerSectId: typeof input?.ownerSectId === 'string' && input.ownerSectId.trim() ? input.ownerSectId.trim() : null,
+            roomId: null,
+            hp: compiled.maxHp,
+            maxHp: compiled.maxHp,
+            state: input?.state ?? 'active',
+            createdAtTick: this.tick,
+            updatedAtTick: this.tick,
+            revision: 1,
+        };
+        this.buildingById.set(building.id, building);
+        this.buildingCellsById.set(building.id, cells);
+        if (previousTileTypes.length > 0) {
+            this.buildingPreviousTileTypeById.set(building.id, previousTileTypes);
+        }
+        this.applyBuildingTopologyForBuilding(building.id);
+        const affectsBoundaryTopology = compiledBuildingAffectsRoomBoundaryTopology(compiled);
+        const affectsRoofTopology = compiled.roofCoverage > 0;
+        const shouldRecalculateRooms = affectsBoundaryTopology
+            ? cells.some((cellIndex) => this.shouldRecalculateRoomsForTileMutation(cellIndex, this.tilePlane.getTileType(cellIndex), compiled.visualTileType ?? this.getEffectiveTileTypeByCellIndex(cellIndex)))
+            : affectsRoofTopology && wasInRoomInfluence;
+        if (shouldRecalculateRooms) {
+            this.recalculateRoomsAndFengShuiAfterTopologyChange({ reason: 'place', dirtyCellCount: cells.length });
+        }
+        else if (compiledBuildingAffectsFengShui(compiled) || affectsRoofTopology) {
+            for (const cellIndex of cells) {
+                this.recalculateFengShuiAfterRoomInfluenceChange(cellIndex, 'building_place_fengshui');
+            }
+        }
+        this.worldRevision += 1;
+        this.persistentRevision += 1;
+        this.markPersistenceDirtyDomains([
+            'building',
+            ...(shouldRecalculateRooms ? ['room', 'fengshui'] : []),
+            ...(!shouldRecalculateRooms && (compiledBuildingAffectsFengShui(compiled) || affectsRoofTopology) && wasInRoomInfluence ? ['fengshui'] : []),
+            ...(previousTileTypes.length > 0 ? ['tile_cell'] : []),
+        ]);
+        return { ok: true, building };
+    }
+    /** deconstructBuildingInstance：服务端权威拆除建筑，调用方负责返还和审计。 */
+    deconstructBuildingInstance(buildingIdInput) {
+        const buildingId = normalizeBuildingId(buildingIdInput);
+        if (!buildingId || !this.buildingById.has(buildingId)) {
+            return { ok: false, reason: 'building_not_found' };
+        }
+        const building = this.buildingById.get(buildingId);
+        const compiled = building && this.buildingCatalog?.defByHandle
+            ? this.buildingCatalog.defByHandle[building.defHandle] ?? this.buildingCatalog.defById?.get?.(building.defId)
+            : null;
+        const changedCells = (this.buildingCellsById.get(buildingId) ?? []).slice();
+        const wasInRoomInfluence = changedCells.some((cellIndex) => this.isCellInRoomInfluence(cellIndex));
+        const previousTileTypes = this.buildingPreviousTileTypeById.get(buildingId) ?? [];
+        for (const [cellIndex, tileType] of previousTileTypes) {
+            if (cellIndex >= 0 && cellIndex < this.tilePlane.getCellCount()) {
+                this.tilePlane.setTileType(cellIndex, tileType);
+            }
+        }
+        this.buildingPreviousTileTypeById.delete(buildingId);
+        this.buildingById.delete(buildingId);
+        this.buildingCellsById.delete(buildingId);
+        this.rebuildBuildingTopologyCells(changedCells);
+        const shouldRecalculateRooms = compiled
+            ? compiledBuildingAffectsRoomBoundaryTopology(compiled) || (compiled.roofCoverage > 0 && wasInRoomInfluence)
+            : changedCells.some((cellIndex) => this.shouldRecalculateRoomsForTileMutation(cellIndex));
+        if (shouldRecalculateRooms) {
+            this.recalculateRoomsAndFengShuiAfterTopologyChange({ reason: 'deconstruct', dirtyCellCount: changedCells.length });
+        }
+        else if (compiled && compiledBuildingAffectsFengShui(compiled) && wasInRoomInfluence) {
+            for (const cellIndex of changedCells) {
+                this.recalculateFengShuiAfterRoomInfluenceChange(cellIndex, 'building_deconstruct_fengshui');
+            }
+        }
+        this.worldRevision += 1;
+        this.persistentRevision += 1;
+        this.markPersistenceDirtyDomains([
+            'building',
+            ...(shouldRecalculateRooms ? ['room', 'fengshui'] : []),
+            ...(!shouldRecalculateRooms && compiled && compiledBuildingAffectsFengShui(compiled) && wasInRoomInfluence ? ['fengshui'] : []),
+            ...(previousTileTypes.length > 0 ? ['tile_cell'] : []),
+        ]);
+        return { ok: true, buildingId };
+    }
+    /** rebuildBuildingRoomFengShuiState：重建建筑拓扑、房间和风水派生快照。 */
+    rebuildBuildingRoomFengShuiState(options = {}) {
+        const startedAt = Date.now();
+        const capacity = Math.max(this.tilePlane?.getCellCapacity?.() ?? 1, this.occupancy?.length ?? 1);
+        this.buildingTopologyIndex = new building_topology_index_service_1.BuildingTopologyIndex(capacity);
+        this.buildingIdByCell.clear();
+        const catalog = this.buildingCatalog;
+        if (catalog?.defByHandle) {
+            for (const [buildingId, building] of this.buildingById.entries()) {
+                if (!building || building.state === 'destroyed') {
+                    continue;
+                }
+                const compiled = catalog.defByHandle[building.defHandle] ?? catalog.defById?.get?.(building.defId);
+                const cells = this.buildingCellsById.get(buildingId) ?? [];
+                if (!compiled || cells.length === 0) {
+                    continue;
+                }
+                this.buildingTopologyIndex.applyBuildingToCells(compiled, cells);
+                for (const cellIndex of cells) {
+                    let ids = this.buildingIdByCell.get(cellIndex);
+                    if (!ids) {
+                        ids = [];
+                        this.buildingIdByCell.set(cellIndex, ids);
+                    }
+                    ids.push(buildingId);
+                }
+            }
+        }
+        const result = this.recalculateRoomsAndFengShuiAfterTopologyChange({
+            reason: options?.reason ?? 'full_rebuild',
+            fullTopologyRebuild: true,
+            dirtyCellCount: this.buildingIdByCell.size,
+            startedAt,
+        });
+        return { roomCount: result.roomCount, fengShuiCount: result.fengShuiCount, deferredCount: result.deferredCount };
+    }
+    /** applyBuildingTopologyForBuilding：只把一个建筑投影到拓扑索引，避免每次建造扫描全实例建筑。 */
+    applyBuildingTopologyForBuilding(buildingId) {
+        const building = this.buildingById.get(buildingId);
+        const catalog = this.buildingCatalog;
+        const compiled = building && catalog?.defByHandle
+            ? catalog.defByHandle[building.defHandle] ?? catalog.defById?.get?.(building.defId)
+            : null;
+        const cells = this.buildingCellsById.get(buildingId) ?? [];
+        if (!building || !compiled || cells.length === 0) {
+            return false;
+        }
+        this.buildingTopologyIndex?.applyBuildingToCells(compiled, cells);
+        for (const cellIndex of cells) {
+            let ids = this.buildingIdByCell.get(cellIndex);
+            if (!ids) {
+                ids = [];
+                this.buildingIdByCell.set(cellIndex, ids);
+            }
+            if (!ids.includes(buildingId)) {
+                ids.push(buildingId);
+            }
+        }
+        return true;
+    }
+    /** rebuildBuildingTopologyCells：只重建受影响 cell 的拓扑聚合。 */
+    rebuildBuildingTopologyCells(cellIndices) {
+        const catalog = this.buildingCatalog;
+        if (!this.buildingTopologyIndex || !catalog?.defByHandle) {
+            return { repairedCellCount: 0, orphanReferenceCount: 0 };
+        }
+        let repairedCellCount = 0;
+        let orphanReferenceCount = 0;
+        const uniqueCells = new Set();
+        for (const rawCellIndex of cellIndices ?? []) {
+            const cellIndex = Math.trunc(Number(rawCellIndex));
+            if (Number.isFinite(cellIndex) && cellIndex >= 0) {
+                uniqueCells.add(cellIndex);
+            }
+        }
+        for (const cellIndex of uniqueCells) {
+            this.buildingTopologyIndex.clearCell(cellIndex);
+            const ids = this.buildingIdByCell.get(cellIndex) ?? [];
+            const keptIds = [];
+            for (const buildingId of ids) {
+                const building = this.buildingById.get(buildingId);
+                if (!building || building.state === 'destroyed') {
+                    orphanReferenceCount += 1;
+                    continue;
+                }
+                const compiled = catalog.defByHandle[building.defHandle] ?? catalog.defById?.get?.(building.defId);
+                if (!compiled) {
+                    orphanReferenceCount += 1;
+                    continue;
+                }
+                keptIds.push(buildingId);
+                this.buildingTopologyIndex.applyBuildingToCells(compiled, [cellIndex]);
+            }
+            if (keptIds.length > 0) {
+                this.buildingIdByCell.set(cellIndex, keptIds);
+            }
+            else {
+                this.buildingIdByCell.delete(cellIndex);
+            }
+            repairedCellCount += 1;
+        }
+        return { repairedCellCount, orphanReferenceCount };
+    }
+    /** recalculateRoomsAndFengShuiAfterTopologyChange：基于当前拓扑索引重算房间/风水，不重扫建筑拓扑。 */
+    recalculateRoomsAndFengShuiAfterTopologyChange(options = {}) {
+        const startedAt = Number.isFinite(Number(options?.startedAt)) ? Number(options.startedAt) : Date.now();
+        const catalog = this.buildingCatalog;
+        const provider = (0, room_detection_service_1.createRuntimeTilePlaneRoomCellProvider)(this.tilePlane, this.buildingTopologyIndex, {
+            getEffectiveTileType: (cellIndex) => this.getEffectiveTileTypeByCellIndex(cellIndex),
+            isTopologySuppressed: (cellIndex) => this.tileDamageByTile.get(cellIndex)?.destroyed === true,
+            countEntryTilesAsOpenings: isIndoorSubspaceTemplate(this.template),
+        });
+        const detection = (0, room_detection_service_1.detectRooms)(provider, {
+            instanceId: this.meta.instanceId,
+            topologyRevision: this.persistentRevision,
+            contentRevision: resolveBuildingCatalogRevision(catalog),
+            updatedAtTick: this.tick,
+            maxCellsPerRoom: 512,
+        });
+        this.buildingRoomDeferredStartCells = detection.deferredStartCells.slice();
+        this.roomsById = new Map();
+        this.roomIdsByHandle = [];
+        this.roomIdByCell = detection.roomIdByCell;
+        this.roomCellIndicesById = new Map();
+        for (let index = 0; index < detection.rooms.length; index += 1) {
+            const room = detection.rooms[index];
+            this.roomsById.set(room.id, room);
+            this.roomIdsByHandle[index + 1] = room.id;
+        }
+        this.rebuildRoomCellIndices();
+        this.roomAggregatesById = this.buildRoomAggregates();
+        this.fengShuiByRoomId = new Map();
+        for (const room of this.roomsById.values()) {
+            const aggregate = this.roomAggregatesById.get(room.id);
+            if (!aggregate) {
+                continue;
+            }
+            const snapshot = (0, fengshui_calculator_service_1.calculateFengShuiSnapshot)(room, aggregate, this.fengShuiRules, {
+                instanceId: this.meta.instanceId,
+                updatedAtTick: this.tick,
+                revision: aggregate.aggregateRevision,
+            });
+            this.fengShuiByRoomId.set(room.id, snapshot);
+        }
+        const durationMs = Math.max(0, Date.now() - startedAt);
+        this.lastBuildingRoomRebuildStats = {
+            reason: typeof options?.reason === 'string' && options.reason.trim() ? options.reason.trim() : 'recalculate',
+            fullTopologyRebuild: options?.fullTopologyRebuild === true,
+            dirtyCellCount: Math.max(0, Math.trunc(Number(options?.dirtyCellCount) || 0)),
+            roomCount: this.roomsById.size,
+            fengShuiCount: this.fengShuiByRoomId.size,
+            deferredCount: this.buildingRoomDeferredStartCells.length,
+            durationMs,
+            updatedAtTick: this.tick,
+        };
+        return this.lastBuildingRoomRebuildStats;
+    }
+    /** getEffectiveTileTypeByCellIndex：按 cell 读取当前有效地块，摧毁边界按空地处理。 */
+    getEffectiveTileTypeByCellIndex(cellIndexInput) {
+        const cellIndex = Math.trunc(Number(cellIndexInput));
+        if (!Number.isFinite(cellIndex) || cellIndex < 0) {
+            return shared_1.TileType.Floor;
+        }
+        const temporary = this.temporaryTileByTile.get(cellIndex);
+        if (temporary) {
+            return temporary.tileType;
+        }
+        const current = this.tileDamageByTile.get(cellIndex);
+        if (current?.destroyed === true) {
+            return shared_1.TileType.Floor;
+        }
+        return this.tilePlane.getTileType(cellIndex);
+    }
+    /** isRoomTopologyCell：判断地块类型或动态建筑拓扑是否可能改变房间边界/覆盖。 */
+    isRoomTopologyCell(cellIndexInput, tileTypeInput = null) {
+        const cellIndex = Math.trunc(Number(cellIndexInput));
+        if (!Number.isFinite(cellIndex) || cellIndex < 0) {
+            return false;
+        }
+        if (this.buildingTopologyIndex?.isRoomBoundary?.(cellIndex) === true) {
+            return true;
+        }
+        if ((this.buildingTopologyIndex?.roofCoverageByCell?.[cellIndex] ?? 0) > 0) {
+            return true;
+        }
+        const tileType = typeof tileTypeInput === 'string' && tileTypeInput.length > 0
+            ? tileTypeInput
+            : this.getEffectiveTileTypeByCellIndex(cellIndex);
+        return (0, room_detection_service_1.isRoomTopologyTileType)(tileType);
+    }
+    /** collectRoomInfluenceRoomIdsByCell：返回此 cell 所在房间或相邻边界影响到的房间。 */
+    collectRoomInfluenceRoomIdsByCell(cellIndexInput) {
+        const cellIndex = Math.trunc(Number(cellIndexInput));
+        if (!Number.isFinite(cellIndex) || cellIndex < 0) {
+            return [];
+        }
+        const roomIds = new Set();
+        const direct = this.roomIdsByHandle[this.roomIdByCell?.[cellIndex] ?? 0];
+        if (direct) {
+            roomIds.add(direct);
+        }
+        const x = this.tilePlane.getX(cellIndex);
+        const y = this.tilePlane.getY(cellIndex);
+        const candidates = [
+            this.toTileIndex(x + 1, y),
+            this.toTileIndex(x - 1, y),
+            this.toTileIndex(x, y + 1),
+            this.toTileIndex(x, y - 1),
+        ];
+        for (const candidate of candidates) {
+            if (candidate < 0) {
+                continue;
+            }
+            const nearby = this.roomIdsByHandle[this.roomIdByCell?.[candidate] ?? 0];
+            if (nearby) {
+                roomIds.add(nearby);
+            }
+        }
+        return Array.from(roomIds);
+    }
+    /** isCellInRoomInfluence：判断 cell 是否处于房间内部或边界影响圈。 */
+    isCellInRoomInfluence(cellIndexInput) {
+        return this.collectRoomInfluenceRoomIdsByCell(cellIndexInput).length > 0;
+    }
+    /** shouldRecalculateRoomsForTileMutation：拓扑地块或房间影响圈内变化才触发房间链路。 */
+    shouldRecalculateRoomsForTileMutation(cellIndexInput, previousTileType = null, nextTileType = null) {
+        const cellIndex = Math.trunc(Number(cellIndexInput));
+        if (!Number.isFinite(cellIndex) || cellIndex < 0) {
+            return false;
+        }
+        if (this.isCellInRoomInfluence(cellIndex)) {
+            return true;
+        }
+        return this.isRoomTopologyCell(cellIndex, previousTileType) || this.isRoomTopologyCell(cellIndex, nextTileType);
+    }
+    /** recalculateFengShuiAfterRoomInfluenceChange：房间内物品/资源变化只重算受影响房间风水。 */
+    recalculateFengShuiAfterRoomInfluenceChange(cellIndexInput, reason = 'room_influence_change') {
+        const roomIds = this.collectRoomInfluenceRoomIdsByCell(cellIndexInput);
+        if (roomIds.length === 0) {
+            return false;
+        }
+        const recalculatedAggregates = this.buildRoomAggregates(roomIds);
+        for (const [roomId, aggregate] of recalculatedAggregates.entries()) {
+            this.roomAggregatesById.set(roomId, aggregate);
+        }
+        for (const roomId of roomIds) {
+            const room = this.roomsById.get(roomId);
+            const aggregate = this.roomAggregatesById.get(roomId);
+            if (!room || !aggregate) {
+                continue;
+            }
+            const snapshot = (0, fengshui_calculator_service_1.calculateFengShuiSnapshot)(room, aggregate, this.fengShuiRules, {
+                instanceId: this.meta.instanceId,
+                updatedAtTick: this.tick,
+                revision: aggregate.aggregateRevision,
+            });
+            this.fengShuiByRoomId.set(room.id, snapshot);
+        }
+        this.lastBuildingRoomRebuildStats = {
+            reason: typeof reason === 'string' && reason.trim() ? reason.trim() : 'room_influence_change',
+            fullTopologyRebuild: false,
+            dirtyCellCount: 1,
+            roomCount: this.roomsById.size,
+            fengShuiCount: this.fengShuiByRoomId.size,
+            deferredCount: this.buildingRoomDeferredStartCells.length,
+            durationMs: 0,
+            updatedAtTick: this.tick,
+        };
+        this.markPersistenceDirtyDomains(['fengshui']);
+        return true;
+    }
+    /** repairBuildingRoomFengShuiState：GM/运维入口，重建索引并清理孤儿派生。 */
+    repairBuildingRoomFengShuiState() {
+        const before = {
+            buildingCellRefCount: countBuildingCellReferences(this.buildingIdByCell),
+            roomCount: this.roomsById.size,
+            fengShuiCount: this.fengShuiByRoomId.size,
+        };
+        const result = this.rebuildBuildingRoomFengShuiState({ reason: 'gm_repair' });
+        const orphanFengShuiCount = Array.from(this.fengShuiByRoomId.keys()).filter((roomId) => !this.roomsById.has(roomId)).length;
+        this.markPersistenceDirtyDomains(['room', 'fengshui']);
+        return {
+            ok: true,
+            before,
+            after: {
+                buildingCellRefCount: countBuildingCellReferences(this.buildingIdByCell),
+                roomCount: this.roomsById.size,
+                fengShuiCount: this.fengShuiByRoomId.size,
+                deferredCount: this.buildingRoomDeferredStartCells.length,
+            },
+            orphanFengShuiCount,
+            result,
+        };
+    }
+    /** getBuildingRoomFengShuiAt：GM 诊断指定 cell 的建筑、房间、风水来源。 */
+    getBuildingRoomFengShuiAt(xInput, yInput) {
+        const x = Math.trunc(Number(xInput));
+        const y = Math.trunc(Number(yInput));
+        if (!Number.isFinite(x) || !Number.isFinite(y)) {
+            return null;
+        }
+        const tileIndex = this.toTileIndex(x, y);
+        if (tileIndex < 0) {
+            return null;
+        }
+        const buildingIds = (this.buildingIdByCell.get(tileIndex) ?? []).slice();
+        const roomId = this.roomIdsByHandle[this.roomIdByCell[tileIndex]] ?? null;
+        return {
+            x,
+            y,
+            tileIndex,
+            buildingIds,
+            buildings: buildingIds.map((buildingId) => this.buildingById.get(buildingId)).filter(Boolean).map((building) => ({ ...building })),
+            room: roomId ? this.roomsById.get(roomId) ?? null : null,
+            fengShui: roomId ? this.fengShuiByRoomId.get(roomId) ?? null : null,
+        };
+    }
+    /** rebuildRoomCellIndices：重建 roomId -> cell 列表索引，供单房间风水重算复用。 */
+    rebuildRoomCellIndices() {
+        this.roomCellIndicesById = new Map();
+        for (let cellIndex = 0; cellIndex < this.roomIdByCell.length; cellIndex += 1) {
+            const roomId = this.roomIdsByHandle[this.roomIdByCell[cellIndex]];
+            if (!roomId) {
+                continue;
+            }
+            let cells = this.roomCellIndicesById.get(roomId);
+            if (!cells) {
+                cells = [];
+                this.roomCellIndicesById.set(roomId, cells);
+            }
+            cells.push(cellIndex);
+        }
+        return this.roomCellIndicesById;
+    }
+    /** buildRoomAggregates：按当前房间 cell 索引聚合风水计算输入。 */
+    buildRoomAggregates(roomIdsInput = null) {
+        const selectedRoomIds = Array.isArray(roomIdsInput)
+            ? new Set(roomIdsInput.filter((roomId) => typeof roomId === 'string' && roomId.length > 0))
+            : null;
+        const aggregates = new Map();
+        for (const room of this.roomsById.values()) {
+            if (selectedRoomIds && !selectedRoomIds.has(room.id)) {
+                continue;
+            }
+            aggregates.set(room.id, createRoomAggregate(room));
+        }
+        if (!(this.roomCellIndicesById instanceof Map) || this.roomCellIndicesById.size === 0) {
+            this.rebuildRoomCellIndices();
+        }
+        for (const [roomId, cells] of this.roomCellIndicesById.entries()) {
+            const aggregate = aggregates.get(roomId);
+            if (!aggregate) {
+                continue;
+            }
+            for (const cellIndex of cells) {
+                aggregate.qiRaw += this.auraByTile?.[cellIndex] ?? 0;
+            }
+        }
+        for (const [tileIndex, damage] of this.tileDamageByTile.entries()) {
+            if (!damage || damage.destroyed === true) {
+                continue;
+            }
+            const maxHp = Math.max(1, Math.trunc(Number(damage.maxHp) || 1));
+            const hp = Math.max(0, Math.min(maxHp, Math.trunc(Number(damage.hp) || maxHp)));
+            if (hp >= maxHp) {
+                continue;
+            }
+            const damageRatio = 1 - hp / maxHp;
+            const roomIds = this.collectRoomInfluenceRoomIdsByCell(tileIndex);
+            for (const roomId of roomIds) {
+                const aggregate = aggregates.get(roomId);
+                if (!aggregate) {
+                    continue;
+                }
+                aggregate.integrityPenalty += Math.max(1, Math.round(30 * damageRatio));
+                aggregate.aggregateRevision += 1;
+            }
+        }
+        const catalog = this.buildingCatalog;
+        if (!catalog?.defByHandle) {
+            return aggregates;
+        }
+        const buildingEntries = selectedRoomIds
+            ? this.collectBuildingEntriesForRoomAggregate(selectedRoomIds)
+            : Array.from(this.buildingById.entries());
+        for (const [buildingId, building] of buildingEntries) {
+            const compiled = catalog.defByHandle[building.defHandle] ?? catalog.defById?.get?.(building.defId);
+            if (!compiled) {
+                continue;
+            }
+            const roomId = this.resolveBuildingRoomId(buildingId);
+            if (!roomId) {
+                continue;
+            }
+            const aggregate = aggregates.get(roomId);
+            if (!aggregate) {
+                continue;
+            }
+            applyCompiledBuildingToRoomAggregate(aggregate, compiled);
+            building.roomId = roomId;
+        }
+        return aggregates;
+    }
+    /** collectBuildingEntriesForRoomAggregate：局部风水重算只扫描目标房间及边界邻格上的建筑。 */
+    collectBuildingEntriesForRoomAggregate(roomIds) {
+        const selectedRoomIds = roomIds instanceof Set
+            ? roomIds
+            : new Set(Array.isArray(roomIds) ? roomIds : []);
+        const buildingIds = new Set();
+        const visitedCells = new Set();
+        for (const roomId of selectedRoomIds) {
+            const cells = this.roomCellIndicesById.get(roomId) ?? [];
+            for (const cellIndex of cells) {
+                this.collectBuildingIdsAtCellForAggregate(cellIndex, buildingIds, visitedCells);
+                const x = this.tilePlane.getX(cellIndex);
+                const y = this.tilePlane.getY(cellIndex);
+                this.collectBuildingIdsAtCellForAggregate(this.toTileIndex(x + 1, y), buildingIds, visitedCells);
+                this.collectBuildingIdsAtCellForAggregate(this.toTileIndex(x - 1, y), buildingIds, visitedCells);
+                this.collectBuildingIdsAtCellForAggregate(this.toTileIndex(x, y + 1), buildingIds, visitedCells);
+                this.collectBuildingIdsAtCellForAggregate(this.toTileIndex(x, y - 1), buildingIds, visitedCells);
+            }
+        }
+        const entries = [];
+        for (const buildingId of buildingIds) {
+            const building = this.buildingById.get(buildingId);
+            if (building) {
+                entries.push([buildingId, building]);
+            }
+        }
+        return entries;
+    }
+    /** collectBuildingIdsAtCellForAggregate：按 cell 收集建筑 ID，避免重复读取同一 cell。 */
+    collectBuildingIdsAtCellForAggregate(cellIndexInput, buildingIds, visitedCells) {
+        const cellIndex = Math.trunc(Number(cellIndexInput));
+        if (!Number.isFinite(cellIndex) || cellIndex < 0 || visitedCells.has(cellIndex)) {
+            return;
+        }
+        visitedCells.add(cellIndex);
+        const ids = this.buildingIdByCell.get(cellIndex);
+        if (!Array.isArray(ids)) {
+            return;
+        }
+        for (const buildingId of ids) {
+            buildingIds.add(buildingId);
+        }
+    }
+    /** resolveBuildingRoomId：将建筑关联到所在或相邻房间。 */
+    resolveBuildingRoomId(buildingId) {
+        const cells = this.buildingCellsById.get(buildingId) ?? [];
+        for (const cellIndex of cells) {
+            const direct = this.roomIdsByHandle[this.roomIdByCell[cellIndex]];
+            if (direct) {
+                return direct;
+            }
+        }
+        for (const cellIndex of cells) {
+            const x = this.tilePlane.getX(cellIndex);
+            const y = this.tilePlane.getY(cellIndex);
+            const candidates = [
+                this.toTileIndex(x + 1, y),
+                this.toTileIndex(x - 1, y),
+                this.toTileIndex(x, y + 1),
+                this.toTileIndex(x, y - 1),
+            ];
+            for (const candidate of candidates) {
+                const nearby = candidate >= 0 ? this.roomIdsByHandle[this.roomIdByCell[candidate]] : null;
+                if (nearby) {
+                    return nearby;
+                }
+            }
+        }
+        return null;
+    }
+    listBuildingSummaries() {
+        return Array.from(this.buildingById.values()).map((building) => ({ ...building }));
+    }
+    listRoomSummaries() {
+        return Array.from(this.roomsById.values()).map((room) => ({ ...room }));
+    }
+    getFengShuiSnapshot(roomId) {
+        const normalized = typeof roomId === 'string' ? roomId.trim() : '';
+        return normalized ? this.fengShuiByRoomId.get(normalized) ?? null : null;
+    }
+    setRoomRole(roomIdInput, roleInput) {
+        const roomId = typeof roomIdInput === 'string' ? roomIdInput.trim() : '';
+        const room = roomId ? this.roomsById.get(roomId) : null;
+        const role = typeof roleInput === 'string' && roleInput.trim() ? roleInput.trim() : '';
+        if (!room || !role) {
+            return { ok: false, reason: 'room_not_found' };
+        }
+        room.role = role;
+        const aggregate = this.roomAggregatesById.get(room.id);
+        if (aggregate) {
+            const snapshot = (0, fengshui_calculator_service_1.calculateFengShuiSnapshot)(room, aggregate, this.fengShuiRules, {
+                instanceId: this.meta.instanceId,
+                updatedAtTick: this.tick,
+                revision: aggregate.aggregateRevision + 1,
+            });
+            this.fengShuiByRoomId.set(room.id, snapshot);
+        }
+        this.worldRevision += 1;
+        this.persistentRevision += 1;
+        this.markPersistenceDirtyDomains(['room', 'fengshui']);
+        return { ok: true, room: { ...room }, fengShui: this.fengShuiByRoomId.get(room.id) ?? null };
+    }
+    getFengShuiSnapshotAt(x, y) {
+        const tileIndex = this.toTileIndex(x, y);
+        if (tileIndex < 0) {
+            return null;
+        }
+        const roomId = this.roomIdsByHandle[this.roomIdByCell[tileIndex]];
+        return roomId ? this.fengShuiByRoomId.get(roomId) ?? null : null;
+    }
+    buildBuildingPersistenceEntries() {
+        return Array.from(this.buildingById.values()).map((building) => ({
+            ...building,
+            cells: this.buildBuildingCellPersistenceEntries(building.id),
+        }));
+    }
+    buildBuildingCellPersistenceEntries(buildingId) {
+        const previousTileTypeByCell = new Map(this.buildingPreviousTileTypeById.get(buildingId) ?? []);
+        return (this.buildingCellsById.get(buildingId) ?? []).map((cellIndex) => ({
+            tileIndex: cellIndex,
+            x: this.tilePlane.getX(cellIndex),
+            y: this.tilePlane.getY(cellIndex),
+            tileType: this.tilePlane.getTileType(cellIndex),
+            previousTileType: previousTileTypeByCell.get(cellIndex) ?? null,
+        }));
+    }
+    buildBuildingRoomFengShuiPersistenceState() {
+        return {
+            buildings: this.buildBuildingPersistenceEntries(),
+            rooms: this.listRoomSummaries(),
+            roomCells: this.buildRoomCellPersistenceEntries(),
+            fengShui: Array.from(this.fengShuiByRoomId.values()).map((snapshot) => ({ ...snapshot })),
+        };
+    }
+    buildRoomCellPersistenceEntries() {
+        const rows = [];
+        for (let cellIndex = 0; cellIndex < this.roomIdByCell.length; cellIndex += 1) {
+            const roomId = this.roomIdsByHandle[this.roomIdByCell[cellIndex]];
+            if (!roomId) continue;
+            rows.push({
+                roomId,
+                tileIndex: cellIndex,
+                x: this.tilePlane.getX(cellIndex),
+                y: this.tilePlane.getY(cellIndex),
+                edgeFlags: this.buildingTopologyIndex?.isRoomBoundary?.(cellIndex) ? 1 : 0,
+            });
+        }
+        return rows;
+    }
+    hydrateBuildingRoomFengShuiState(state) {
+        const buildings = Array.isArray(state?.buildings) ? state.buildings : [];
+        this.buildingById = new Map();
+        this.buildingCellsById = new Map();
+        this.buildingPreviousTileTypeById = new Map();
+        for (const entry of buildings) {
+            const id = normalizeBuildingId(entry?.id ?? entry?.buildingId);
+            const defId = normalizeBuildingId(entry?.defId);
+            if (!id || !defId) {
+                continue;
+            }
+            const compiled = this.buildingCatalog?.defById?.get?.(defId);
+            const defHandle = Math.max(0, Math.trunc(Number(entry?.defHandle) || compiled?.handle || 0));
+            const building = {
+                id,
+                defId,
+                defHandle,
+                instanceId: this.meta.instanceId,
+                x: Math.trunc(Number(entry?.x) || 0),
+                y: Math.trunc(Number(entry?.y) || 0),
+                rotation: normalizeBuildingRotation(entry?.rotation),
+                ownerPlayerId: typeof entry?.ownerPlayerId === 'string' && entry.ownerPlayerId.trim() ? entry.ownerPlayerId.trim() : null,
+                ownerSectId: typeof entry?.ownerSectId === 'string' && entry.ownerSectId.trim() ? entry.ownerSectId.trim() : null,
+                roomId: typeof entry?.roomId === 'string' && entry.roomId.trim() ? entry.roomId.trim() : null,
+                hp: Math.max(0, Math.trunc(Number(entry?.hp) || 0)),
+                maxHp: Math.max(1, Math.trunc(Number(entry?.maxHp) || compiled?.maxHp || 1)),
+                state: typeof entry?.state === 'string' && entry.state.trim() ? entry.state.trim() : 'active',
+                createdAtTick: Math.max(0, Math.trunc(Number(entry?.createdAtTick) || 0)),
+                updatedAtTick: Math.max(0, Math.trunc(Number(entry?.updatedAtTick) || 0)),
+                revision: Math.max(1, Math.trunc(Number(entry?.revision) || 1)),
+            };
+            this.buildingById.set(id, building);
+            const cells = resolvePersistedBuildingCells(this, building, entry?.cells, compiled);
+            this.buildingCellsById.set(id, cells);
+            const previousTileTypes = resolvePersistedBuildingPreviousTileTypes(this, entry?.cells);
+            if (previousTileTypes.length > 0) {
+                this.buildingPreviousTileTypeById.set(id, previousTileTypes);
+            }
+            if (compiled?.visualTileType) {
+                for (const cellIndex of cells) {
+                    if (cellIndex >= 0 && cellIndex < this.tilePlane.getCellCount()) {
+                        this.tilePlane.setTileType(cellIndex, compiled.visualTileType);
+                    }
+                }
+            }
+        }
+        if (this.buildingCatalog?.defByHandle) {
+            this.rebuildBuildingRoomFengShuiState();
+            return { buildingCount: this.buildingById.size, rebuilt: true };
+        }
+        this.roomsById = new Map();
+        this.roomIdsByHandle = [];
+        this.roomCellIndicesById = new Map();
+        const rooms = Array.isArray(state?.rooms) ? state.rooms : [];
+        for (let index = 0; index < rooms.length; index += 1) {
+            const room = rooms[index];
+            const id = typeof room?.id === 'string' && room.id.trim() ? room.id.trim() : '';
+            if (!id) {
+                continue;
+            }
+            this.roomsById.set(id, { ...room, instanceId: this.meta.instanceId });
+            this.roomIdsByHandle[index + 1] = id;
+        }
+        if (Array.isArray(state?.roomCells)) {
+            this.roomIdByCell = new Int32Array(Math.max(1, this.tilePlane.getCellCapacity?.() ?? this.tilePlane.getCellCount?.() ?? 1));
+            const roomHandleById = new Map();
+            for (let index = 1; index < this.roomIdsByHandle.length; index += 1) {
+                const roomId = this.roomIdsByHandle[index];
+                if (roomId) {
+                    roomHandleById.set(roomId, index);
+                }
+            }
+            for (const cell of state.roomCells) {
+                const roomId = typeof cell?.roomId === 'string' && cell.roomId.trim() ? cell.roomId.trim() : '';
+                const handle = roomHandleById.get(roomId) ?? 0;
+                const tileIndex = Number.isFinite(Number(cell?.tileIndex))
+                    ? Math.trunc(Number(cell.tileIndex))
+                    : this.toTileIndex(cell?.x, cell?.y);
+                if (handle > 0 && tileIndex >= 0 && tileIndex < this.roomIdByCell.length) {
+                    this.roomIdByCell[tileIndex] = handle;
+                }
+            }
+            this.rebuildRoomCellIndices();
+        }
+        this.fengShuiByRoomId = new Map();
+        for (const snapshot of Array.isArray(state?.fengShui) ? state.fengShui : []) {
+            const roomId = typeof snapshot?.roomId === 'string' && snapshot.roomId.trim() ? snapshot.roomId.trim() : '';
+            if (roomId) {
+                this.fengShuiByRoomId.set(roomId, { ...snapshot, instanceId: this.meta.instanceId });
+            }
+        }
+        return { buildingCount: this.buildingById.size, rebuilt: false };
     }
     /** setPlayerMoveSpeed：设置玩家移动速度。 */
     setPlayerMoveSpeed(playerId, moveSpeed) {
@@ -1145,6 +1987,8 @@ class MapInstanceRuntime {
             const appliedDamage = Math.min(Math.max(0, Math.trunc(Number(temporary.hp) || 0)), normalizedDamage);
             const nextHp = Math.max(0, Math.trunc(Number(temporary.hp) || 0) - appliedDamage);
             const destroyed = nextHp <= 0;
+            const affectsRoomTopology = destroyed === true
+                && this.shouldRecalculateRoomsForTileMutation(tileIndex, temporary.tileType, this.getBaseTileType(x, y));
             if (destroyed) {
                 this.temporaryTileByTile.delete(tileIndex);
             }
@@ -1157,6 +2001,10 @@ class MapInstanceRuntime {
             }
             this.worldRevision += 1;
             this.markPersistenceDirtyDomains(['temporary_tile']);
+            if (affectsRoomTopology) {
+                this.recalculateRoomsAndFengShuiAfterTopologyChange({ reason: 'temporary_tile_destroyed', dirtyCellCount: 1 });
+                this.markPersistenceDirtyDomains(['room', 'fengshui']);
+            }
             this.persistentRevision += 1;
             return {
                 destroyed,
@@ -1172,6 +2020,11 @@ class MapInstanceRuntime {
 
         const nextHp = Math.max(0, current.hp - appliedDamage);
         const destroyed = nextHp <= 0;
+        const affectsRoomTopology = destroyed === true
+            && this.shouldRecalculateRoomsForTileMutation(tileIndex, current.tileType, shared_1.TileType.Floor);
+        const affectsRoomIntegrity = destroyed !== true
+            && current.hp >= current.maxHp
+            && this.isCellInRoomInfluence(tileIndex);
         this.tileDamageByTile.set(tileIndex, {
             hp: nextHp,
             maxHp: current.maxHp,
@@ -1182,6 +2035,13 @@ class MapInstanceRuntime {
         });
         this.worldRevision += 1;
         this.markTileDamagePersistenceDirty(tileIndex);
+        if (affectsRoomTopology) {
+            this.recalculateRoomsAndFengShuiAfterTopologyChange({ reason: 'tile_destroyed', dirtyCellCount: 1 });
+            this.markPersistenceDirtyDomains(['room', 'fengshui']);
+        }
+        else if (affectsRoomIntegrity) {
+            this.recalculateFengShuiAfterRoomInfluenceChange(tileIndex, 'tile_integrity_damaged');
+        }
         this.persistentRevision += 1;
         return {
 
@@ -1209,6 +2069,7 @@ class MapInstanceRuntime {
         const nowTick = Math.max(0, Math.trunc(Number(currentTick) || this.tick || 0));
         const ttl = Math.max(1, Math.trunc(Number(durationTicks) || 1));
         const now = Date.now();
+        const previousEffectiveTileType = this.getEffectiveTileTypeByCellIndex(tileIndex);
         this.temporaryTileByTile.set(tileIndex, {
             tileType: typeof tileType === 'string' && tileType.length > 0 ? tileType : shared_1.TileType.Stone,
             hp,
@@ -1221,6 +2082,10 @@ class MapInstanceRuntime {
         });
         this.worldRevision += 1;
         this.markPersistenceDirtyDomains(['temporary_tile']);
+        if (this.shouldRecalculateRoomsForTileMutation(tileIndex, previousEffectiveTileType, this.getEffectiveTileTypeByCellIndex(tileIndex))) {
+            this.recalculateRoomsAndFengShuiAfterTopologyChange({ reason: 'temporary_tile_created', dirtyCellCount: 1 });
+            this.markPersistenceDirtyDomains(['room', 'fengshui']);
+        }
         this.persistentRevision += 1;
         return { created: true, refreshed: Boolean(existingTemporary), tileIndex };
     }
@@ -1257,6 +2122,7 @@ class MapInstanceRuntime {
         }
         const normalizedTick = Math.max(0, Math.trunc(Number(currentTick) || 0));
         let changed = false;
+        let topologyChangedCellCount = 0;
         for (const [tileIndex, state] of Array.from(this.temporaryTileByTile.entries())) {
             if (!state || !Number.isFinite(Number(tileIndex))) {
                 this.temporaryTileByTile.delete(tileIndex);
@@ -1270,11 +2136,18 @@ class MapInstanceRuntime {
             }
             const expiresAtTick = Math.max(0, Math.trunc(Number(state.expiresAtTick) || 0));
             if (expiresAtTick > 0 && normalizedTick >= expiresAtTick) {
+                if (this.shouldRecalculateRoomsForTileMutation(tileIndex, state.tileType, this.getBaseTileType(x, y))) {
+                    topologyChangedCellCount += 1;
+                }
                 this.temporaryTileByTile.delete(tileIndex);
                 changed = true;
             }
         }
         if (changed) {
+            if (topologyChangedCellCount > 0) {
+                this.recalculateRoomsAndFengShuiAfterTopologyChange({ reason: 'temporary_tile_expired', dirtyCellCount: topologyChangedCellCount });
+                this.markPersistenceDirtyDomains(['room', 'fengshui']);
+            }
             this.worldRevision += 1;
             this.markPersistenceDirtyDomains(['temporary_tile']);
             this.persistentRevision += 1;
@@ -1291,6 +2164,8 @@ class MapInstanceRuntime {
 
         const now = Date.now();
         let changed = false;
+        let topologyChangedCellCount = 0;
+        const fengShuiInfluenceCells = new Set();
         for (const [tileIndex, current] of Array.from(this.tileDamageByTile.entries())) {
             if (!Number.isFinite(Number(tileIndex))) {
                 continue;
@@ -1320,6 +2195,9 @@ class MapInstanceRuntime {
                     }
                     else {
                         this.tileDamageByTile.delete(tileIndex);
+                        if (this.shouldRecalculateRoomsForTileMutation(normalizedTileIndex, shared_1.TileType.Floor, tileType)) {
+                            topologyChangedCellCount += 1;
+                        }
                     }
                 }
                 else {
@@ -1347,6 +2225,9 @@ class MapInstanceRuntime {
             const nextHp = Math.min(maxHp, hp + repairAmount);
             if (nextHp >= maxHp) {
                 this.tileDamageByTile.delete(tileIndex);
+                if (this.isCellInRoomInfluence(normalizedTileIndex)) {
+                    fengShuiInfluenceCells.add(normalizedTileIndex);
+                }
             }
             else {
                 this.tileDamageByTile.set(tileIndex, {
@@ -1362,6 +2243,15 @@ class MapInstanceRuntime {
         }
 
         if (changed) {
+            if (topologyChangedCellCount > 0) {
+                this.recalculateRoomsAndFengShuiAfterTopologyChange({ reason: 'tile_recovered', dirtyCellCount: topologyChangedCellCount });
+                this.markPersistenceDirtyDomains(['room', 'fengshui']);
+            }
+            else if (fengShuiInfluenceCells.size > 0) {
+                for (const cellIndex of fengShuiInfluenceCells) {
+                    this.recalculateFengShuiAfterRoomInfluenceChange(cellIndex, 'tile_integrity_recovered');
+                }
+            }
             this.worldRevision += 1;
             this.persistentRevision += 1;
         }
@@ -1397,16 +2287,7 @@ class MapInstanceRuntime {
         if (!this.isInBounds(x, y)) {
             return shared_1.TileType.Floor;
         }
-        const tileIndex = this.toTileIndex(x, y);
-        const temporary = this.temporaryTileByTile.get(tileIndex);
-        if (temporary) {
-            return temporary.tileType;
-        }
-        const current = this.tileDamageByTile.get(tileIndex);
-        if (current?.destroyed === true) {
-            return shared_1.TileType.Floor;
-        }
-        return this.getBaseTileType(x, y);
+        return this.getEffectiveTileTypeByCellIndex(this.toTileIndex(x, y));
     }
     /** getGroundPileBySourceId：按来源 ID 读取地面物品堆。 */
     getGroundPileBySourceId(sourceId) {
@@ -1761,6 +2642,18 @@ class MapInstanceRuntime {
                 modifiedAt: Number.isFinite(Number(entry.modifiedAt)) ? Math.max(0, Math.trunc(Number(entry.modifiedAt))) : Date.now(),
             });
         }
+        let topologyChangedCellCount = 0;
+        for (const [tileIndex, damage] of this.tileDamageByTile.entries()) {
+            const x = this.tilePlane.getX(tileIndex);
+            const y = this.tilePlane.getY(tileIndex);
+            const tileType = this.getBaseTileType(x, y);
+            if (damage?.destroyed === true && this.shouldRecalculateRoomsForTileMutation(tileIndex, tileType, shared_1.TileType.Floor)) {
+                topologyChangedCellCount += 1;
+            }
+        }
+        if (topologyChangedCellCount > 0) {
+            this.recalculateRoomsAndFengShuiAfterTopologyChange({ reason: 'tile_damage_hydrated', dirtyCellCount: topologyChangedCellCount });
+        }
         this.persistentRevision = 1;
         this.persistedRevision = 1;
         this.clearDirtyDomains();
@@ -1772,6 +2665,7 @@ class MapInstanceRuntime {
             this.clearDirtyDomains();
             return;
         }
+        let topologyChangedCellCount = 0;
         for (const entry of entries) {
             if (!entry || !Number.isFinite(Number(entry.tileIndex))) {
                 continue;
@@ -1784,11 +2678,13 @@ class MapInstanceRuntime {
             if (resolvedTileIndex < 0 || resolvedTileIndex >= this.auraByTile.length) {
                 continue;
             }
+            const previousTileType = this.getEffectiveTileTypeByCellIndex(resolvedTileIndex);
             const hp = Math.max(1, Math.trunc(Number(entry.hp) || 1));
             const maxHp = Math.max(hp, Math.trunc(Number(entry.maxHp) || hp));
             const expiresAtTick = Math.max(1, Math.trunc(Number(entry.expiresAtTick) || 1));
+            const tileType = typeof entry.tileType === 'string' && entry.tileType.length > 0 ? entry.tileType : shared_1.TileType.Stone;
             this.temporaryTileByTile.set(resolvedTileIndex, {
-                tileType: typeof entry.tileType === 'string' && entry.tileType.length > 0 ? entry.tileType : shared_1.TileType.Stone,
+                tileType,
                 hp,
                 maxHp,
                 expiresAtTick,
@@ -1797,6 +2693,12 @@ class MapInstanceRuntime {
                 createdAt: Number.isFinite(Number(entry.createdAt)) ? Math.max(0, Math.trunc(Number(entry.createdAt))) : Date.now(),
                 modifiedAt: Number.isFinite(Number(entry.modifiedAt)) ? Math.max(0, Math.trunc(Number(entry.modifiedAt))) : Date.now(),
             });
+            if (this.shouldRecalculateRoomsForTileMutation(resolvedTileIndex, previousTileType, tileType)) {
+                topologyChangedCellCount += 1;
+            }
+        }
+        if (topologyChangedCellCount > 0) {
+            this.recalculateRoomsAndFengShuiAfterTopologyChange({ reason: 'temporary_tiles_hydrated', dirtyCellCount: topologyChangedCellCount });
         }
         this.clearDirtyDomains();
     }
@@ -1805,6 +2707,7 @@ class MapInstanceRuntime {
         if (!Array.isArray(entries) || entries.length === 0) {
             return;
         }
+        let topologyChangedCellCount = 0;
         for (const entry of entries) {
             if (!entry || !Number.isFinite(Number(entry.x)) || !Number.isFinite(Number(entry.y))) {
                 continue;
@@ -1816,10 +2719,20 @@ class MapInstanceRuntime {
                 : shared_1.TileType.Stone;
             const tileIndex = this.toTileIndex(x, y);
             if (tileIndex >= 0) {
+                const previousTileType = this.getEffectiveTileTypeByCellIndex(tileIndex);
                 this.tilePlane.setTileType(tileIndex, tileType);
+                if (this.shouldRecalculateRoomsForTileMutation(tileIndex, previousTileType, tileType)) {
+                    topologyChangedCellCount += 1;
+                }
                 continue;
             }
-            this.activateRuntimeTile(x, y, tileType);
+            const activated = this.activateRuntimeTile(x, y, tileType);
+            if (activated?.created === true && this.shouldRecalculateRoomsForTileMutation(activated.tileIndex, shared_1.TileType.Floor, tileType)) {
+                topologyChangedCellCount += 1;
+            }
+        }
+        if (topologyChangedCellCount > 0) {
+            this.recalculateRoomsAndFengShuiAfterTopologyChange({ reason: 'runtime_tiles_hydrated', dirtyCellCount: topologyChangedCellCount });
         }
         this.persistentRevision = 1;
         this.persistedRevision = 1;
@@ -2506,6 +3419,7 @@ class MapInstanceRuntime {
             changed = true;
             if (changed) {
                 this.markGroundItemPersistenceDirty(tileIndex);
+                this.recalculateFengShuiAfterRoomInfluenceChange(tileIndex, 'ground_item_changed');
                 this.persistentRevision += 1;
                 this.worldRevision += 1;
             }
@@ -2527,6 +3441,7 @@ class MapInstanceRuntime {
         };
         this.groundPilesByTile.set(tileIndex, pile);
         this.markGroundItemPersistenceDirty(tileIndex);
+        this.recalculateFengShuiAfterRoomInfluenceChange(tileIndex, 'ground_item_added');
         this.persistentRevision += 1;
         this.worldRevision += 1;
         return toGroundPileView(pile);
@@ -2564,6 +3479,7 @@ class MapInstanceRuntime {
             this.groundPilesByTile.delete(tileIndex);
         }
         this.markGroundItemPersistenceDirty(tileIndex);
+        this.recalculateFengShuiAfterRoomInfluenceChange(tileIndex, 'ground_item_taken');
         this.persistentRevision += 1;
         this.worldRevision += 1;
         return {
@@ -3411,6 +4327,7 @@ class MapInstanceRuntime {
             this.tileResourceBuckets.delete(resourceKey);
         }
         this.markTileResourcePersistenceDirty(resourceKey, tileIndex);
+        this.recalculateFengShuiAfterRoomInfluenceChange(tileIndex, 'tile_resource_changed');
         this.persistentRevision += 1;
     }
     /** ensureCellStorageCapacity：保证按 cell index 寻址的运行时列容量足够。 */
@@ -3420,6 +4337,7 @@ class MapInstanceRuntime {
             return;
         }
         const nextCapacity = nextPowerOfTwo(normalizedRequired);
+        this.buildingTopologyIndex?.ensureCapacity?.(nextCapacity);
         const nextOccupancy = new Uint32Array(nextCapacity);
         nextOccupancy.set(this.occupancy);
         this.occupancy = nextOccupancy;
@@ -4696,6 +5614,166 @@ function resolveMonsterRespawnTicksWithBonus(respawnTicks, bonusPercent) {
             safeTicks * MONSTER_RESPAWN_ACCELERATION_BASE_PERCENT
                 / (MONSTER_RESPAWN_ACCELERATION_BASE_PERCENT + safeBonusPercent),
         ),
+    );
+}
+function normalizeBuildingRotation(value) {
+    const normalized = Math.trunc(Number(value) || 0);
+    if (normalized === 90 || normalized === 180 || normalized === 270) {
+        return normalized;
+    }
+    return 0;
+}
+function rotationToIndex(rotation) {
+    switch (rotation) {
+        case 90:
+            return 1;
+        case 180:
+            return 2;
+        case 270:
+            return 3;
+        case 0:
+        default:
+            return 0;
+    }
+}
+function normalizeBuildingId(value) {
+    return typeof value === 'string' && value.trim().length > 0 ? value.trim() : '';
+}
+function resolveBuildingCatalogRevision(catalog) {
+    if (!Array.isArray(catalog?.defs)) {
+        return 0;
+    }
+    let revision = 0;
+    for (const def of catalog.defs) {
+        revision += Math.max(0, Math.trunc(Number(def?.revision) || 0));
+    }
+    return revision;
+}
+function countBuildingCellReferences(buildingIdByCell) {
+    let count = 0;
+    if (!(buildingIdByCell instanceof Map)) {
+        return 0;
+    }
+    for (const ids of buildingIdByCell.values()) {
+        count += Array.isArray(ids) ? ids.length : 0;
+    }
+    return count;
+}
+function createRoomAggregate(room) {
+    return {
+        roomId: room.id,
+        area: room.area,
+        perimeter: room.perimeter,
+        doorCount: room.doorCount,
+        windowCount: room.windowCount,
+        roofCoverage: room.roofCoverageRatio,
+        elementVector: new Int32Array(5),
+        traitCounts: new Map(),
+        comfort: 0,
+        stability: 0,
+        qiRaw: 0,
+        shaRaw: 0,
+        integrityPenalty: 0,
+        formationScore: 0,
+        topologyRevision: room.topologyRevision,
+        aggregateRevision: room.topologyRevision + room.contentRevision,
+    };
+}
+function applyCompiledBuildingToRoomAggregate(aggregate, compiled) {
+    for (let index = 0; index < compiled.elementVector.length; index += 1) {
+        aggregate.elementVector[index] += compiled.elementVector[index] ?? 0;
+    }
+    for (const traitId of compiled.traitIds ?? []) {
+        aggregate.traitCounts.set(traitId, (aggregate.traitCounts.get(traitId) ?? 0) + 1);
+    }
+    aggregate.comfort += compiled.fengShuiContrib?.[0] ?? 0;
+    aggregate.stability += compiled.fengShuiContrib?.[1] ?? 0;
+    aggregate.qiRaw += compiled.fengShuiContrib?.[2] ?? 0;
+    aggregate.shaRaw += Math.max(0, compiled.fengShuiContrib?.[4] ?? 0);
+    aggregate.shaRaw = Math.max(0, aggregate.shaRaw - Math.max(0, compiled.fengShuiContrib?.[5] ?? 0));
+    aggregate.integrityPenalty += Math.max(0, compiled.fengShuiContrib?.[6] ?? 0);
+    aggregate.aggregateRevision += compiled.revision ?? 0;
+}
+function compiledBuildingAffectsRoomBoundaryTopology(compiled) {
+    if (!compiled) {
+        return false;
+    }
+    if (Math.max(0, Math.trunc(Number(compiled.roomBoundary) || 0)) > 0) {
+        return true;
+    }
+    if (Math.max(0, Math.trunc(Number(compiled.openingKind) || 0)) > 0) {
+        return true;
+    }
+    return typeof compiled.visualTileType === 'string'
+        && (0, room_detection_service_1.isStaticRoomBoundaryTile)(compiled.visualTileType);
+}
+function compiledBuildingAffectsFengShui(compiled) {
+    if (!compiled) {
+        return false;
+    }
+    for (const value of compiled.elementVector ?? []) {
+        if (value !== 0) {
+            return true;
+        }
+    }
+    if ((compiled.traitIds?.length ?? 0) > 0) {
+        return true;
+    }
+    for (const value of compiled.fengShuiContrib ?? []) {
+        if (value !== 0) {
+            return true;
+        }
+    }
+    return false;
+}
+function resolvePersistedBuildingCells(instance, building, persistedCells, compiled) {
+    const cells = [];
+    for (const cell of Array.isArray(persistedCells) ? persistedCells : []) {
+        const tileIndex = Number.isFinite(Number(cell?.tileIndex))
+            ? Math.trunc(Number(cell.tileIndex))
+            : instance.toTileIndex(cell?.x, cell?.y);
+        if (tileIndex >= 0) {
+            cells.push(tileIndex);
+        }
+    }
+    if (cells.length > 0 || !compiled?.footprintByRotation) {
+        return Array.from(new Set(cells));
+    }
+    const footprint = compiled.footprintByRotation[rotationToIndex(building.rotation)] ?? compiled.footprintByRotation[0];
+    for (let index = 0; index < footprint.length; index += 2) {
+        const tileIndex = instance.toTileIndex(building.x + footprint[index], building.y + footprint[index + 1]);
+        if (tileIndex >= 0) {
+            cells.push(tileIndex);
+        }
+    }
+    return Array.from(new Set(cells));
+}
+function resolvePersistedBuildingPreviousTileTypes(instance, persistedCells) {
+    const previousTileTypes = [];
+    for (const cell of Array.isArray(persistedCells) ? persistedCells : []) {
+        const previousTileType = typeof cell?.previousTileType === 'string' && cell.previousTileType.trim()
+            ? cell.previousTileType.trim()
+            : typeof cell?.previous_tile_type === 'string' && cell.previous_tile_type.trim()
+                ? cell.previous_tile_type.trim()
+                : '';
+        if (!previousTileType) {
+            continue;
+        }
+        const tileIndex = Number.isFinite(Number(cell?.tileIndex))
+            ? Math.trunc(Number(cell.tileIndex))
+            : instance.toTileIndex(cell?.x, cell?.y);
+        if (tileIndex >= 0) {
+            previousTileTypes.push([tileIndex, previousTileType]);
+        }
+    }
+    return previousTileTypes;
+}
+function isIndoorSubspaceTemplate(template) {
+    const source = template?.source ?? template ?? {};
+    return Boolean(
+        (typeof source.parentMapId === 'string' && source.parentMapId.trim())
+            || source.spaceVisionMode === 'parent_overlay'
+            || Number.isInteger(source.floorLevel),
     );
 }
 /** resolveSkillRange：解析技能射程。 */

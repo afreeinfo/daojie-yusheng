@@ -92,22 +92,22 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
  * contentTemplateRepository：内容Template仓储引用。
  */
 
-    contentTemplateRepository;    
+    contentTemplateRepository;
     /**
  * playerRuntimeService：玩家运行态服务引用。
  */
 
-    playerRuntimeService;    
+    playerRuntimeService;
     /**
  * playerDomainPersistenceService：玩家分域持久化服务引用。
  */
 
-    playerDomainPersistenceService;    
+    playerDomainPersistenceService;
     /**
  * craftPanelAlchemyQueryService：炼制面板炼丹Query服务引用。
  */
 
-    craftPanelAlchemyQueryService;    
+    craftPanelAlchemyQueryService;
     /**
  * craftPanelEnhancementQueryService：炼制面板强化Query服务引用。
  */
@@ -117,6 +117,8 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
     logger = new common_1.Logger(CraftPanelRuntimeService.name);
     /** 缓存炼丹目录，供面板快照和任务校验共用。 */
     alchemyCatalog = [];
+    /** 缓存炼器目录，复用炼丹制造公式但输出器物。 */
+    forgingCatalog = [];
     /** 缓存强化配置，避免每次操作都重新查表。 */
     enhancementConfigs = new Map();
     /** 缓存依赖并初始化日志、配方与强化配置。 */
@@ -130,12 +132,28 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
     /** 模块初始化：按需加载炼丹目录和强化配置。 */
     onModuleInit() {
         this.loadAlchemyCatalog();
+        this.loadForgingCatalog();
         this.loadEnhancementConfigs();
     }
     /** 读取炼丹面板的状态和可见目录，同步客户端所需的数据快照。 */
     buildAlchemyPanelPayload(player, knownCatalogVersion) {
         this.ensureCraftSkills(player);
         return this.craftPanelAlchemyQueryService.buildAlchemyPanelPayload(player, knownCatalogVersion, this.alchemyCatalog, this.getWeapon(player));
+    }
+    /** 读取炼器面板状态，复用炼丹面板结构但返回炼器目录。 */
+    buildForgingPanelPayload(player, knownCatalogVersion) {
+        this.ensureCraftSkills(player);
+        const payload = {
+            ...this.craftPanelAlchemyQueryService.buildAlchemyPanelPayload(player, knownCatalogVersion, this.forgingCatalog, this.getWeapon(player)),
+            kind: 'forging',
+        };
+        if (payload.state) {
+            payload.state = {
+                ...payload.state,
+                job: player.alchemyJob?.jobType === 'forging' ? (0, craft_panel_alchemy_query_helpers_1.cloneAlchemyJob)(player.alchemyJob) : null,
+            };
+        }
+        return payload;
     }
     /** 读取强化面板状态并在未装备强化锤时返回错误。 */
     buildEnhancementPanelPayload(player) {
@@ -147,6 +165,9 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
         if (kind === 'alchemy') {
             return this.buildAlchemyPanelPayload(player, knownCatalogVersion);
         }
+        if (kind === 'forging') {
+            return this.buildForgingPanelPayload(player, knownCatalogVersion);
+        }
         if (kind === 'enhancement') {
             return this.buildEnhancementPanelPayload(player);
         }
@@ -154,7 +175,11 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
     }
     /** 判断玩家当前是否有炼丹任务在进行。 */
     hasActiveAlchemyJob(player) {
-        return (0, technique_activity_runtime_helpers_1.hasTechniqueActivityJob)(player.alchemyJob);
+        return player.alchemyJob?.jobType !== 'forging' && (0, technique_activity_runtime_helpers_1.hasTechniqueActivityJob)(player.alchemyJob);
+    }
+    /** 判断玩家当前是否有炼器任务在进行。 */
+    hasActiveForgingJob(player) {
+        return player.alchemyJob?.jobType === 'forging' && (0, technique_activity_runtime_helpers_1.hasTechniqueActivityJob)(player.alchemyJob);
     }
     /** 判断玩家当前是否有强化任务在进行。 */
     hasActiveEnhancementJob(player) {
@@ -164,6 +189,9 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
     hasActiveTechniqueActivity(player, kind) {
         if (kind === 'alchemy') {
             return this.hasActiveAlchemyJob(player);
+        }
+        if (kind === 'forging') {
+            return this.hasActiveForgingJob(player);
         }
         if (kind === 'enhancement') {
             return this.hasActiveEnhancementJob(player);
@@ -184,6 +212,9 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
         if (kind === 'alchemy') {
             return this.startAlchemy(player, payload);
         }
+        if (kind === 'forging') {
+            return this.startForging(player, payload);
+        }
         if (kind === 'enhancement') {
             return this.startEnhancement(player, payload);
         }
@@ -193,6 +224,9 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
     cancelTechniqueActivity(player, kind) {
         if (kind === 'alchemy') {
             return this.cancelAlchemy(player);
+        }
+        if (kind === 'forging') {
+            return this.cancelForging(player);
         }
         if (kind === 'enhancement') {
             return this.cancelEnhancement(player);
@@ -204,6 +238,9 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
         if (kind === 'alchemy') {
             return this.interruptAlchemy(player, reason);
         }
+        if (kind === 'forging') {
+            return this.interruptAlchemy(player, reason);
+        }
         if (kind === 'enhancement') {
             return this.interruptEnhancement(player, reason);
         }
@@ -212,6 +249,9 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
     /** 统一派发技艺活动的 tick 推进。 */
     tickTechniqueActivity(player, kind) {
         if (kind === 'alchemy') {
+            return this.tickAlchemy(player);
+        }
+        if (kind === 'forging') {
             return this.tickAlchemy(player);
         }
         if (kind === 'enhancement') {
@@ -254,12 +294,12 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
   // 关键分支按状态与边界条件处理，非法路径会被提前拦截。
 
         this.ensureCraftSkills(player);
-        if (!this.hasEquippedFurnace(player)) {
-            return buildCraftMutationResult('尚未装备丹炉，无法炼丹。');
-        }
-        const recipe = this.alchemyCatalog.find((entry) => entry.recipeId === normalizeText(payload?.recipeId));
+        const jobKind = payload?.kind === 'forging' ? 'forging' : 'alchemy';
+        const catalog = jobKind === 'forging' ? this.forgingCatalog : this.alchemyCatalog;
+        const outputNoun = jobKind === 'forging' ? '成器' : '成丹';
+        const recipe = catalog.find((entry) => entry.recipeId === normalizeText(payload?.recipeId));
         if (!recipe) {
-            return buildCraftMutationResult('对应丹方不存在。');
+            return buildCraftMutationResult(jobKind === 'forging' ? '对应器方不存在。' : '对应丹方不存在。');
         }
         const normalizedSelection = validateAlchemySelection(recipe, normalizeIngredientSelections(payload?.ingredients));
         if ('error' in normalizedSelection) {
@@ -269,7 +309,7 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
         if (this.hasAnyActiveTechniqueActivity(player)) {
             return this.enqueueCraftQueueItem(
                 player,
-                buildAlchemyQueueItem(recipe, normalizedSelection.ingredients, quantity),
+                buildAlchemyQueueItem(recipe, normalizedSelection.ingredients, quantity, jobKind),
                 normalizeCraftQueueStartMode(payload?.queueMode),
             );
         }
@@ -302,7 +342,7 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
             normalizedSelection.ingredients,
             recipe.outputLevel,
             player.alchemySkill?.level ?? 1,
-            this.getWeapon(player)?.alchemySpeedRate ?? 0,
+            this.getAlchemyLikeToolSpeedRate(player, jobKind),
             furnaceOutputCount
         );
         const totalTicks = shared_1.computeAlchemyTotalJobTicks(batchBrewTicks, quantity, ALCHEMY_PREPARATION_TICKS);
@@ -311,12 +351,12 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
             baseSuccessRate,
             recipe.outputLevel,
             player.alchemySkill?.level ?? 1,
-            this.getWeapon(player)?.alchemySuccessRate ?? 0
+            this.getAlchemyLikeToolSuccessRate(player, jobKind)
         );
         const batchOutputCount = shared_1.computeAlchemyBatchOutputCountWithSize(recipe.outputCount, furnaceOutputCount);
         player.alchemyJob = {
-            jobRunId: createCraftJobRunId(player.playerId, 'alchemy'),
-            jobType: 'alchemy',
+            jobRunId: createCraftJobRunId(player.playerId, jobKind),
+            jobType: jobKind,
             recipeId: recipe.recipeId,
             outputItemId: recipe.outputItemId,
             outputCount: batchOutputCount,
@@ -352,10 +392,14 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
             inventoryChanged: true,
             messages: [{
                     kind: 'quest',
-                    text: `开始准备炼制 ${recipe.outputName}${quantity > 1 ? `，共 ${quantity} 炉` : ''}${spiritStoneCost > 0 ? `，消耗灵石 x${spiritStoneCost}` : ''}；${ALCHEMY_PREPARATION_TICKS} 息后自动开炼，总计 ${totalTicks} 息。单炉固定 ${batchOutputCount} 枚，每枚成丹率 ${(successRate * 100).toFixed(successRate === 1 ? 0 : 1)}%。`,
+                    text: `开始准备炼制 ${recipe.outputName}${quantity > 1 ? `，共 ${quantity} 炉` : ''}${spiritStoneCost > 0 ? `，消耗灵石 x${spiritStoneCost}` : ''}；${ALCHEMY_PREPARATION_TICKS} 息后自动开炼，总计 ${totalTicks} 息。单炉固定 ${batchOutputCount} 件，每件${outputNoun}率 ${(successRate * 100).toFixed(successRate === 1 ? 0 : 1)}%。`,
                 }],
         };
-    }    
+    }
+    /** 提交新炼器任务：复用炼丹成功率、加速、队列和打断规则。 */
+    startForging(player, payload) {
+        return this.startAlchemy(player, { ...(payload ?? {}), kind: 'forging' });
+    }
     /**
  * cancelAlchemy：判断cancel炼丹是否满足条件。
  * @param player 玩家对象。
@@ -417,7 +461,12 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
                         : '你收了炉火，当前这一炉已开炼，材料无法退回。',
                 }],
         };
-    }    
+    }
+    /** 取消炼器任务，退款规则与炼丹同构。 */
+    cancelForging(player) {
+        return this.cancelAlchemy(player);
+    }
+
     /**
  * saveAlchemyPreset：执行save炼丹Preset相关逻辑。
  * @param player 玩家对象。
@@ -470,7 +519,7 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
                     text: existingIndex >= 0 ? `已更新炼制预设：${presetName}` : `已保存炼制预设：${presetName}`,
                 }],
         };
-    }    
+    }
     /**
  * deleteAlchemyPreset：处理炼丹Preset并更新相关状态。
  * @param player 玩家对象。
@@ -506,7 +555,7 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
                     text: `已删除炼制预设：${removed?.name ?? presetId}`,
                 }],
         };
-    }    
+    }
     /**
  * interruptAlchemy：执行interrupt炼丹相关逻辑。
  * @param player 玩家对象。
@@ -536,7 +585,7 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
                     reason,
                 ),
             }]);
-    }    
+    }
     /**
  * tickAlchemy：执行tick炼丹相关逻辑。
  * @param player 玩家对象。
@@ -551,6 +600,10 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
         if (!job || job.remainingTicks <= 0) {
             return buildCraftTickResult();
         }
+        const jobKind = job.jobType === 'forging' ? 'forging' : 'alchemy';
+        const catalog = jobKind === 'forging' ? this.forgingCatalog : this.alchemyCatalog;
+        const activityLabel = jobKind === 'forging' ? '炼器' : '炼制';
+        const successNoun = jobKind === 'forging' ? '成器' : '成丹';
         job.remainingTicks = Math.max(0, job.remainingTicks - 1);
         if (job.phase === 'paused') {
             const resumed = (0, technique_activity_runtime_helpers_1.advanceTechniqueActivityPause)(
@@ -589,7 +642,7 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
             });
             return buildCraftTickResult(true, [{
                     kind: 'quest',
-                    text: `${this.contentTemplateRepository.getItemName(job.outputItemId) ?? job.outputItemId} 炉火已稳，开始正式炼制。`,
+                    text: `${this.contentTemplateRepository.getItemName(job.outputItemId) ?? job.outputItemId} 炉火已稳，开始正式${activityLabel}。`,
                 }]);
         }
         job.currentBatchRemainingTicks = Math.max(0, job.currentBatchRemainingTicks - 1);
@@ -620,7 +673,7 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
                 groundDrops.push(outputItem);
             }
         }
-        const skillGain = resolveAlchemySkillExpGain(this.alchemyCatalog, job, player.alchemySkill, successCount, failureCount);
+        const skillGain = resolveAlchemySkillExpGain(catalog, job, player.alchemySkill, successCount, failureCount);
         const skillChanged = applyCraftSkillExp(player.alchemySkill, skillGain);
         this.finalizeMutation(player, {
             inventoryChanged,
@@ -638,18 +691,18 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
             const nextStartResult = this.startNextQueuedCraftJob(player, queuedJobs);
             const nextMessages = nextStartResult.messages ?? [];
             return buildCraftTickResult(true, [{
-                    kind: 'quest',
-                    text: `${this.contentTemplateRepository.getItemName(job.outputItemId) ?? job.outputItemId} 炼制完成，成丹 ${job.successCount} 枚。`,
+                   kind: 'quest',
+                    text: `${this.contentTemplateRepository.getItemName(job.outputItemId) ?? job.outputItemId} ${activityLabel}完成，${successNoun} ${job.successCount} 件。`,
                 }, ...nextMessages], inventoryChanged || Boolean(nextStartResult.inventoryChanged), Boolean(nextStartResult.equipmentChanged), skillChanged || Boolean(nextStartResult.attrChanged), [...groundDrops, ...(nextStartResult.groundDrops ?? [])], skillGain / 2);
         }
         job.currentBatchRemainingTicks = job.batchBrewTicks;
         return buildCraftTickResult(true, [{
                 kind: successCount > 0 ? 'quest' : 'system',
                 text: successCount > 0
-                    ? `第 ${job.completedCount} 炉成丹 ${successCount} 枚。`
-                    : `第 ${job.completedCount} 炉未能成丹。`,
+                    ? `第 ${job.completedCount} 炉${successNoun} ${successCount} 件。`
+                    : `第 ${job.completedCount} 炉未能${successNoun}。`,
             }], inventoryChanged, false, skillChanged, groundDrops, skillGain / 2);
-    }    
+    }
     /**
  * startEnhancement：执行开始强化相关逻辑。
  * @param player 玩家对象。
@@ -661,9 +714,6 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
   // 关键分支按状态与边界条件处理，非法路径会被提前拦截。
 
         this.ensureCraftSkills(player);
-        if (!this.hasEquippedHammer(player)) {
-            return buildCraftMutationResult('尚未装备强化锤。');
-        }
         const target = this.resolveEnhancementTarget(player, payload?.target);
         if (!target) {
             return buildCraftMutationResult('强化目标不存在。');
@@ -782,7 +832,7 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
                         : `开始强化 ${target.item.name ?? target.item.itemId}，目标 +${targetLevel}，预计耗时 ${totalTicks} 息。`,
                 }],
         };
-    }    
+    }
     /**
  * cancelEnhancement：判断cancel强化是否满足条件。
  * @param player 玩家对象。
@@ -810,7 +860,7 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
                     text: `你停止了 ${job.targetItemName} 的强化，已投入的本阶材料不会退回；保护物仅在失败且保护生效时扣除，灵石将在本阶成功后结算。`,
                 }],
         };
-    }    
+    }
     /**
  * interruptEnhancement：执行interrupt强化相关逻辑。
  * @param player 玩家对象。
@@ -840,7 +890,7 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
                     reason,
                 ),
             }]);
-    }    
+    }
     /**
  * tickEnhancement：执行tick强化相关逻辑。
  * @param player 玩家对象。
@@ -935,7 +985,7 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
                         ? `${job.targetItemName} 强化失败，保护生效，降为 +${resultingLevel}。`
                         : `${job.targetItemName} 强化失败，已归零为 +0。`,
             }, ...(nextStartResult.messages ?? [])], finishResult.inventoryChanged || Boolean(nextStartResult.inventoryChanged), finishResult.equipmentChanged || Boolean(nextStartResult.equipmentChanged), finishResult.attrChanged || skillChanged || Boolean(nextStartResult.attrChanged), [...(finishResult.groundDrops ?? []), ...(nextStartResult.groundDrops ?? [])], skillGain / 2);
-    }    
+    }
     /** 从等待队列取下一项制造任务并启动。 */
     startNextQueuedCraftJob(player, queuedJobs) {
         const queue = cloneCraftQueue(queuedJobs);
@@ -953,7 +1003,9 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
                 ? this.startEnhancement(player, payload)
                 : next.kind === 'alchemy'
                     ? this.startAlchemy(player, payload)
-                    : buildCraftMutationResult('炼器任务暂未接入运行时。');
+                    : next.kind === 'forging'
+                        ? this.startForging(player, payload)
+                        : buildCraftMutationResult('未知制造任务暂未接入运行时。');
             if (result?.ok) {
                 return {
                     ...result,
@@ -989,17 +1041,20 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
     blocksEquipSlotChange(player, slot) {
   // 关键分支按状态与边界条件处理，非法路径会被提前拦截。
 
-        if (this.hasActiveAlchemyJob(player) && slot === 'weapon') {
+        if (this.hasActiveAlchemyJob(player) && slot === 'weapon' && this.hasEquippedFurnace(player)) {
+            return true;
+        }
+        if (this.hasActiveForgingJob(player) && slot === 'weapon' && this.hasEquippedForgingTool(player)) {
             return true;
         }
         if (this.hasActiveEnhancementJob(player)) {
-            if (slot === 'weapon') {
+            if (slot === 'weapon' && this.hasEquippedHammer(player)) {
                 return true;
             }
             return player.enhancementJob?.target?.source === 'equipment' && player.enhancementJob.target.slot === slot;
         }
         return false;
-    }    
+    }
     /**
  * getLockedSlotReason：读取LockedSlotReason。
  * @param player 玩家对象。
@@ -1010,20 +1065,23 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
     getLockedSlotReason(player, slot) {
   // 关键分支按状态与边界条件处理，非法路径会被提前拦截。
 
-        if (this.hasActiveAlchemyJob(player) && slot === 'weapon') {
+        if (this.hasActiveAlchemyJob(player) && slot === 'weapon' && this.hasEquippedFurnace(player)) {
             return '炼丹进行中，暂时不能替换或卸下丹炉。';
+        }
+        if (this.hasActiveForgingJob(player) && slot === 'weapon' && this.hasEquippedForgingTool(player)) {
+            return '炼器进行中，暂时不能替换或卸下炼器工具。';
         }
         if (!this.hasActiveEnhancementJob(player)) {
             return null;
         }
-        if (slot === 'weapon') {
+        if (slot === 'weapon' && this.hasEquippedHammer(player)) {
             return '强化进行中，暂时不能替换或卸下强化锤。';
         }
         if (player.enhancementJob?.target?.source === 'equipment' && player.enhancementJob.target.slot === slot) {
             return `${player.enhancementJob.targetItemName} 强化进行中，暂时不能更换对应装备槽。`;
         }
         return null;
-    }    
+    }
     /**
  * getCultivationBlockReason：读取CultivationBlockReason。
  * @param player 玩家对象。
@@ -1036,11 +1094,14 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
         if (this.hasActiveAlchemyJob(player)) {
             return '炼丹进行中，暂时不能切换修炼。';
         }
+        if (this.hasActiveForgingJob(player)) {
+            return '炼器进行中，暂时不能切换修炼。';
+        }
         if (this.hasActiveEnhancementJob(player)) {
             return '强化进行中，暂时不能切换修炼。';
         }
         return null;
-    }    
+    }
     /**
  * hasEquippedFurnace：判断EquippedFurnace是否满足条件。
  * @param player 玩家对象。
@@ -1049,7 +1110,25 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
 
     hasEquippedFurnace(player) {
         return Boolean(this.getWeapon(player)?.tags?.includes(craft_panel_alchemy_query_helpers_1.ALCHEMY_FURNACE_TAG));
-    }    
+    }
+    hasEquippedForgingTool(player) {
+        return Boolean(this.getWeapon(player)?.tags?.includes('forging_tool'));
+    }
+    getAlchemyLikeToolSpeedRate(player, jobKind) {
+        const weapon = this.getWeapon(player);
+        if (jobKind === 'forging' ? !this.hasEquippedForgingTool(player) : !this.hasEquippedFurnace(player)) {
+            return 0;
+        }
+        return Number.isFinite(weapon?.alchemySpeedRate) ? Number(weapon.alchemySpeedRate) : 0;
+    }
+    getAlchemyLikeToolSuccessRate(player, jobKind) {
+        const weapon = this.getWeapon(player);
+        if (jobKind === 'forging' ? !this.hasEquippedForgingTool(player) : !this.hasEquippedFurnace(player)) {
+            return 0;
+        }
+        return Number.isFinite(weapon?.alchemySuccessRate) ? Number(weapon.alchemySuccessRate) : 0;
+    }
+
     /**
  * hasEquippedHammer：判断EquippedHammer是否满足条件。
  * @param player 玩家对象。
@@ -1058,7 +1137,7 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
 
     hasEquippedHammer(player) {
         return Boolean(this.getWeapon(player)?.tags?.includes(ENHANCEMENT_HAMMER_TAG));
-    }    
+    }
     /**
  * ensureCraftSkills：执行ensure炼制技能相关逻辑。
  * @param player 玩家对象。
@@ -1084,7 +1163,7 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
         }
         player.alchemyJob = player.alchemyJob ? (0, craft_panel_alchemy_query_helpers_1.cloneAlchemyJob)(player.alchemyJob) : null;
         player.enhancementJob = player.enhancementJob ? cloneEnhancementJob(player.enhancementJob) : null;
-    }    
+    }
     /**
  * buildAlchemyPanelState：构建并返回目标对象。
  * @param player 玩家对象。
@@ -1093,7 +1172,7 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
 
     buildAlchemyPanelState(player) {
         return this.craftPanelAlchemyQueryService.buildAlchemyPanelState(player, this.getWeapon(player));
-    }    
+    }
     /**
  * buildEnhancementPanelState：构建并返回目标对象。
  * @param player 玩家对象。
@@ -1102,7 +1181,7 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
 
     buildEnhancementPanelState(player) {
         return this.craftPanelEnhancementQueryService.buildEnhancementPanelState(player, this.enhancementConfigs);
-    }    
+    }
     /**
  * collectEnhancementCandidates：判断强化Candidate是否满足条件。
  * @param player 玩家对象。
@@ -1139,7 +1218,7 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
             return left.item.itemId.localeCompare(right.item.itemId, 'zh-Hans-CN');
         });
         return candidates;
-    }    
+    }
     /**
  * buildEnhancementCandidate：构建并返回目标对象。
  * @param player 玩家对象。
@@ -1185,7 +1264,7 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
             allowSelfProtection: !config?.protectionItemId,
             protectionCandidates: this.buildProtectionCandidates(player, ref, item, config),
         };
-    }    
+    }
     /**
  * buildProtectionCandidates：构建并返回目标对象。
  * @param player 玩家对象。
@@ -1211,7 +1290,7 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
             });
         });
         return candidates;
-    }    
+    }
     /**
  * getEnhancementRequirements：读取强化Requirement。
  * @param config 参数说明。
@@ -1222,7 +1301,7 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
     getEnhancementRequirements(config, targetLevel) {
         const step = config?.steps.find((entry) => entry.targetEnhanceLevel === targetLevel);
         return (step?.materials ?? []).map((entry) => ({ ...entry }));
-    }    
+    }
     /**
  * getWeapon：读取Weapon。
  * @param player 玩家对象。
@@ -1231,7 +1310,7 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
 
     getWeapon(player) {
         return this.getEquippedItem(player, 'weapon');
-    }    
+    }
     /**
  * getEquippedItem：读取Equipped道具。
  * @param player 玩家对象。
@@ -1241,7 +1320,7 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
 
     getEquippedItem(player, slot) {
         return player.equipment?.slots?.find((entry) => entry.slot === slot)?.item ?? null;
-    }    
+    }
     /**
  * resolveRequestedTargetLevel：读取Requested目标等级并返回结果。
  * @param currentLevel 参数说明。
@@ -1252,7 +1331,7 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
     resolveRequestedTargetLevel(currentLevel, requestedTargetLevel) {
         const normalized = Math.floor(Number(requestedTargetLevel) || 0);
         return Math.min(MAX_ENHANCE_LEVEL, Math.max(currentLevel + 1, normalized || (currentLevel + 1)));
-    }    
+    }
     /**
  * resolveProtectionStartLevel：规范化或转换Protection开始等级。
  * @param desiredTargetLevel 参数说明。
@@ -1263,7 +1342,7 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
     resolveProtectionStartLevel(desiredTargetLevel, requestedProtectionStartLevel) {
         const normalized = Math.floor(Number(requestedProtectionStartLevel) || 0);
         return Math.max(2, Math.min(desiredTargetLevel, normalized || 2));
-    }    
+    }
     /**
  * shouldUseProtectionForStep：判断UseProtectionForStep是否满足条件。
  * @param targetLevel 参数说明。
@@ -1273,7 +1352,7 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
 
     shouldUseProtectionForStep(targetLevel, protectionStartLevel) {
         return typeof protectionStartLevel === 'number' && targetLevel >= protectionStartLevel;
-    }    
+    }
     /**
  * resolveEnhancementTarget：读取强化目标并返回结果。
  * @param player 玩家对象。
@@ -1301,7 +1380,7 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
             return item ? { ref: { source: 'equipment', slot }, item } : null;
         }
         return null;
-    }    
+    }
     /**
  * resolveEnhancementProtection：规范化或转换强化Protection。
  * @param player 玩家对象。
@@ -1331,7 +1410,7 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
             return null;
         }
         return protection;
-    }    
+    }
     /**
  * touchEnhancementRecord：执行touch强化Record相关逻辑。
  * @param player 玩家对象。
@@ -1371,7 +1450,7 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
         player.enhancementRecords.push(created);
         this.playerRuntimeService.markPersistenceDirtyDomains(player, ['enhancement_record']);
         return created;
-    }    
+    }
     /**
  * touchEnhancementLevelRecord：执行touch强化等级Record相关逻辑。
  * @param player 玩家对象。
@@ -1412,7 +1491,7 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
             levelRecord.failureCount += 1;
         }
         record.highestLevel = Math.max(record.highestLevel, resultingLevel);
-    }    
+    }
     /**
  * advanceEnhancementJob：执行advance强化Job相关逻辑。
  * @param player 玩家对象。
@@ -1486,7 +1565,7 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
                     text: `${job.targetItemName} 已调整为 +${currentLevel}，继续冲击 +${nextTargetLevel}。`,
                 }],
         };
-    }    
+    }
     /**
  * finishEnhancementJob：判断完成强化Job是否满足条件。
  * @param player 玩家对象。
@@ -1556,7 +1635,7 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
             attrChanged,
             groundDrops,
         };
-    }    
+    }
     /**
  * hasEnoughEnhancementResources：判断Enough强化Resource是否满足条件。
  * @param player 玩家对象。
@@ -1585,7 +1664,7 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
             return false;
         }
         return materials.every((entry) => (counts.get(entry.itemId) ?? 0) >= entry.count);
-    }    
+    }
     /**
  * hasEnoughQueuedEnhancementResources：判断EnoughQueued强化Resource是否满足条件。
  * @param player 玩家对象。
@@ -1610,7 +1689,7 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
             return false;
         }
         return materials.every((entry) => (counts.get(entry.itemId) ?? 0) >= entry.count);
-    }    
+    }
     /**
  * consumeProtectionItemForFailure：执行consumeProtection道具ForFailure相关逻辑。
  * @param player 玩家对象。
@@ -1627,7 +1706,7 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
             return true;
         }
         return this.consumeInventoryItemByPredicate(player, (item) => this.isEligibleProtectionItem(item, protectionItemId, job.targetItemId), 1);
-    }    
+    }
     /**
  * consumeInventoryItemByPredicate：执行consume背包道具ByPredicate相关逻辑。
  * @param player 玩家对象。
@@ -1656,7 +1735,7 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
             }
         }
         return remaining <= 0;
-    }    
+    }
     /**
  * isSelfProtectionItem：判断SelfProtection道具是否满足条件。
  * @param protectionItemId protectionItem ID。
@@ -1666,7 +1745,7 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
 
     isSelfProtectionItem(protectionItemId, targetItemId) {
         return protectionItemId === targetItemId;
-    }    
+    }
     /**
  * isEligibleProtectionItem：判断EligibleProtection道具是否满足条件。
  * @param item 道具。
@@ -1685,7 +1764,7 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
             return true;
         }
         return item.type === 'equipment' && normalizeEnhanceLevel(item.enhanceLevel) === 0;
-    }    
+    }
     /**
  * getEligibleProtectionCount：读取EligibleProtection数量。
  * @param player 玩家对象。
@@ -1705,7 +1784,7 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
             total += Math.max(0, Math.floor(Number(item.count) || 0));
         }
         return total;
-    }    
+    }
     /**
  * persistEnhancementRecords：执行persist强化Records相关逻辑。
  * @param player 玩家对象。
@@ -1725,7 +1804,7 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
         await this.playerDomainPersistenceService.savePlayerEnhancementRecords(playerId, [...(player.enhancementRecords ?? [])], {
             versionSeed: player.persistentRevision,
         });
-    }    
+    }
     /**
  * persistAlchemyPresets：执行persist炼丹Presets相关逻辑。
  * @param player 玩家对象。
@@ -1745,7 +1824,7 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
         await this.playerDomainPersistenceService.savePlayerAlchemyPresets(playerId, [...(player.alchemyPresets ?? [])], {
             versionSeed: player.persistentRevision,
         });
-    }    
+    }
     /**
  * persistActiveJob：执行persist活跃Job相关逻辑。
  * @param player 玩家对象。
@@ -1766,7 +1845,7 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
         await this.playerDomainPersistenceService.savePlayerActiveJob(playerId, activeJob, {
             versionSeed: player.persistentRevision,
         });
-    }    
+    }
     /**
  * persistTechniqueActivitySnapshot：执行persist技艺活动Snapshot相关逻辑。
  * @param player 玩家对象。
@@ -1787,7 +1866,7 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
         await this.playerDomainPersistenceService.savePlayerActiveJob(playerId, activeJob, {
             versionSeed: player.persistentRevision,
         });
-    }    
+    }
     /**
  * finalizeMutation：执行finalizeMutation相关逻辑。
  * @param player 玩家对象。
@@ -1835,7 +1914,7 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
                 console.warn(`活跃任务直写失败：${error instanceof Error ? error.message : String(error)}`);
             });
         }
-    }    
+    }
     /**
  * loadAlchemyCatalog：读取炼丹目录并返回结果。
  * @returns 无返回值，完成炼丹目录的读取/组装。
@@ -1860,7 +1939,26 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
             }
             return left.outputItemId.localeCompare(right.outputItemId, 'zh-Hans-CN');
         });
-    }    
+    }
+    /** 读取炼器目录，转换成炼丹同构的制造目录。 */
+    loadForgingCatalog() {
+        const filePath = resolveContentPath('forging', 'recipes.json');
+        if (!fs.existsSync(filePath)) {
+            this.logger.warn(`炼器配方目录缺失：${filePath}`);
+            this.forgingCatalog = [];
+            return;
+        }
+        const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+        this.forgingCatalog = Array.isArray(raw)
+            ? raw.map((entry) => this.toAlchemyCatalogEntry({ ...entry, category: 'special' })).filter(Boolean)
+            : [];
+        this.forgingCatalog.sort((left, right) => {
+            if (left.outputLevel !== right.outputLevel) {
+                return left.outputLevel - right.outputLevel;
+            }
+            return left.outputItemId.localeCompare(right.outputItemId, 'zh-Hans-CN');
+        });
+    }
     /**
  * loadEnhancementConfigs：读取强化配置并返回结果。
  * @returns 无返回值，完成强化配置的读取/组装。
@@ -1887,7 +1985,7 @@ let CraftPanelRuntimeService = class CraftPanelRuntimeService {
                 }
             }
         }
-    }    
+    }
     /**
  * toAlchemyCatalogEntry：执行to炼丹目录条目相关逻辑。
  * @param entry 参数说明。
@@ -2172,7 +2270,7 @@ function cloneEnhancementJob(entry) {
 
 function createCraftJobRunId(playerId, jobType) {
     const normalizedPlayerId = typeof playerId === 'string' ? playerId.trim() : '';
-    const normalizedJobType = jobType === 'enhancement' ? 'enhancement' : 'alchemy';
+    const normalizedJobType = jobType === 'enhancement' ? 'enhancement' : jobType === 'forging' ? 'forging' : 'alchemy';
     return `job:${normalizedPlayerId || 'player'}:${normalizedJobType}:${Date.now().toString(36)}`;
 }
 
@@ -2205,14 +2303,16 @@ function buildCraftQueueId(kind) {
     return `craft-queue:${normalizedKind}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function buildAlchemyQueueItem(recipe, ingredients, quantity) {
+function buildAlchemyQueueItem(recipe, ingredients, quantity, kind = 'alchemy') {
+    const normalizedKind = kind === 'forging' ? 'forging' : 'alchemy';
     return {
-        queueId: buildCraftQueueId('alchemy'),
-        kind: 'alchemy',
-        label: recipe?.outputName ?? recipe?.outputItemId ?? '炼丹任务',
+        queueId: buildCraftQueueId(normalizedKind),
+        kind: normalizedKind,
+        label: recipe?.outputName ?? recipe?.outputItemId ?? (normalizedKind === 'forging' ? '炼器任务' : '炼丹任务'),
         quantity,
         createdAt: Date.now(),
         payload: {
+            kind: normalizedKind,
             recipeId: recipe.recipeId,
             ingredients: cloneAlchemyIngredientSelections(ingredients),
             quantity,
@@ -2241,7 +2341,7 @@ function buildActiveJobSnapshotFromPlayer(player) {
         return buildActiveJobSnapshot(player.enhancementJob, 'enhancement');
     }
     if (player?.alchemyJob) {
-        return buildActiveJobSnapshot(player.alchemyJob, 'alchemy');
+        return buildActiveJobSnapshot(player.alchemyJob, player.alchemyJob.jobType === 'forging' ? 'forging' : 'alchemy');
     }
     return null;
 }
@@ -2250,7 +2350,7 @@ function buildActiveJobSnapshot(job, jobType) {
     if (!job || typeof job !== 'object') {
         return null;
     }
-    const normalizedJobType = jobType === 'enhancement' ? 'enhancement' : 'alchemy';
+    const normalizedJobType = jobType === 'enhancement' ? 'enhancement' : jobType === 'forging' ? 'forging' : 'alchemy';
     const jobRunId = typeof job.jobRunId === 'string' && job.jobRunId.trim()
         ? job.jobRunId.trim()
         : createCraftJobRunId(typeof job.playerId === 'string' ? job.playerId : '', normalizedJobType);

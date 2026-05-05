@@ -12,18 +12,14 @@ import {
   PlayerState,
   PlayerRealmState,
   BUILTIN_FORMATION_TEMPLATES,
-  FORMATION_ALLOCATION_MAX_PERCENT,
-  FORMATION_ALLOCATION_MIN_PERCENT,
-  FORMATION_DEFAULT_ALLOCATION_PERCENT,
-  FORMATION_DEFAULT_QI_COST_PER_SPIRIT_STONE,
   FORMATION_DISK_TIER_LABELS,
-  FormationAllocation,
   FormationCreatePayload,
-  normalizeFormationAllocation,
-  resolveFormationMinSpiritStoneCount,
-  resolveFormationQiCost,
-  resolveFormationStats,
+  FORMATION_SPIRIT_STONE_ITEM_ID,
+  normalizeFormationSetup,
+  resolveFormationCostConfig,
+  resolveFormationSetupPlan,
   resolveFormationVisual,
+  type FormationSetup,
   type FormationTemplate,
   type FormationRangeShape,
   SHATTER_SPIRIT_PILL_COST_RATIO,
@@ -76,8 +72,6 @@ import {
 
 /** InventoryActionKind：分类枚举。 */
 type InventoryActionKind = 'use' | 'drop' | 'destroy';
-
-type FormationRatioKey = 'effect' | 'range' | 'duration';
 
 type FormationRangePreviewPayload = {
   shape: FormationRangeShape;
@@ -1189,7 +1183,6 @@ export class InventoryPanel {
           input.addEventListener('input', onInput, { signal });
           input.addEventListener('change', onInput, { signal });
         });
-        this.syncFormationRatioSliders(body, null);
         this.syncFormationPreview(body, item);
         this.bindFormationRangePreviewButton(body, signal);
         body.querySelector<HTMLElement>('[data-formation-cancel]')?.addEventListener('click', (event) => {
@@ -1225,32 +1218,27 @@ export class InventoryPanel {
           </select>
         </label>
         <label class="formation-config-field ui-detail-field">
-          <strong>灵石 <span>最低 <output data-formation-min-stones>100</output></span></strong>
-          <input class="ui-input formation-config-input" data-formation-input data-formation-stones type="number" min="100" step="1" value="100">
+          <strong>范围 <span>默认 <output data-formation-default-radius>1</output> 格</span></strong>
+          <input class="ui-input formation-config-input" data-formation-input data-formation-radius type="number" min="1" step="1" value="1">
         </label>
+        <label class="formation-config-field ui-detail-field">
+          <strong>持续 <span>默认 <output data-formation-default-duration>120 分钟</output></span></strong>
+          <input class="ui-input formation-config-input" data-formation-input data-formation-duration-minutes type="number" min="1" step="1" value="120">
+        </label>
+        <label class="formation-config-field ui-detail-field">
+          <strong>效果 <span>最小 <output data-formation-min-effect>1</output></span></strong>
+          <input class="ui-input formation-config-input" data-formation-input data-formation-effect-value type="number" min="1" step="1" value="1">
+        </label>
+        <div class="formation-cost-card ui-detail-field" data-formation-stone-state>
+          <strong>消耗灵石</strong>
+          <output data-formation-stone-cost>-</output>
+          <span>按阵法与阵盘倍率反算</span>
+        </div>
         <div class="formation-cost-card ui-detail-field" data-formation-cost-state>
-          <strong>消耗灵气</strong>
-          <output data-formation-qi-cost>${formatDisplayInteger(FORMATION_DEFAULT_QI_COST_PER_SPIRIT_STONE * 100)}</output>
+          <strong>消耗灵力</strong>
+          <output data-formation-qi-cost>-</output>
           <span>当前 <output data-formation-current-qi>${formatDisplayInteger(this.playerQi)}</output></span>
         </div>
-      </div>
-      <div class="formation-allocation-control formation-config-grid--ratios" data-formation-allocation>
-        <div class="formation-section-heading">
-          <strong>灵力配比</strong>
-          <span>按三项总和折算</span>
-        </div>
-        <label class="formation-allocation-row">
-          <span><strong>效果</strong><output data-formation-ratio-value="effect">33</output></span>
-          <input class="formation-config-slider" data-formation-input data-formation-effect data-formation-ratio="effect" type="range" min="${FORMATION_ALLOCATION_MIN_PERCENT}" max="${FORMATION_ALLOCATION_MAX_PERCENT}" step="1" value="33">
-        </label>
-        <label class="formation-allocation-row">
-          <span><strong>范围</strong><output data-formation-ratio-value="range">33</output></span>
-          <input class="formation-config-slider" data-formation-input data-formation-range data-formation-ratio="range" type="range" min="${FORMATION_ALLOCATION_MIN_PERCENT}" max="${FORMATION_ALLOCATION_MAX_PERCENT}" step="1" value="33">
-        </label>
-        <label class="formation-allocation-row">
-          <span><strong>持续</strong><output data-formation-ratio-value="duration">33</output></span>
-          <input class="formation-config-slider" data-formation-input data-formation-duration data-formation-ratio="duration" type="range" min="${FORMATION_ALLOCATION_MIN_PERCENT}" max="${FORMATION_ALLOCATION_MAX_PERCENT}" step="1" value="33">
-        </label>
       </div>
       <div class="formation-preview">
         <div class="formation-section-heading">
@@ -1261,6 +1249,7 @@ export class InventoryPanel {
           <span><em>总灵力</em><output data-formation-stat="totalAura">-</output></span>
           <span><em>强度</em><output data-formation-stat="effectValue">-</output></span>
           <span><em>半径</em><output data-formation-stat="radius">-</output></span>
+          <span><em>持续</em><output data-formation-stat="durationHours">-</output></span>
           <span><em>开启/日</em><output data-formation-stat="activeCost">-</output></span>
           <span><em>关闭/日</em><output data-formation-stat="inactiveCost">-</output></span>
         </div>
@@ -1277,16 +1266,24 @@ export class InventoryPanel {
   }
 
   private syncFormationPreview(body: HTMLElement, item: ItemStack): void {
-    this.syncFormationAllocationLabels(body);
     const previewSummary = body.querySelector<HTMLElement>('[data-formation-preview-summary]');
     const template = this.getSelectedFormationTemplate(body);
-    const spiritStoneCount = this.syncFormationSpiritStoneInput(body, template);
-    const allocation = this.readFormationAllocation(body);
     const diskMultiplier = this.resolveFormationDiskMultiplier(item);
-    const stats = resolveFormationStats(template, spiritStoneCount, diskMultiplier, allocation);
-    const qiCost = resolveFormationQiCost(spiritStoneCount);
+    const setup = this.syncFormationSetupInputs(body, template);
+    const plan = resolveFormationSetupPlan(template, diskMultiplier, setup);
+    const stats = plan.stats;
+    const spiritStoneCount = plan.spiritStoneCount;
+    const qiCost = plan.qiCost;
     const hasEnoughQi = this.playerQi >= qiCost;
+    const hasEnoughStones = this.getCurrentSpiritStoneCount() >= spiritStoneCount;
     const costState = body.querySelector<HTMLElement>('[data-formation-cost-state]');
+    const stoneState = body.querySelector<HTMLElement>('[data-formation-stone-state]');
+    const stoneCostOutput = body.querySelector<HTMLOutputElement>('[data-formation-stone-cost]');
+    if (stoneCostOutput) {
+      stoneCostOutput.value = formatDisplayInteger(spiritStoneCount);
+      stoneCostOutput.textContent = formatDisplayInteger(spiritStoneCount);
+      stoneCostOutput.title = `当前 ${formatDisplayInteger(this.getCurrentSpiritStoneCount())}，需要 ${formatDisplayInteger(spiritStoneCount)}`;
+    }
     const qiCostOutput = body.querySelector<HTMLOutputElement>('[data-formation-qi-cost]');
     if (qiCostOutput) {
       qiCostOutput.value = formatDisplayInteger(qiCost);
@@ -1301,23 +1298,33 @@ export class InventoryPanel {
     if (costState) {
       costState.dataset.formationCostState = hasEnoughQi ? 'ready' : 'insufficient';
     }
+    if (stoneState) {
+      stoneState.dataset.formationCostState = hasEnoughStones ? 'ready' : 'insufficient';
+    }
     if (previewSummary) {
-      previewSummary.textContent = hasEnoughQi
-        ? `阵盘增幅 ${formatDisplayNumber(diskMultiplier)} 倍`
-        : `灵气不足 ${formatDisplayInteger(qiCost - this.playerQi)}`;
+      previewSummary.textContent = !hasEnoughStones
+        ? `灵石不足 ${formatDisplayInteger(spiritStoneCount - this.getCurrentSpiritStoneCount())}`
+        : hasEnoughQi
+          ? `阵盘增幅 ${formatDisplayNumber(diskMultiplier)} 倍`
+          : `灵力不足 ${formatDisplayInteger(qiCost - this.playerQi)}`;
     }
     this.setFormationStatText(body, 'totalAura', stats.totalAuraBudget);
     this.setFormationStatText(body, 'effectValue', stats.effectValue);
     this.setFormationStatText(body, 'radius', stats.radius);
+    this.setFormationStatText(body, 'durationHours', stats.durationHours ?? setup.durationHours, '', 'duration');
     this.setFormationStatText(body, 'activeCost', stats.dailyActiveCost);
     this.setFormationStatText(body, 'inactiveCost', stats.dailyInactiveCost);
     const confirmButton = body.querySelector<HTMLButtonElement>('[data-formation-confirm]');
     if (confirmButton) {
-      confirmButton.disabled = !hasEnoughQi;
-      confirmButton.title = hasEnoughQi
+      confirmButton.disabled = !hasEnoughQi || !hasEnoughStones;
+      confirmButton.title = hasEnoughStones && hasEnoughQi
         ? ''
-        : `灵气不足：当前 ${formatDisplayInteger(this.playerQi)}，需要 ${formatDisplayInteger(qiCost)}`;
-      confirmButton.textContent = hasEnoughQi ? '确认布阵' : '灵气不足';
+        : !hasEnoughStones
+          ? `灵石不足：当前 ${formatDisplayInteger(this.getCurrentSpiritStoneCount())}，需要 ${formatDisplayInteger(spiritStoneCount)}`
+          : `灵力不足：当前 ${formatDisplayInteger(this.playerQi)}，需要 ${formatDisplayInteger(qiCost)}`;
+      confirmButton.textContent = hasEnoughStones && hasEnoughQi
+        ? '确认布阵'
+        : !hasEnoughStones ? '灵石不足' : '灵力不足';
     }
     const previewButton = body.querySelector<HTMLButtonElement>('[data-formation-range-preview]');
     if (previewButton) {
@@ -1335,13 +1342,14 @@ export class InventoryPanel {
     });
   }
 
-  private setFormationStatText(body: HTMLElement, key: string, value: number): void {
+  private setFormationStatText(body: HTMLElement, key: string, value: number, suffix = '', format: 'integer' | 'duration' = 'integer'): void {
     const node = body.querySelector<HTMLOutputElement>(`[data-formation-stat="${key}"]`);
     if (!node) {
       return;
     }
-    node.value = formatDisplayInteger(value);
-    node.textContent = formatDisplayInteger(value);
+    const text = format === 'duration' ? this.formatFormationDuration(value) : `${formatDisplayInteger(value)}${suffix}`;
+    node.value = text;
+    node.textContent = text;
   }
 
   private getSelectedFormationTemplate(body: HTMLElement): FormationTemplate {
@@ -1351,21 +1359,67 @@ export class InventoryPanel {
       ?? BUILTIN_FORMATION_TEMPLATES[0]!;
   }
 
-  private syncFormationSpiritStoneInput(body: HTMLElement, template: FormationTemplate): number {
-    const input = body.querySelector<HTMLInputElement>('[data-formation-stones]');
-    const minSpiritStoneCount = resolveFormationMinSpiritStoneCount(template);
-    const rawValue = input ? Number.parseInt(input.value, 10) : minSpiritStoneCount;
-    const spiritStoneCount = Math.max(minSpiritStoneCount, Number.isFinite(rawValue) ? rawValue : minSpiritStoneCount);
-    if (input) {
-      input.min = String(minSpiritStoneCount);
-      input.value = String(spiritStoneCount);
+  private syncFormationSetupInputs(body: HTMLElement, template: FormationTemplate): FormationSetup {
+    const cost = resolveFormationCostConfig(template);
+    const radiusInput = body.querySelector<HTMLInputElement>('[data-formation-radius]');
+    const durationInput = body.querySelector<HTMLInputElement>('[data-formation-duration-minutes]');
+    const effectInput = body.querySelector<HTMLInputElement>('[data-formation-effect-value]');
+    const defaultDurationMinutes = Math.max(1, Math.round(cost.defaultDurationHours * 60));
+    const setup = normalizeFormationSetup(template, {
+      radius: radiusInput ? Number.parseInt(radiusInput.value, 10) : cost.defaultRadius,
+      durationHours: durationInput ? Number(durationInput.value) / 60 : cost.defaultDurationHours,
+      effectValue: effectInput ? Number.parseInt(effectInput.value, 10) : cost.minEffectValue,
+    });
+    if (radiusInput) {
+      radiusInput.min = String(cost.defaultRadius);
+      radiusInput.step = '1';
+      radiusInput.value = String(setup.radius);
     }
-    const minOutput = body.querySelector<HTMLOutputElement>('[data-formation-min-stones]');
-    if (minOutput) {
-      minOutput.value = formatDisplayInteger(minSpiritStoneCount);
-      minOutput.textContent = formatDisplayInteger(minSpiritStoneCount);
+    if (durationInput) {
+      durationInput.min = String(cost.minDurationMinutes);
+      durationInput.step = '1';
+      durationInput.value = String(Math.max(1, Math.round(setup.durationHours * 60)));
     }
-    return spiritStoneCount;
+    if (effectInput) {
+      effectInput.min = String(cost.minEffectValue);
+      effectInput.step = '1';
+      effectInput.value = String(setup.effectValue);
+    }
+    this.setFormationOutputText(body, '[data-formation-default-radius]', cost.defaultRadius, ' 格');
+    this.setFormationOutputText(body, '[data-formation-default-duration]', defaultDurationMinutes, ' 分钟');
+    this.setFormationOutputText(body, '[data-formation-min-effect]', cost.minEffectValue);
+    return setup;
+  }
+
+  private setFormationOutputText(body: HTMLElement, selector: string, value: number, suffix = ''): void {
+    const output = body.querySelector<HTMLOutputElement>(selector);
+    if (!output) {
+      return;
+    }
+    const text = `${formatDisplayInteger(value)}${suffix}`;
+    output.value = text;
+    output.textContent = text;
+  }
+
+  private formatFormationDuration(durationHours: number): string {
+    const minutes = Math.max(1, Math.round(durationHours * 60));
+    if (minutes < 60) {
+      return `${formatDisplayInteger(minutes)}分钟`;
+    }
+    if (minutes % 60 === 0) {
+      return `${formatDisplayInteger(minutes / 60)}小时`;
+    }
+    const hours = Math.floor(minutes / 60);
+    const restMinutes = minutes - hours * 60;
+    return `${formatDisplayInteger(hours)}小时${formatDisplayInteger(restMinutes)}分钟`;
+  }
+
+  private getCurrentSpiritStoneCount(): number {
+    return (this.lastInventory?.items ?? []).reduce((total, item) => (
+      item.itemId === FORMATION_SPIRIT_STONE_ITEM_ID
+        ? total + Math.max(0, Math.trunc(Number(item.count) || 0))
+        : total
+    ), 0);
   }
 
   private setFormationPreviewFocusMode(visible: boolean): void {
@@ -1400,87 +1454,27 @@ export class InventoryPanel {
   private handleFormationInputChange(
     body: HTMLElement,
     item: ItemStack,
-    input: HTMLInputElement | HTMLSelectElement,
+    _input: HTMLInputElement | HTMLSelectElement,
   ): void {
-    if (input instanceof HTMLInputElement && input.dataset.formationRatio) {
-      this.syncFormationRatioSliders(body, input.dataset.formationRatio as FormationRatioKey);
-    }
     this.syncFormationPreview(body, item);
-  }
-
-  private syncFormationRatioSliders(body: HTMLElement, changedKey: FormationRatioKey | null): void {
-    const sliders = this.getFormationRatioSliders(body);
-    if (!sliders) {
-      return;
-    }
-    if (changedKey) {
-      sliders[changedKey].value = String(this.clampFormationRatio(Number.parseInt(sliders[changedKey].value, 10)));
-    }
-    this.syncFormationAllocationLabels(body);
-  }
-
-  private getFormationRatioSliders(body: HTMLElement): Record<FormationRatioKey, HTMLInputElement> | null {
-    const effect = body.querySelector<HTMLInputElement>('[data-formation-effect]');
-    const range = body.querySelector<HTMLInputElement>('[data-formation-range]');
-    const duration = body.querySelector<HTMLInputElement>('[data-formation-duration]');
-    if (!effect || !range || !duration) {
-      return null;
-    }
-    return { effect, range, duration };
-  }
-
-  private syncFormationAllocationLabels(body: HTMLElement): void {
-    const sliders = this.getFormationRatioSliders(body);
-    if (!sliders) {
-      return;
-    }
-    (['effect', 'range', 'duration'] as FormationRatioKey[]).forEach((key) => {
-      const value = this.clampFormationRatio(Number.parseInt(sliders[key].value, 10));
-      sliders[key].value = String(value);
-      const label = body.querySelector<HTMLOutputElement>(`[data-formation-ratio-value="${key}"]`);
-      if (label) {
-        label.value = String(value);
-        label.textContent = String(value);
-      }
-    });
-  }
-
-  private readFormationAllocation(body: HTMLElement): FormationAllocation {
-    const sliders = this.getFormationRatioSliders(body);
-    if (!sliders) {
-      return {
-        effectPercent: FORMATION_DEFAULT_ALLOCATION_PERCENT,
-        rangePercent: FORMATION_DEFAULT_ALLOCATION_PERCENT,
-        durationPercent: FORMATION_DEFAULT_ALLOCATION_PERCENT,
-      };
-    }
-    return normalizeFormationAllocation({
-      effectPercent: Number.parseInt(sliders.effect.value, 10),
-      rangePercent: Number.parseInt(sliders.range.value, 10),
-      durationPercent: Number.parseInt(sliders.duration.value, 10),
-    });
-  }
-
-  private clampFormationRatio(value: number): number {
-    if (!Number.isFinite(value)) {
-      return FORMATION_ALLOCATION_MIN_PERCENT;
-    }
-    return Math.max(
-      FORMATION_ALLOCATION_MIN_PERCENT,
-      Math.min(FORMATION_ALLOCATION_MAX_PERCENT, Math.trunc(value)),
-    );
   }
 
   private readFormationPayload(body: HTMLElement, slotIndex: number, enforceQi = true): FormationCreatePayload | null {
     const template = this.getSelectedFormationTemplate(body);
     const formationId = template.id;
-    const spiritStoneCount = this.syncFormationSpiritStoneInput(body, template);
-    const qiCost = resolveFormationQiCost(spiritStoneCount);
+    const item = this.lastInventory?.items[slotIndex] ?? null;
+    const diskMultiplier = item ? this.resolveFormationDiskMultiplier(item) : 1;
+    const setup = this.syncFormationSetupInputs(body, template);
+    const plan = resolveFormationSetupPlan(template, diskMultiplier, setup);
+    const spiritStoneCount = plan.spiritStoneCount;
+    const qiCost = plan.qiCost;
     if (enforceQi && this.playerQi < qiCost) {
       return null;
     }
-    const allocation = this.readFormationAllocation(body);
-    return { slotIndex, formationId, spiritStoneCount, qiCost, allocation };
+    if (this.getCurrentSpiritStoneCount() < spiritStoneCount) {
+      return null;
+    }
+    return { slotIndex, formationId, setup: plan.setup, spiritStoneCount, qiCost };
   }
 
   private readPositiveFormNumber(body: HTMLElement, selector: string, fallback: number, allowZero = false): number {

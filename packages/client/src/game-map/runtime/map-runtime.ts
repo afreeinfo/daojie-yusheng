@@ -34,7 +34,7 @@ export class MapRuntime implements MapRuntimeApi {
   /** 具体渲染器适配层（当前挂接 TextRenderer）。 */
   private readonly renderer = new CanvasTextRendererAdapter();
   /** 小地图运行时视图。 */
-  private readonly minimap = new MinimapRuntime();  
+  private readonly minimap = new MinimapRuntime();
   /**
  * interaction：interaction相关字段。
  */
@@ -207,7 +207,7 @@ export class MapRuntime implements MapRuntimeApi {
   /** 透传交互回调给 InteractionController。 */
   setInteractionCallbacks(callbacks: MapRuntimeInteractionCallbacks): void {
     this.interaction.setCallbacks(callbacks);
-  }  
+  }
   /**
  * setMoveHandler：写入MoveHandler。
  * @param handler ((x: number, y: number) => void) | null 参数说明。
@@ -220,11 +220,11 @@ export class MapRuntime implements MapRuntimeApi {
   }
 
   /** 覆盖路径高亮并刷新渲染场景。 */
-  setPathCells(cells: Array<{  
+  setPathCells(cells: Array<{
   /**
  * x：x相关字段。
  */
- x: number;  
+ x: number;
  /**
  * y：y相关字段。
  */
@@ -249,7 +249,18 @@ export class MapRuntime implements MapRuntimeApi {
   setSenseQiOverlay(state: Parameters<MapRuntimeApi['setSenseQiOverlay']>[0]): void {
     this.store.setSenseQiOverlay(state);
     this.syncSceneFromStore();
-  }  
+  }
+
+  setBuildPreviewOverlay(state: Parameters<MapRuntimeApi['setBuildPreviewOverlay']>[0]): void {
+    this.store.setBuildPreviewOverlay(state);
+    this.syncSceneFromStore();
+  }
+
+  setFengShuiOverlay(state: Parameters<MapRuntimeApi['setFengShuiOverlay']>[0]): void {
+    this.store.setFengShuiOverlay(state);
+    this.syncSceneFromStore();
+  }
+
   /**
  * replaceVisibleEntities：判断可见Entity是否满足条件。
  * @param entities Parameters<MapRuntimeApi['replaceVisibleEntities']>[0] 参数说明。

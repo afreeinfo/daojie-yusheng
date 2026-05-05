@@ -37,9 +37,6 @@ let CraftPanelAlchemyQueryService = class CraftPanelAlchemyQueryService {
         if (knownCatalogVersion !== craft_panel_alchemy_query_helpers_1.ALCHEMY_CATALOG_VERSION) {
             payload.catalog = alchemyCatalog.map((entry) => (0, craft_panel_alchemy_query_helpers_1.cloneAlchemyCatalogEntry)(entry));
         }
-        if (!state) {
-            payload.error = '尚未装备丹炉。';
-        }
         return payload;
     }    
     /**
@@ -53,13 +50,10 @@ let CraftPanelAlchemyQueryService = class CraftPanelAlchemyQueryService {
   // 关键分支按状态与边界条件处理，非法路径会被提前拦截。
 
         const furnaceItemId = equippedWeapon?.tags?.includes(craft_panel_alchemy_query_helpers_1.ALCHEMY_FURNACE_TAG) ? equippedWeapon.itemId : undefined;
-        if (!furnaceItemId && !player.alchemyJob) {
-            return null;
-        }
         return {
             furnaceItemId,
             presets: (player.alchemyPresets ?? []).map((entry) => (0, craft_panel_alchemy_query_helpers_1.cloneAlchemyPreset)(entry)),
-            job: player.alchemyJob ? (0, craft_panel_alchemy_query_helpers_1.cloneAlchemyJob)(player.alchemyJob) : null,
+            job: player.alchemyJob?.jobType === 'forging' ? null : player.alchemyJob ? (0, craft_panel_alchemy_query_helpers_1.cloneAlchemyJob)(player.alchemyJob) : null,
             queue: cloneCraftQueue(player.alchemyJob?.queuedJobs ?? player.enhancementJob?.queuedJobs ?? []),
         };
     }

@@ -174,7 +174,7 @@ let WorldRuntimeCraftMutationService = class WorldRuntimeCraftMutationService {
         if (!runtimeOwnerId || sessionEpoch <= 0) {
             return;
         }
-        const nextActiveJob = buildActiveJobSnapshot(activeJob, player.enhancementJob ? 'enhancement' : 'alchemy');
+        const nextActiveJob = buildActiveJobSnapshot(activeJob, player.enhancementJob ? 'enhancement' : activeJob.jobType === 'forging' ? 'forging' : 'alchemy');
         if (!nextActiveJob) {
             return;
         }
@@ -282,7 +282,7 @@ function buildActiveJobSnapshot(job, jobType) {
     if (!job || typeof job !== 'object') {
         return null;
     }
-    const normalizedJobType = jobType === 'enhancement' ? 'enhancement' : 'alchemy';
+    const normalizedJobType = jobType === 'enhancement' ? 'enhancement' : jobType === 'forging' ? 'forging' : 'alchemy';
     const jobRunId = typeof job.jobRunId === 'string' && job.jobRunId.trim() ? job.jobRunId.trim() : '';
     const jobVersion = Math.max(1, Math.trunc(Number(job.jobVersion ?? 1)));
     return {

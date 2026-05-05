@@ -74,6 +74,8 @@ let WorldRuntimeAlchemyService = class WorldRuntimeAlchemyService {
   // 关键分支按状态与边界条件处理，非法路径会被提前拦截。
 
         const player = this.playerRuntimeService.getPlayerOrThrow(playerId);
+        const activityKind = resolveAlchemyLikeActivityKind(payload);
+        const activityLabel = activityKind === 'forging' ? '炼器' : '炼丹';
         const durableOperationService = deps?.durableOperationService ?? null;
         const runtimeOwnerId = typeof player.runtimeOwnerId === 'string' && player.runtimeOwnerId.trim()
             ? player.runtimeOwnerId.trim()
@@ -82,11 +84,11 @@ let WorldRuntimeAlchemyService = class WorldRuntimeAlchemyService {
             ? Math.max(1, Math.trunc(Number(player.sessionEpoch)))
             : 0;
         if (!durableOperationService?.isEnabled?.() || !runtimeOwnerId || sessionEpoch <= 0) {
-            const result = this.craftPanelRuntimeService.startTechniqueActivity(player, 'alchemy', payload);
+            const result = this.craftPanelRuntimeService.startTechniqueActivity(player, activityKind, payload);
             if (!result.ok) {
-                throw new common_1.BadRequestException(result.error ?? '启动炼丹失败');
+                throw new common_1.BadRequestException(result.error ?? `启动${activityLabel}失败`);
             }
-            this.worldRuntimeCraftMutationService.flushCraftMutation(playerId, result, 'alchemy', deps);
+            this.worldRuntimeCraftMutationService.flushCraftMutation(playerId, result, activityKind, deps);
             return;
         }
         try {
@@ -110,14 +112,16 @@ let WorldRuntimeAlchemyService = class WorldRuntimeAlchemyService {
  */
 
     async dispatchStartAlchemyDurably(playerId, player, payload, deps, durableOperationService, runtimeOwnerId, sessionEpoch) {
+        const activityKind = resolveAlchemyLikeActivityKind(payload);
+        const activityLabel = activityKind === 'forging' ? '炼器' : '炼丹';
         const rollbackState = captureStartAlchemyRollbackState(player);
         player.suppressImmediateDomainPersistence = true;
         let result;
         try {
-            result = this.craftPanelRuntimeService.startTechniqueActivity(player, 'alchemy', payload);
+            result = this.craftPanelRuntimeService.startTechniqueActivity(player, activityKind, payload);
             if (!result.ok) {
                 restoreStartAlchemyRollbackState(player, rollbackState, this.playerRuntimeService);
-                throw new common_1.BadRequestException(result.error ?? '启动炼丹失败');
+                throw new common_1.BadRequestException(result.error ?? `启动${activityLabel}失败`);
             }
             const nextActiveJob = buildNextAlchemyActiveJobSnapshot(player);
             const nextInventoryItems = cloneInventoryItems(player.inventory?.items ?? []);
@@ -141,7 +145,7 @@ let WorldRuntimeAlchemyService = class WorldRuntimeAlchemyService {
         } finally {
             player.suppressImmediateDomainPersistence = false;
         }
-        this.worldRuntimeCraftMutationService.flushCraftMutation(playerId, result, 'alchemy', deps, {
+        this.worldRuntimeCraftMutationService.flushCraftMutation(playerId, result, activityKind, deps, {
             skipActiveJobPersistence: true,
         });
     }    
@@ -152,10 +156,12 @@ let WorldRuntimeAlchemyService = class WorldRuntimeAlchemyService {
  * @returns 无返回值，直接更新Cancel炼丹相关状态。
  */
 
-  async dispatchCancelAlchemy(playerId, deps) {
+  async dispatchCancelAlchemy(playerId, deps, activityKind = 'alchemy') {
   // 关键分支按状态与边界条件处理，非法路径会被提前拦截。
 
         const player = this.playerRuntimeService.getPlayerOrThrow(playerId);
+        const normalizedActivityKind = activityKind === 'forging' ? 'forging' : 'alchemy';
+        const activityLabel = normalizedActivityKind === 'forging' ? '炼器' : '炼丹';
         const durableOperationService = deps?.durableOperationService ?? null;
         const runtimeOwnerId = typeof player.runtimeOwnerId === 'string' && player.runtimeOwnerId.trim()
             ? player.runtimeOwnerId.trim()
@@ -164,15 +170,15 @@ let WorldRuntimeAlchemyService = class WorldRuntimeAlchemyService {
             ? Math.max(1, Math.trunc(Number(player.sessionEpoch)))
             : 0;
         if (!durableOperationService?.isEnabled?.() || !runtimeOwnerId || sessionEpoch <= 0) {
-            const result = this.craftPanelRuntimeService.cancelTechniqueActivity(player, 'alchemy');
+            const result = this.craftPanelRuntimeService.cancelTechniqueActivity(player, normalizedActivityKind);
             if (!result.ok) {
-                throw new common_1.BadRequestException(result.error ?? '取消炼丹失败');
+                throw new common_1.BadRequestException(result.error ?? `取消${activityLabel}失败`);
             }
-            this.worldRuntimeCraftMutationService.flushCraftMutation(playerId, result, 'alchemy', deps);
+            this.worldRuntimeCraftMutationService.flushCraftMutation(playerId, result, normalizedActivityKind, deps);
             return;
         }
         try {
-            await this.dispatchCancelAlchemyDurably(playerId, player, deps, durableOperationService, runtimeOwnerId, sessionEpoch);
+            await this.dispatchCancelAlchemyDurably(playerId, player, deps, durableOperationService, runtimeOwnerId, sessionEpoch, normalizedActivityKind);
         }
         catch (error) {
             const message = error instanceof Error ? error.message : String(error);
@@ -190,19 +196,24 @@ let WorldRuntimeAlchemyService = class WorldRuntimeAlchemyService {
  * @returns 无返回值，直接更新 durable 取消炼丹相关状态。
  */
 
-    async dispatchCancelAlchemyDurably(playerId, player, deps, durableOperationService, runtimeOwnerId, sessionEpoch) {
+    async dispatchCancelAlchemyDurably(playerId, player, deps, durableOperationService, runtimeOwnerId, sessionEpoch, activityKind = 'alchemy') {
+        const normalizedActivityKind = activityKind === 'forging' ? 'forging' : 'alchemy';
+        const activityLabel = normalizedActivityKind === 'forging' ? '炼器' : '炼丹';
         const rollbackState = captureStartAlchemyRollbackState(player);
         const activeJob = rollbackState.alchemyJob ? structuredClone(rollbackState.alchemyJob) : null;
         if (!activeJob?.jobRunId) {
-            throw new common_1.BadRequestException('当前没有可取消的炼丹任务。');
+            throw new common_1.BadRequestException(`当前没有可取消的${activityLabel}任务。`);
+        }
+        if ((activeJob.jobType === 'forging' ? 'forging' : 'alchemy') !== normalizedActivityKind) {
+            throw new common_1.BadRequestException(`当前没有可取消的${activityLabel}任务。`);
         }
         player.suppressImmediateDomainPersistence = true;
         let result;
         try {
-            result = this.craftPanelRuntimeService.cancelTechniqueActivity(player, 'alchemy');
+            result = this.craftPanelRuntimeService.cancelTechniqueActivity(player, normalizedActivityKind);
             if (!result.ok) {
                 restoreStartAlchemyRollbackState(player, rollbackState, this.playerRuntimeService);
-                throw new common_1.BadRequestException(result.error ?? '取消炼丹失败');
+                throw new common_1.BadRequestException(result.error ?? `取消${activityLabel}失败`);
             }
             const nextInventoryItems = cloneInventoryItems(player.inventory?.items ?? []);
             const nextWalletBalances = cloneWalletBalances(player.wallet?.balances ?? []);
@@ -226,7 +237,7 @@ let WorldRuntimeAlchemyService = class WorldRuntimeAlchemyService {
         } finally {
             player.suppressImmediateDomainPersistence = false;
         }
-        this.worldRuntimeCraftMutationService.flushCraftMutation(playerId, result, 'alchemy', deps, {
+        this.worldRuntimeCraftMutationService.flushCraftMutation(playerId, result, normalizedActivityKind, deps, {
             skipActiveJobPersistence: true,
         });
     }    
@@ -243,17 +254,18 @@ let WorldRuntimeAlchemyService = class WorldRuntimeAlchemyService {
 
     async tickAlchemyDurably(playerId, player, deps, durableOperationService, runtimeOwnerId, sessionEpoch) {
         const activeJobBeforeTick = player?.alchemyJob ? structuredClone(player.alchemyJob) : null;
+        const activityKind = activeJobBeforeTick?.jobType === 'forging' ? 'forging' : 'alchemy';
         if (!activeJobBeforeTick?.jobRunId) {
-            this.worldRuntimeCraftMutationService.flushCraftMutation(playerId, this.craftPanelRuntimeService.tickTechniqueActivity(player, 'alchemy'), 'alchemy', deps);
+            this.worldRuntimeCraftMutationService.flushCraftMutation(playerId, this.craftPanelRuntimeService.tickTechniqueActivity(player, activityKind), activityKind, deps);
             return;
         }
         const rollbackState = captureStartAlchemyRollbackState(player);
         player.suppressImmediateDomainPersistence = true;
         let result;
         try {
-            result = this.craftPanelRuntimeService.tickTechniqueActivity(player, 'alchemy');
+            result = this.craftPanelRuntimeService.tickTechniqueActivity(player, activityKind);
             if (!result?.ok) {
-                this.worldRuntimeCraftMutationService.flushCraftMutation(playerId, result, 'alchemy', deps);
+                this.worldRuntimeCraftMutationService.flushCraftMutation(playerId, result, activityKind, deps);
                 return;
             }
             const leaseContext = await resolveRequiredInstanceLeaseContext(player.instanceId, deps);
@@ -293,7 +305,7 @@ let WorldRuntimeAlchemyService = class WorldRuntimeAlchemyService {
         } finally {
             player.suppressImmediateDomainPersistence = false;
         }
-        this.worldRuntimeCraftMutationService.flushCraftMutation(playerId, result, 'alchemy', deps, {
+        this.worldRuntimeCraftMutationService.flushCraftMutation(playerId, result, activityKind, deps, {
             skipActiveJobPersistence: true,
         });
     }    
@@ -342,6 +354,7 @@ let WorldRuntimeAlchemyService = class WorldRuntimeAlchemyService {
  */
 
     async tickAlchemy(playerId, player, deps) {
+        const activityKind = player?.alchemyJob?.jobType === 'forging' ? 'forging' : 'alchemy';
         const durableOperationService = deps?.durableOperationService ?? null;
         const runtimeOwnerId = typeof player?.runtimeOwnerId === 'string' && player.runtimeOwnerId.trim()
             ? player.runtimeOwnerId.trim()
@@ -350,7 +363,7 @@ let WorldRuntimeAlchemyService = class WorldRuntimeAlchemyService {
             ? Math.max(1, Math.trunc(Number(player.sessionEpoch)))
             : 0;
         if (!durableOperationService?.isEnabled?.() || !runtimeOwnerId || sessionEpoch <= 0) {
-            this.worldRuntimeCraftMutationService.flushCraftMutation(playerId, this.craftPanelRuntimeService.tickTechniqueActivity(player, 'alchemy'), 'alchemy', deps);
+            this.worldRuntimeCraftMutationService.flushCraftMutation(playerId, this.craftPanelRuntimeService.tickTechniqueActivity(player, activityKind), activityKind, deps);
             return;
         }
         await this.tickAlchemyDurably(playerId, player, deps, durableOperationService, runtimeOwnerId, sessionEpoch).catch((error) => {
@@ -389,9 +402,10 @@ function buildNextAlchemyActiveJobSnapshot(player) {
     if (!job?.jobRunId) {
         throw new Error('active_job_snapshot_missing_after_start_alchemy');
     }
+    const jobType = job.jobType === 'forging' ? 'forging' : 'alchemy';
     return {
         jobRunId: String(job.jobRunId),
-        jobType: 'alchemy',
+        jobType,
         status: job.phase === 'paused' ? 'paused' : 'running',
         phase: typeof job.phase === 'string' && job.phase.trim() ? job.phase.trim() : 'preparing',
         startedAt: Math.max(0, Math.trunc(Number(job.startedAt ?? Date.now()))),
@@ -418,6 +432,10 @@ function buildNextAlchemyActiveJobSnapshot(player) {
             exactRecipe: Boolean(job.exactRecipe),
         },
     };
+}
+
+function resolveAlchemyLikeActivityKind(payload) {
+    return payload?.kind === 'forging' ? 'forging' : 'alchemy';
 }
 
 function captureStartAlchemyRollbackState(player) {

@@ -10,6 +10,7 @@ import { reactUiBridge } from './react-ui/bridge/react-ui-bridge';
 import { createMainActionStateSource } from './main-action-state-source';
 import { createMainAttrDetailStateSource } from './main-attr-detail-state-source';
 import { createMainBreakthroughStateSource } from './main-breakthrough-state-source';
+import { createMainBuildingFengShuiStateSource } from './main-building-fengshui-state-source';
 import { createMainDetailHydrationSource } from './main-detail-hydration-source';
 import { createMainFormationPreviewSource } from './main-formation-preview-source';
 import { createMainDetailStateSource } from './main-detail-state-source';
@@ -29,11 +30,7 @@ import { openWorldMigrationModal } from './ui/world-migration-modal';
 import type { MainDomElements } from './main-dom-elements';
 import type { MainFrontendModules } from './main-frontend-modules';
 import type { ToastKind } from './main-app-assembly-types';
-/**
- * CreateMainPanelContextOptions：统一结构类型，保证协议与运行时一致性。
- */
-
-
+/** CreateMainPanelContextOptions：统一结构类型，保证协议与运行时一致性。 */
 type CreateMainPanelContextOptions = {
 /**
  * documentRef：documentRef相关字段。
@@ -75,13 +72,7 @@ type CreateMainPanelContextOptions = {
     hydrateSyncedItemStack(item: SyncedItemStack, previous?: Inventory['items'][number]): Inventory['items'][number];
   };
 };
-/**
- * createMainPanelContext：构建并返回目标对象。
- * @param options CreateMainPanelContextOptions 选项参数。
- * @returns 无返回值，直接更新Main面板上下文相关状态。
- */
-
-
+/** createMainPanelContext：构建并返回目标对象。 */
 export function createMainPanelContext(options: CreateMainPanelContextOptions) {
   const {
     documentRef,
@@ -91,6 +82,7 @@ export function createMainPanelContext(options: CreateMainPanelContextOptions) {
       runtimeSender,
       panelSender,
       socialEconomySender,
+      buildingSender,
       mapRuntime,
       loginUI,
       hud,
@@ -130,8 +122,9 @@ export function createMainPanelContext(options: CreateMainPanelContextOptions) {
   let panelDeltaStateSource!: ReturnType<typeof import('./main-panel-delta-state-source').createMainPanelDeltaStateSource>;
   const techniqueActivityOpeners = {
     alchemy: () => craftWorkbenchModal.openAlchemy(),
+    forging: () => craftWorkbenchModal.openForging(),
     enhancement: () => craftWorkbenchModal.openEnhancement(),
-  } as const satisfies Record<ClientTechniqueActivityKind, () => void>;
+  } as const satisfies Record<ClientTechniqueActivityKind | 'forging', () => void>;
 
   const actionStateSource = createMainActionStateSource({
     actionPanel,
@@ -143,6 +136,7 @@ export function createMainPanelContext(options: CreateMainPanelContextOptions) {
     openNpcShop: (npcId) => npcShopModal.open(npcId),
     openNpcQuestPending: (npcId) => npcQuestModal.openPending(npcId),
     openTechniqueActivity: (kind) => techniqueActivityOpeners[kind](),
+    openBuildingPanel: () => buildingFengShuiStateSource.openBuildingPanel(),
     openWorldMigrationModal: () => openWorldMigrationModal({
       getPlayer: () => rootRuntimeSource.getPlayer(),
       sendAction: (actionId, target) => runtimeSender.sendAction(actionId, target),
@@ -163,6 +157,9 @@ export function createMainPanelContext(options: CreateMainPanelContextOptions) {
     setLatestAttrUpdate: (value) => panelDeltaStateSource.setLatestAttrUpdate(value),
     mergeAttrUpdatePatch: (current, data) => panelDeltaStateSource.mergeAttrUpdatePatch(current, data),
     cloneJson: (value) => detailHydrationSource.cloneJson(value),
+    onOpenCraftSkill: (key) => key === 'building'
+      ? buildingFengShuiStateSource.openBuildingPanel()
+      : techniqueActivityOpeners[key as keyof typeof techniqueActivityOpeners]?.(),
   });
   const questStateSource = createMainQuestStateSource({
     questPanel,
@@ -224,6 +221,10 @@ export function createMainPanelContext(options: CreateMainPanelContextOptions) {
     getMapMeta: () => mapRuntime.getMapMeta(),
     setFormationRangeOverlay: (overlay) => mapRuntime.setFormationRangeOverlay(overlay),
   });
+  const buildingFengShuiStateSource = createMainBuildingFengShuiStateSource({
+    socket: buildingSender, setFengShuiOverlay: (overlay) => mapRuntime.setFengShuiOverlay(overlay), setBuildPreviewOverlay: (overlay) => mapRuntime.setBuildPreviewOverlay(overlay),
+    getPlayer: () => rootRuntimeSource.getPlayer(), showToast: callbacks.showToast,
+  });
   const inventoryStateSource = createMainInventoryStateSource({
     inventoryPanel,
     questStateSource,
@@ -274,8 +275,7 @@ export function createMainPanelContext(options: CreateMainPanelContextOptions) {
   });
 
   return {
-    mailStateSource,
-    suggestionStateSource,
+    mailStateSource, suggestionStateSource, buildingFengShuiStateSource,
     actionStateSource,
     techniqueStateSource,
     attrDetailStateSource,

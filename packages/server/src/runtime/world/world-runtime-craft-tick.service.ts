@@ -80,7 +80,7 @@ let WorldRuntimeCraftTickService = class WorldRuntimeCraftTickService {
                 continue;
             }
             for (const kind of this.craftPanelRuntimeService.listActiveTechniqueActivityKinds(player)) {
-                if (kind === 'alchemy') {
+                if (kind === 'alchemy' || kind === 'forging') {
                     await this.worldRuntimeAlchemyService.tickAlchemy(playerId, player, deps);
                     continue;
                 }

@@ -24,6 +24,8 @@ export type TechniqueActivityPanelEventName =
 export type TechniqueActivityCommandKind =
   | 'startAlchemy'
   | 'cancelAlchemy'
+  | 'startForging'
+  | 'cancelForging'
   | 'startEnhancement'
   | 'cancelEnhancement'
   | 'startGather'
@@ -35,10 +37,12 @@ export type TechniqueActivityRequestPanelErrorCode =
 
 export type TechniqueActivityStartErrorCode =
   | 'START_ALCHEMY_FAILED'
+  | 'START_FORGING_FAILED'
   | 'START_ENHANCEMENT_FAILED';
 
 export type TechniqueActivityCancelErrorCode =
   | 'CANCEL_ALCHEMY_FAILED'
+  | 'CANCEL_FORGING_FAILED'
   | 'CANCEL_ENHANCEMENT_FAILED';
 
 export interface TechniqueActivityMetadata {
@@ -66,6 +70,18 @@ export const TECHNIQUE_ACTIVITY_METADATA = {
     requestPanelErrorCode: 'REQUEST_ALCHEMY_PANEL_FAILED',
     startErrorCode: 'START_ALCHEMY_FAILED',
     cancelErrorCode: 'CANCEL_ALCHEMY_FAILED',
+  },
+  forging: {
+    kind: 'forging',
+    requestEvent: C2S.RequestAlchemyPanel,
+    startEvent: C2S.StartAlchemy,
+    cancelEvent: C2S.CancelAlchemy,
+    panelEvent: S2C.AlchemyPanel,
+    startCommandKind: 'startForging',
+    cancelCommandKind: 'cancelForging',
+    requestPanelErrorCode: 'REQUEST_ALCHEMY_PANEL_FAILED',
+    startErrorCode: 'START_FORGING_FAILED',
+    cancelErrorCode: 'CANCEL_FORGING_FAILED',
   },
   enhancement: {
     kind: 'enhancement',
@@ -97,6 +113,8 @@ export function resolveTechniqueActivityStartCommandKind(kind: TechniqueActivity
   switch (kind) {
     case 'alchemy':
       return 'startAlchemy';
+    case 'forging':
+      return 'startForging';
     case 'enhancement':
       return 'startEnhancement';
     case 'gather':
@@ -108,6 +126,8 @@ export function resolveTechniqueActivityCancelCommandKind(kind: TechniqueActivit
   switch (kind) {
     case 'alchemy':
       return 'cancelAlchemy';
+    case 'forging':
+      return 'cancelForging';
     case 'enhancement':
       return 'cancelEnhancement';
     case 'gather':

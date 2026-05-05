@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createWriteStream, promises as fsPromises } from 'node:fs';
-import { basename, extname, join, resolve } from 'node:path';
+import { basename, dirname, extname, join, resolve } from 'node:path';
 import { URL } from 'node:url';
 import { Pool } from 'pg';
 import { resolveServerDatabaseUrl } from '../../config/env-alias';
@@ -158,6 +158,8 @@ const DEFAULT_DB_SCHEDULES = {
     daily: '0 4 * * *',
 };
 
+const DEFAULT_BACKUP_WORKER_HEARTBEAT_MAX_AGE_MS = 90_000;
+
 const BACKUP_JOB_PHASE = {
     VALIDATING: 'validating',
     WRITING_FILE: 'writing_file',
@@ -305,6 +307,7 @@ export class NativeGmAdminService {
     async getDatabaseState() {
 
         const backups = await this.listDatabaseBackups();
+        const backupWorkerActive = await readBackupWorkerActive(this.backupDirectory);
         return {
             backups,
             runningJob: this.currentDatabaseJob ?? undefined,
@@ -313,8 +316,8 @@ export class NativeGmAdminService {
             retention: { ...DEFAULT_DB_RETENTION },
             schedules: { ...DEFAULT_DB_SCHEDULES },
             automation: {
-                retentionEnforced: false,
-                schedulesActive: false,
+                retentionEnforced: backupWorkerActive,
+                schedulesActive: backupWorkerActive,
                 restoreRequiresMaintenance: NATIVE_GM_RESTORE_CONTRACT.requiresMaintenance,
                 preImportBackupEnabled: NATIVE_GM_RESTORE_CONTRACT.preImportBackupEnabled,
             },
@@ -2113,6 +2116,39 @@ function resolveBackupDirectory() {
     }
     return resolve(__dirname, '../../../../.runtime/gm-database-backups');
 }
+
+function resolveBackupWorkerRootDirectory(backupDirectory) {
+    const configured = process.env.SERVER_DATABASE_BACKUP_WORKER_ROOT_DIR?.trim()
+        || process.env.DATABASE_BACKUP_WORKER_ROOT_DIR?.trim()
+        || '';
+    return configured ? resolve(configured) : dirname(backupDirectory);
+}
+
+async function readBackupWorkerActive(backupDirectory) {
+    const workerRootDirectory = resolveBackupWorkerRootDirectory(backupDirectory);
+    const heartbeatPath = join(workerRootDirectory, '_meta', 'worker-heartbeat.json');
+    const raw = await fsPromises.readFile(heartbeatPath, 'utf8').catch(() => '');
+    if (!raw) {
+        return false;
+    }
+    try {
+        const parsed = JSON.parse(raw);
+        const updatedAt = typeof parsed?.updatedAt === 'string' ? Date.parse(parsed.updatedAt) : NaN;
+        if (!Number.isFinite(updatedAt)) {
+            return false;
+        }
+        const maxAgeMs = normalizePositiveInteger(
+            process.env.SERVER_DATABASE_BACKUP_WORKER_HEARTBEAT_MAX_AGE_MS,
+            DEFAULT_BACKUP_WORKER_HEARTBEAT_MAX_AGE_MS,
+            10_000,
+            3_600_000,
+        );
+        return Date.now() - updatedAt <= maxAgeMs;
+    }
+    catch {
+        return false;
+    }
+}
 /**
  * buildBackupId：构建并返回目标对象。
  * @returns 无返回值，直接更新BackupID相关状态。
@@ -2971,6 +3007,14 @@ function normalizeNullableInteger(value) {
     }
     const parsed = Number(value);
     return Number.isFinite(parsed) ? Math.trunc(parsed) : null;
+}
+
+function normalizePositiveInteger(value, fallback, min, max) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) {
+        return fallback;
+    }
+    return Math.max(min, Math.min(max, Math.trunc(parsed)));
 }
 
 function resolveDatabaseUploadMaxBytes() {

@@ -132,6 +132,8 @@ type MainResetStateSourceOptions = {
  */
 
   clearSuggestionState: () => void;  
+  /** 清理建造、房间和风水低频投影。 */
+  clearBuildingFengShuiState: () => void;
   /**
  * resetMapRuntime：reset地图运行态引用。
  */
@@ -205,6 +207,7 @@ export function createMainResetStateSource(options: MainResetStateSourceOptions)
       options.clearWorldPanel();
       options.clearMailState();
       options.clearSuggestionState();
+      options.clearBuildingFengShuiState();
       options.resetMapRuntime();
       options.resetReactUiBridge();
       options.resetPanelRuntime();

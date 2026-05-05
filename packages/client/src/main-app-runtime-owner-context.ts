@@ -203,7 +203,6 @@ export function createMainRuntimeOwnerContext(options: CreateMainRuntimeOwnerCon
     openNpcQuestPending: (npcId) => npcQuestModal.openPending(npcId),
     showToast: helpers.showToast,
   });
-
   const senseQiTooltip = new FloatingTooltip();
   targetingStateSource = createMainTargetingStateSource({
     getPlayer: () => rootRuntimeSource.getPlayer(),
@@ -216,6 +215,8 @@ export function createMainRuntimeOwnerContext(options: CreateMainRuntimeOwnerCon
     senseQiTooltip,
     getAuraLevelBaseValue: () => panelContext.breakthroughStateSource.getAuraLevelBaseValue(),
     formatAuraLevelText: (auraValue) => panelContext.breakthroughStateSource.formatAuraLevelText(auraValue),
+    getSenseQiRoomInfoAt: (x, y) => panelContext.buildingFengShuiStateSource.getSenseQiRoomInfoAt(x, y),
+    requestSenseQiFengShuiOverlay: (x, y) => panelContext.buildingFengShuiStateSource.requestSenseQiFengShuiOverlay(x, y),
     showToast: helpers.showToast,
     sendAction: (actionId, target) => runtimeSender.sendAction(actionId, target),
   });
@@ -414,8 +415,7 @@ export function createMainRuntimeOwnerContext(options: CreateMainRuntimeOwnerCon
     clearWorldSummaryState: () => panelContext.worldSummaryStateSource.clear(),
     clearLootPanel: () => panelContext.panelDeps.lootPanel.clear(),
     clearWorldPanel: () => panelContext.panelDeps.worldPanel.clear(),
-    clearMailState: () => panelContext.mailStateSource.clear(),
-    clearSuggestionState: () => panelContext.suggestionStateSource.clear(),
+    clearMailState: () => panelContext.mailStateSource.clear(), clearSuggestionState: () => panelContext.suggestionStateSource.clear(), clearBuildingFengShuiState: () => panelContext.buildingFengShuiStateSource.clear(),
     resetMapRuntime: () => mapRuntime.reset(),
     resetReactUiBridge: () => {
       reactUiBridge.reset();

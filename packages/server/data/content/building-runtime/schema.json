@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "daojie.building-runtime.schema.json",
+  "title": "道劫余生建筑与风水运行时配置",
+  "type": "object",
+  "properties": {
+    "buildings": { "type": "array", "items": { "$ref": "#/$defs/building" } },
+    "fengShuiRules": { "type": "array", "items": { "$ref": "#/$defs/fengShuiRule" } }
+  },
+  "required": ["buildings", "fengShuiRules"],
+  "$defs": {
+    "building": {
+      "type": "object",
+      "required": ["id", "name", "placement"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "revision": { "type": "integer", "minimum": 1 },
+        "visual": { "type": "object" },
+        "placement": {
+          "type": "object",
+          "required": ["layer", "footprint"],
+          "properties": {
+            "layer": { "enum": ["structure", "floor", "facility", "furniture", "decoration"] },
+            "footprint": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "required": ["dx", "dy"],
+                "properties": {
+                  "dx": { "type": "integer" },
+                  "dy": { "type": "integer" }
+                }
+              }
+            }
+          }
+        },
+        "topology": { "type": "object" },
+        "fengShui": { "type": "object" },
+        "economy": { "type": "object" }
+      }
+    },
+    "fengShuiRule": {
+      "type": "object",
+      "required": ["id", "when", "scoreDelta", "reasonCode", "severity"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "priority": { "type": "integer" },
+        "when": { "type": "array", "items": { "type": "object" } },
+        "scoreDelta": { "type": "integer" },
+        "capGroup": { "type": "string" },
+        "reasonCode": { "type": "string", "minLength": 1 },
+        "severity": { "enum": ["info", "good", "warning", "bad"] }
+      }
+    }
+  }
+}

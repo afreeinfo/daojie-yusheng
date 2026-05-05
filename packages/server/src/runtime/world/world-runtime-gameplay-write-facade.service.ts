@@ -282,6 +282,8 @@ let WorldRuntimeGameplayWriteFacadeService = class WorldRuntimeGameplayWriteFaca
         switch (kind) {
             case 'alchemy':
                 return deps.worldRuntimeAlchemyService.dispatchStartAlchemy(playerId, payload, deps);
+            case 'forging':
+                return deps.worldRuntimeAlchemyService.dispatchStartAlchemy(playerId, { ...(payload ?? {}), kind: 'forging' }, deps);
             case 'enhancement':
                 return deps.worldRuntimeEnhancementService.dispatchStartEnhancement(playerId, payload, deps);
             case 'gather':
@@ -307,6 +309,8 @@ let WorldRuntimeGameplayWriteFacadeService = class WorldRuntimeGameplayWriteFaca
         switch (kind) {
             case 'alchemy':
                 return deps.worldRuntimeAlchemyService.dispatchCancelAlchemy(playerId, deps);
+            case 'forging':
+                return deps.worldRuntimeAlchemyService.dispatchCancelAlchemy(playerId, deps, 'forging');
             case 'enhancement':
                 return deps.worldRuntimeEnhancementService.dispatchCancelEnhancement(playerId, deps);
             case 'gather':

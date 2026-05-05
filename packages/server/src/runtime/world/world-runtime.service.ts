@@ -169,6 +169,7 @@ const world_runtime_normalization_helpers_1 = require("./world-runtime.normaliza
 const world_runtime_observation_helpers_1 = require("./world-runtime.observation.helpers");
 
 const world_runtime_path_planning_helpers_1 = require("./world-runtime.path-planning.helpers");
+const world_runtime_building_service_1 = require("./world-runtime-building.service");
 const world_runtime_instance_lease_helpers_1 = require("./world-runtime-instance-lease.helpers");
 const {
     buildPublicInstanceId,
@@ -421,6 +422,8 @@ let WorldRuntimeService = WorldRuntimeService_1 = class WorldRuntimeService {
     logger = new common_1.Logger(WorldRuntimeService_1.name);    
     
     tick = 0;    
+    buildingOperationResultsByKey = new Map();
+    buildingOperationAuditLog = [];
     
     constructor(contentTemplateRepository, templateRepository, mapPersistenceService, instanceDomainPersistenceService, instanceCatalogService, playerRuntimeService, playerCombatService, worldSessionService, worldClientEventService, redeemCodeRuntimeService, craftPanelRuntimeService, worldRuntimeNpcShopQueryService, worldRuntimeQuestQueryService, worldRuntimeQuestStateService, worldRuntimeDetailQueryService, worldRuntimeContextActionQueryService, worldRuntimePlayerViewQueryService, worldRuntimeMetricsService, worldRuntimeFrameService, worldRuntimeLifecycleService, worldRuntimePersistenceStateService, worldRuntimePlayerSessionService, worldRuntimeCommandIntakeFacadeService, worldRuntimeGameplayWriteFacadeService, worldRuntimeInstanceReadFacadeService, worldRuntimeQuestRuntimeFacadeService, worldRuntimeReadFacadeService, worldRuntimeStateFacadeService, worldRuntimeTickDispatchService, worldRuntimeWorldAccessService, worldRuntimeInstanceTickOrchestrationService, worldRuntimeMovementService, worldRuntimeSummaryQueryService, worldRuntimeInstanceStateService, worldRuntimeInstanceQueryService, worldRuntimePendingCommandService, worldRuntimePlayerLocationService, worldRuntimeTickProgressService, worldRuntimeNpcQuestInteractionQueryService, worldRuntimeNpcShopService, worldRuntimeGmQueueService, worldRuntimeSystemCommandService, worldRuntimeCraftTickService, worldRuntimeCraftMutationService, worldRuntimeCraftInterruptService, worldRuntimeAlchemyService, worldRuntimeNpcQuestWriteService, worldRuntimeLootContainerService, worldRuntimeNavigationService, worldRuntimeCombatEffectsService, worldRuntimeMonsterActionApplyService, worldRuntimeBasicAttackService, worldRuntimeMonsterSystemCommandService, worldRuntimePlayerCombatOutcomeService, worldRuntimePlayerCommandService, worldRuntimePlayerCommandEnqueueService, worldRuntimeItemGroundService, worldRuntimeTransferService, worldRuntimeNpcAccessService, worldRuntimeEquipmentService, worldRuntimeCultivationService, worldRuntimeProgressionService, worldRuntimeEnhancementService, worldRuntimeUseItemService, worldRuntimeRedeemCodeService, worldRuntimePlayerSkillDispatchService, worldRuntimeBattleEngageService, worldRuntimeAutoCombatService, worldRuntimeCombatCommandService, worldRuntimeActionExecutionService, worldRuntimeSystemCommandEnqueueService, nodeRegistryService, playerPersistenceFlushService, mailRuntimeService) {
         this.contentTemplateRepository = contentTemplateRepository;
@@ -722,6 +725,24 @@ let WorldRuntimeService = WorldRuntimeService_1 = class WorldRuntimeService {
     }
         buildTileDetail(playerId, input) {
         return this.worldRuntimeReadFacadeService.buildTileDetail(playerId, input, this);
+    }
+        handleBuildPlaceIntent(playerId, payload) {
+        return world_runtime_building_service_1.handleBuildPlaceIntent(this, playerId, payload);
+    }
+        handleBuildDeconstructIntent(playerId, payload) {
+        return world_runtime_building_service_1.handleBuildDeconstructIntent(this, playerId, payload);
+    }
+        listBuildingOperationAudit(limit = 50) {
+        return world_runtime_building_service_1.listBuildingOperationAudit(this, limit);
+    }
+        handleRoomSetRoleIntent(playerId, payload) {
+        return world_runtime_building_service_1.handleRoomSetRoleIntent(this, playerId, payload);
+    }
+        buildCurrentRoomSummaryPatch(playerId) {
+        return world_runtime_building_service_1.buildCurrentRoomSummaryPatch(this, playerId);
+    }
+        buildFengShuiObserveView(playerId, payload) {
+        return world_runtime_building_service_1.buildFengShuiObserveView(this, playerId, payload);
     }
         buildLootWindowSyncState(playerId, tileX, tileY) {
         return this.worldRuntimeReadFacadeService.buildLootWindowSyncState(playerId, tileX, tileY, this);
@@ -1143,6 +1164,4 @@ exports.WorldRuntimeService = WorldRuntimeService = WorldRuntimeService_1 = __de
         player_persistence_flush_service_1.PlayerPersistenceFlushService,
         mail_runtime_service_1.MailRuntimeService])
 ], WorldRuntimeService);
-// helper functions were split into dedicated helper modules for maintainability.
-
 export { WorldRuntimeService };

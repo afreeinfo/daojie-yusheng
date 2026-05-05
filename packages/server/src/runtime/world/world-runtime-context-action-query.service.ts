@@ -260,28 +260,43 @@ let WorldRuntimeContextActionQueryService = class WorldRuntimeContextActionQuery
             });
         }
         const weapon = player?.equipment?.slots?.find((entry) => entry.slot === 'weapon')?.item ?? null;
-        if (weapon?.tags?.includes('alchemy_furnace') || player?.alchemyJob) {
-            actions.push({
-                id: 'alchemy:open',
-                name: '炼丹',
-                type: 'interact',
-                desc: weapon?.tags?.includes('alchemy_furnace')
-                    ? '查看当前丹炉、丹方目录与炼制状态。'
-                    : '查看当前炼丹状态。',
-                cooldownLeft: 0,
-            });
-        }
-        if (weapon?.tags?.includes('enhancement_hammer') || player?.enhancementJob) {
-            actions.push({
-                id: 'enhancement:open',
-                name: '强化',
-                type: 'interact',
-                desc: weapon?.tags?.includes('enhancement_hammer')
-                    ? '查看当前强化候选、保护材料与强化状态。'
-                    : '查看当前强化状态。',
-                cooldownLeft: 0,
-            });
-        }
+        const weaponTags = Array.isArray(weapon?.tags) ? weapon.tags : [];
+        actions.push({
+            id: 'alchemy:open',
+            name: '炼丹',
+            type: 'craft',
+            desc: weaponTags.includes('alchemy_furnace')
+                ? '查看当前丹炉、丹方目录与炼制状态。'
+                : '打开炼丹菜单；未装备丹炉时可以炼制，但不会获得丹炉加成。',
+            cooldownLeft: 0,
+        });
+        actions.push({
+            id: 'forging:open',
+            name: '炼器',
+            type: 'craft',
+            desc: weaponTags.includes('forging_tool')
+                ? '查看当前炼器工具与器方目录。'
+                : '打开炼器菜单；未装备炼器工具时可以炼制，但不会获得工具加成。',
+            cooldownLeft: 0,
+        });
+        actions.push({
+            id: 'enhancement:open',
+            name: '强化',
+            type: 'craft',
+            desc: weaponTags.includes('enhancement_hammer')
+                ? '查看当前强化候选、保护材料与强化状态。'
+                : '打开强化菜单；未装备强化锤时可以强化，但不会获得强化锤加成。',
+            cooldownLeft: 0,
+        });
+        actions.push({
+            id: 'building:open',
+            name: '营造',
+            type: 'craft',
+            desc: weaponTags.includes('building_hammer')
+                ? '打开营造菜单，并使用当前建造锤处理建造意图。'
+                : '打开营造菜单；未装备建造锤时可以建造，但不会获得建造工具加成。',
+            cooldownLeft: 0,
+        });
         actions.sort((left, right) => compareStableStrings(left.id, right.id));
         return actions;
     }

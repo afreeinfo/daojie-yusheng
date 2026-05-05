@@ -62,15 +62,21 @@ class WorldRuntimeFormationService {
         if (template.placeableByDisk === false) {
             throw new common_1.BadRequestException(`${template.name}不能通过阵盘布置`);
         }
-        const spiritStoneCount = normalizePositiveInteger(payload?.spiritStoneCount, '灵石数量');
+        const diskMultiplier = normalizeDiskMultiplier(diskItem);
+        const hasSetupPayload = payload?.setup && typeof payload.setup === 'object';
+        const plan = hasSetupPayload
+            ? shared_1.resolveFormationSetupPlan(template, diskMultiplier, payload.setup)
+            : null;
+        const spiritStoneCount = plan
+            ? plan.spiritStoneCount
+            : normalizePositiveInteger(payload?.spiritStoneCount, '灵石数量');
         const minSpiritStoneCount = shared_1.resolveFormationMinSpiritStoneCount(template);
-        if (spiritStoneCount < minSpiritStoneCount) {
+        if (!plan && spiritStoneCount < minSpiritStoneCount) {
             throw new common_1.BadRequestException(`${template.name}至少需要投入 ${formatInteger(minSpiritStoneCount)} 灵石`);
         }
-        const qiCost = shared_1.resolveFormationQiCost(spiritStoneCount);
-        const diskMultiplier = normalizeDiskMultiplier(diskItem);
-        const allocation = shared_1.normalizeFormationAllocation(payload?.allocation);
-        const stats = shared_1.resolveFormationStats(template, spiritStoneCount, diskMultiplier, allocation);
+        const qiCost = plan ? plan.qiCost : shared_1.resolveFormationQiCost(spiritStoneCount, template);
+        const allocation = plan ? plan.setup : shared_1.normalizeFormationAllocation(payload?.allocation);
+        const stats = plan ? plan.stats : shared_1.resolveFormationStats(template, spiritStoneCount, diskMultiplier, allocation);
         const location = deps.getPlayerLocationOrThrow(playerId);
         const instance = deps.getInstanceRuntime(location.instanceId);
         if (!instance) {
@@ -144,8 +150,9 @@ class WorldRuntimeFormationService {
             ? Math.max(0, Number(input.remainingAuraBudget))
             : null;
         const inputSpiritStoneCount = Math.trunc(Number(input?.spiritStoneCount) || 0);
+        const auraPerSpiritStone = resolveFormationAuraPerSpiritStone(template);
         const fallbackSpiritStoneCount = explicitRemainingAuraBudget !== null
-            ? Math.ceil(explicitRemainingAuraBudget / shared_1.FORMATION_AURA_PER_SPIRIT_STONE)
+            ? Math.ceil(explicitRemainingAuraBudget / auraPerSpiritStone)
             : shared_1.resolveFormationMinSpiritStoneCount(template);
         const spiritStoneCount = Math.max(1, inputSpiritStoneCount > 0 ? inputSpiritStoneCount : fallbackSpiritStoneCount);
         const diskMultiplier = Number.isFinite(Number(input?.diskMultiplier)) ? Math.max(1, Number(input.diskMultiplier)) : 1;
@@ -222,11 +229,11 @@ class WorldRuntimeFormationService {
             throw new common_1.BadRequestException('持续性阵法需要在阵法管理面板注入灵石或灵力');
         }
         const spiritStoneCount = Math.max(1, Math.trunc(Number(formation.spiritStoneCount) || 1));
-        const qiCost = shared_1.resolveFormationQiCost(spiritStoneCount);
+        const qiCost = shared_1.resolveFormationQiCost(spiritStoneCount, formation.template);
         this.assertCanPay(playerId, qiCost, spiritStoneCount);
         this.playerRuntimeService.spendQi(playerId, qiCost);
         this.playerRuntimeService.debitWallet(playerId, shared_1.FORMATION_SPIRIT_STONE_ITEM_ID, spiritStoneCount);
-        const added = Math.round(spiritStoneCount * shared_1.FORMATION_AURA_PER_SPIRIT_STONE * formation.diskMultiplier);
+        const added = resolveFormationRefillAuraBudget(formation, spiritStoneCount);
         formation.remainingAuraBudget += added;
         formation.updatedAt = Date.now();
         touchRuntimeInstanceRevision(deps, formation.instanceId);
@@ -266,14 +273,14 @@ class WorldRuntimeFormationService {
             throw new common_1.BadRequestException('该阵法不是持续性阵法');
         }
         const spiritStoneCount = normalizeNonNegativeInteger(payload?.spiritStoneCount ?? 0);
-        const qiAmount = shared_1.resolveFormationQiCost(spiritStoneCount);
+        const qiAmount = shared_1.resolveFormationQiCost(spiritStoneCount, formation.template);
         if (spiritStoneCount <= 0) {
             throw new common_1.BadRequestException('至少需要注入灵石');
         }
         this.assertCanInject(playerId, qiAmount, spiritStoneCount);
         this.playerRuntimeService.spendQi(playerId, qiAmount);
         this.playerRuntimeService.debitWallet(playerId, shared_1.FORMATION_SPIRIT_STONE_ITEM_ID, spiritStoneCount);
-        const added = Math.round(spiritStoneCount * shared_1.FORMATION_AURA_PER_SPIRIT_STONE);
+        const added = resolveFormationRefillAuraBudget(formation, spiritStoneCount);
         formation.remainingAuraBudget = Math.max(0, Number(formation.remainingAuraBudget) || 0) + added;
         if (formation.remainingAuraBudget > 0) {
             formation.active = true;
@@ -672,8 +679,8 @@ class WorldRuntimeFormationService {
             remainingAuraBudget: Math.max(0, Math.floor(formation.remainingAuraBudget)),
             radius: formation.stats.radius,
             refillSpiritStoneCount: Math.max(1, Math.trunc(Number(formation.spiritStoneCount) || 1)),
-            refillQiCost: shared_1.resolveFormationQiCost(Math.max(1, Math.trunc(Number(formation.spiritStoneCount) || 1))),
-            refillAuraBudget: Math.round(Math.max(1, Math.trunc(Number(formation.spiritStoneCount) || 1)) * shared_1.FORMATION_AURA_PER_SPIRIT_STONE * formation.diskMultiplier),
+            refillQiCost: shared_1.resolveFormationQiCost(Math.max(1, Math.trunc(Number(formation.spiritStoneCount) || 1)), formation.template),
+            refillAuraBudget: resolveFormationRefillAuraBudget(formation, Math.max(1, Math.trunc(Number(formation.spiritStoneCount) || 1))),
         }));
     }
 
@@ -840,10 +847,13 @@ class WorldRuntimeFormationService {
             && template.id === 'sect_guardian_barrier'
             && rawSpiritStoneCount <= minSpiritStoneCount
             && rawRemainingAuraBudget !== null
-            && rawRemainingAuraBudget > rawSpiritStoneCount * shared_1.FORMATION_AURA_PER_SPIRIT_STONE
-            ? Math.max(rawSpiritStoneCount, Math.ceil(rawRemainingAuraBudget / shared_1.FORMATION_AURA_PER_SPIRIT_STONE))
+            && rawRemainingAuraBudget > rawSpiritStoneCount * resolveFormationAuraPerSpiritStone(template)
+            ? Math.max(rawSpiritStoneCount, Math.ceil(rawRemainingAuraBudget / resolveFormationAuraPerSpiritStone(template)))
             : rawSpiritStoneCount;
-        const allocation = shared_1.normalizeFormationAllocation(entry.allocation);
+        const allocationPayload = entry.allocation && typeof entry.allocation === 'object' ? entry.allocation : {};
+        const allocation = typeof shared_1.isFormationSetupInput === 'function' && shared_1.isFormationSetupInput(allocationPayload)
+            ? shared_1.normalizeFormationSetup(template, allocationPayload)
+            : shared_1.normalizeFormationAllocation(allocationPayload);
         const stats = shared_1.resolveFormationStats(template, spiritStoneCount, diskMultiplier, allocation);
         if (template.id === 'sect_guardian_barrier') {
             stats.radius = Math.max(1, Math.trunc(Number(entry.radius) || 1));
@@ -1419,6 +1429,19 @@ function resolveFormationRuntimeVisual(template) {
         rangeVisibleWithoutSenseQi: visual.rangeVisibleWithoutSenseQi === true,
         boundaryVisibleWithoutSenseQi: visual.boundaryVisibleWithoutSenseQi === true,
     };
+}
+
+function resolveFormationAuraPerSpiritStone(template) {
+    return typeof shared_1.resolveFormationCostConfig === 'function'
+        ? shared_1.resolveFormationCostConfig(template).auraPerSpiritStone
+        : shared_1.FORMATION_AURA_PER_SPIRIT_STONE;
+}
+
+function resolveFormationRefillAuraBudget(formation, spiritStoneCount) {
+    if (typeof shared_1.isFormationSetupInput === 'function' && shared_1.isFormationSetupInput(formation?.allocation)) {
+        return Math.max(1, Math.round(Number(formation?.stats?.totalAuraBudget) || 1));
+    }
+    return Math.round(Math.max(1, Math.trunc(Number(spiritStoneCount) || 1)) * resolveFormationAuraPerSpiritStone(formation.template) * formation.diskMultiplier);
 }
 
 function serializeFormation(formation) {

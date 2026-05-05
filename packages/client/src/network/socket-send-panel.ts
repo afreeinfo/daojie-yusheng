@@ -25,15 +25,21 @@ function sendTechniqueActivityRequest(
 ): void;
 function sendTechniqueActivityRequest(
   deps: PanelSenderDeps,
+  kind: 'forging',
+  payload: ClientToServerEventPayload<typeof C2S.RequestAlchemyPanel>,
+): void;
+function sendTechniqueActivityRequest(
+  deps: PanelSenderDeps,
   kind: 'enhancement',
   payload: ClientToServerEventPayload<typeof C2S.RequestEnhancementPanel>,
 ): void;
 function sendTechniqueActivityRequest(
   deps: PanelSenderDeps,
-  kind: 'alchemy' | 'enhancement',
+  kind: 'alchemy' | 'forging' | 'enhancement',
   payload: ClientToServerEventPayload<typeof C2S.RequestAlchemyPanel> | ClientToServerEventPayload<typeof C2S.RequestEnhancementPanel>,
 ): void {
-  emitTechniqueActivityPanelRequest(deps.emitEvent, kind, payload as never);
+  const nextPayload = kind === 'forging' ? { ...(payload as object), kind: 'forging' } : payload;
+  emitTechniqueActivityPanelRequest(deps.emitEvent, kind, nextPayload as never);
 }
 
 function sendTechniqueActivityStart(
@@ -43,21 +49,31 @@ function sendTechniqueActivityStart(
 ): void;
 function sendTechniqueActivityStart(
   deps: PanelSenderDeps,
+  kind: 'forging',
+  payload: ClientToServerEventPayload<typeof C2S.StartAlchemy>,
+): void;
+function sendTechniqueActivityStart(
+  deps: PanelSenderDeps,
   kind: 'enhancement',
   payload: ClientToServerEventPayload<typeof C2S.StartEnhancement>,
 ): void;
 function sendTechniqueActivityStart(
   deps: PanelSenderDeps,
-  kind: 'alchemy' | 'enhancement',
+  kind: 'alchemy' | 'forging' | 'enhancement',
   payload: ClientToServerEventPayload<typeof C2S.StartAlchemy> | ClientToServerEventPayload<typeof C2S.StartEnhancement>,
 ): void {
-  emitTechniqueActivityStart(deps.emitEvent, kind, payload as never);
+  const nextPayload = kind === 'forging' ? { ...(payload as object), kind: 'forging' } : payload;
+  emitTechniqueActivityStart(deps.emitEvent, kind, nextPayload as never);
 }
 
 function sendTechniqueActivityCancel(
   deps: PanelSenderDeps,
-  kind: 'alchemy' | 'enhancement',
+  kind: 'alchemy' | 'forging' | 'enhancement',
 ): void {
+  if (kind === 'forging') {
+    deps.emitEvent(C2S.CancelAlchemy, { kind: 'forging' });
+    return;
+  }
   emitTechniqueActivityCancel(deps.emitEvent, kind);
 }
 /**
@@ -247,6 +263,9 @@ export function createSocketPanelSender(deps: PanelSenderDeps) {
 
     sendRequestAlchemyPanel(knownCatalogVersion?: number): void {
       sendTechniqueActivityRequest(deps, 'alchemy', { knownCatalogVersion });
+    },
+    sendRequestForgingPanel(knownCatalogVersion?: number): void {
+      sendTechniqueActivityRequest(deps, 'forging', { knownCatalogVersion, kind: 'forging' });
     },    
     /**
  * sendSaveAlchemyPreset：执行sendSave炼丹Preset相关逻辑。
@@ -281,6 +300,11 @@ export function createSocketPanelSender(deps: PanelSenderDeps) {
       payload: ClientToServerEventPayload<typeof C2S.StartAlchemy>,
     ): void {
       sendTechniqueActivityStart(deps, 'alchemy', payload);
+    },
+    sendStartForging(
+      payload: ClientToServerEventPayload<typeof C2S.StartAlchemy>,
+    ): void {
+      sendTechniqueActivityStart(deps, 'forging', { ...payload, kind: 'forging' });
     },    
     /**
  * sendCancelAlchemy：判断sendCancel炼丹是否满足条件。
@@ -290,6 +314,9 @@ export function createSocketPanelSender(deps: PanelSenderDeps) {
 
     sendCancelAlchemy(): void {
       sendTechniqueActivityCancel(deps, 'alchemy');
+    },
+    sendCancelForging(): void {
+      sendTechniqueActivityCancel(deps, 'forging');
     },    
     /**
  * sendRequestEnhancementPanel：执行sendRequest强化面板相关逻辑。

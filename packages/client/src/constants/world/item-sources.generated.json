@@ -1942,6 +1942,22 @@
       "count": 1
     }
   ],
+  "equip.copper_array_plate": [
+    {
+      "kind": "forging",
+      "mapId": "crafting",
+      "mapName": "炼器",
+      "recipeId": "forging.copper_array_plate"
+    }
+  ],
+  "equip.copper_building_hammer": [
+    {
+      "kind": "forging",
+      "mapId": "crafting",
+      "mapName": "炼器",
+      "recipeId": "forging.copper_building_hammer"
+    }
+  ],
   "equip.copper_enhancement_hammer": [
     {
       "kind": "shop",
@@ -1949,6 +1965,20 @@
       "mapName": "云来镇",
       "npcId": "npc_blacksmith_han",
       "npcName": "韩铁匠"
+    },
+    {
+      "kind": "forging",
+      "mapId": "crafting",
+      "mapName": "炼器",
+      "recipeId": "forging.copper_enhancement_hammer"
+    }
+  ],
+  "equip.copper_forging_tool": [
+    {
+      "kind": "forging",
+      "mapId": "crafting",
+      "mapName": "炼器",
+      "recipeId": "forging.copper_forging_tool"
     }
   ],
   "equip.copper_pill_furnace": [
@@ -1958,6 +1988,12 @@
       "mapName": "云来镇",
       "npcId": "npc_blacksmith_han",
       "npcName": "韩铁匠"
+    },
+    {
+      "kind": "forging",
+      "mapId": "crafting",
+      "mapName": "炼器",
+      "recipeId": "forging.copper_pill_furnace"
     }
   ],
   "equip.deepvein_core": [

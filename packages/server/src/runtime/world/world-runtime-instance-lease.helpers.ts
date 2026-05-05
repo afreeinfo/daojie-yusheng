@@ -588,6 +588,16 @@ export async function hydratePersistentInstanceSnapshot(runtime, instanceId, ins
   if (Array.isArray(overlayChunks) && overlayChunks.length > 0 && typeof instance.hydrateOverlayChunks === 'function') {
     instance.hydrateOverlayChunks(overlayChunks);
   }
+  const buildingRoomFengShuiState = typeof domainPersistenceService.loadBuildingRoomFengShuiState === 'function'
+    ? await domainPersistenceService.loadBuildingRoomFengShuiState(instanceId)
+    : null;
+  if (buildingRoomFengShuiState
+    && (buildingRoomFengShuiState.buildings?.length > 0
+      || buildingRoomFengShuiState.rooms?.length > 0
+      || buildingRoomFengShuiState.fengShui?.length > 0)
+    && typeof instance.hydrateBuildingRoomFengShuiState === 'function') {
+    instance.hydrateBuildingRoomFengShuiState(buildingRoomFengShuiState);
+  }
   const checkpoint = await domainPersistenceService.loadInstanceCheckpoint(instanceId);
   if (checkpoint) {
     hydrateInstanceFromCheckpoint(instance, checkpoint, runtime, instanceId);

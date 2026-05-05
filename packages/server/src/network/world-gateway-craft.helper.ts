@@ -103,7 +103,7 @@ class WorldGatewayCraftHelper {
  */
 
     handleRequestAlchemyPanel(client, payload) {
-        this.handleRequestTechniqueActivityPanel(client, payload, 'alchemy');
+        this.handleRequestTechniqueActivityPanel(client, payload, payload?.kind === 'forging' ? 'forging' : 'alchemy');
     }    
     /**
  * handleRequestEnhancementPanel：处理强化面板请求并更新相关状态。
@@ -123,7 +123,7 @@ class WorldGatewayCraftHelper {
  */
 
     handleStartAlchemy(client, payload) {
-        this.handleStartTechniqueActivity(client, payload, 'alchemy');
+        this.handleStartTechniqueActivity(client, payload, payload?.kind === 'forging' ? 'forging' : 'alchemy');
     }    
     /**
  * handleCancelAlchemy：判断取消炼丹是否满足条件。
@@ -134,7 +134,7 @@ class WorldGatewayCraftHelper {
 
     handleCancelAlchemy(client, _payload) {
         void _payload;
-        this.handleCancelTechniqueActivity(client, 'alchemy');
+        this.handleCancelTechniqueActivity(client, _payload?.kind === 'forging' ? 'forging' : 'alchemy');
     }    
     /**
  * handleSaveAlchemyPreset：处理保存炼丹预设并更新相关状态。

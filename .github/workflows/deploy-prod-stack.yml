@@ -111,7 +111,14 @@ jobs:
           }
 
           assert_current_running_task daojie-yusheng_server "$EXPECTED_SERVER_IMAGE"
+          assert_current_running_task daojie-yusheng_backup-worker "$EXPECTED_SERVER_IMAGE"
           assert_current_running_task daojie-yusheng_client "$EXPECTED_CLIENT_IMAGE"
+
+      - name: Verify backup worker
+        env:
+          DOCKER_CONTEXT: production
+          STACK_NAME: daojie-yusheng
+        run: bash scripts/verify-backup-worker.sh
 
       - name: Temporary database preflight and conversion
         env:

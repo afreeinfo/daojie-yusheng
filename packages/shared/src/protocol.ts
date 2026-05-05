@@ -103,6 +103,10 @@ export const C2S = {
   CreateFormation: 'n:c:createFormation',
   SetFormationActive: 'n:c:setFormationActive',
   RefillFormation: 'n:c:refillFormation',
+  BuildPlaceIntent: 'n:c:buildPlaceIntent',
+  BuildDeconstruct: 'n:c:buildDeconstruct',
+  RoomSetRole: 'n:c:roomSetRole',
+  FengShuiObserve: 'n:c:fengShuiObserve',
   DropItem: 'n:c:dropItem',
   DestroyItem: 'n:c:destroyItem',
   StopLootHarvest: 'n:c:stopLootHarvest',
@@ -175,6 +179,10 @@ export const S2C = {
   NpcShop: 'n:s:npcShop',
   AlchemyPanel: 'n:s:alchemyPanel',
   EnhancementPanel: 'n:s:enhancementPanel',
+  BuildResult: 'n:s:buildResult',
+  RoomSummaryPatch: 'n:s:roomSummaryPatch',
+  FengShuiOverlayPatch: 'n:s:fengShuiOverlayPatch',
+  FengShuiDetail: 'n:s:fengShuiDetail',
   GmState: 'n:s:gmState',
   Error: 'n:s:error',
   Kick: 'n:s:kick',
@@ -584,6 +592,10 @@ export interface C2S_PayloadMap extends Record<C2S_EventName, unknown> {
   [C2S.CreateFormation]: RequestPayloads.C2S_CreateFormation;
   [C2S.SetFormationActive]: RequestPayloads.C2S_SetFormationActive;
   [C2S.RefillFormation]: RequestPayloads.C2S_RefillFormation;
+  [C2S.BuildPlaceIntent]: RequestPayloads.C2S_BuildPlaceIntent;
+  [C2S.BuildDeconstruct]: RequestPayloads.C2S_BuildDeconstruct;
+  [C2S.RoomSetRole]: RequestPayloads.C2S_RoomSetRole;
+  [C2S.FengShuiObserve]: RequestPayloads.C2S_FengShuiObserve;
   /**
  * [C2S.DropItem]：C2S_PayloadMap 协议映射条目，用于描述事件到 payload 类型的映射。
  */
@@ -913,6 +925,10 @@ export interface S2C_PayloadMap extends Record<S2C_EventName, unknown> {
  */
 
   [S2C.EnhancementPanel]: S2C_EnhancementPanel;
+  [S2C.BuildResult]: ResponsePayloads.S2C_BuildResult;
+  [S2C.RoomSummaryPatch]: ResponsePayloads.S2C_RoomSummaryPatch;
+  [S2C.FengShuiOverlayPatch]: ResponsePayloads.S2C_FengShuiOverlayPatch;
+  [S2C.FengShuiDetail]: ResponsePayloads.S2C_FengShuiDetail;
   /**
  * [S2C.GmState]：S2C_PayloadMap 协议映射条目，用于描述事件到 payload 类型的映射。
  */

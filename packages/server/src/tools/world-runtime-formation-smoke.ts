@@ -14,7 +14,7 @@ const { WorldRuntimeFormationService } = require("../runtime/world/world-runtime
 const { MapTemplateRepository } = require("../runtime/map/map-template.repository");
 const { MapInstanceRuntime } = require("../runtime/instance/map-instance.runtime");
 const { buildFullWorldDelta } = require("../network/world-projector.helpers");
-const { DEFAULT_FORMATION_TILE_AURA_RESOURCE_KEY, FORMATION_TICKS_PER_DAY, QI_HALF_LIFE_RATE_SCALE, buildQiHalfLifeRateScaled } = require("@mud/shared");
+const { DEFAULT_FORMATION_TILE_AURA_RESOURCE_KEY, FORMATION_TICKS_PER_DAY, QI_HALF_LIFE_RATE_SCALE, buildQiHalfLifeRateScaled, resolveFormationSetupPlan } = require("@mud/shared");
 
 const playerId = "player:formation-smoke";
 const sectPlayerId = "player:formation-sect-member";
@@ -154,15 +154,21 @@ async function main() {
   const formation = service.dispatchCreateFormation(playerId, {
     slotIndex: 0,
     formationId: "spirit_gathering",
-    spiritStoneCount: 100,
-    qiCost: 1,
-    allocation: { effectPercent: 80, rangePercent: 10, durationPercent: 10 },
+    setup: { radius: 2, durationHours: 2, effectValue: 1000 },
   }, deps);
 
-  assert.equal(player.qi, 10000);
-  assert.equal(player.wallet.spirit_stone, 900);
+  assert.equal(player.qi, 19600);
+  assert.equal(player.wallet.spirit_stone, 996);
   assert.equal(player.inventory.items[0].count, 1);
-  assert.equal(formation.qiCost, 10000);
+  assert.equal(formation.spiritStoneCount, 4);
+  assert.equal(formation.qiCost, 400);
+  assert.equal(formation.stats.totalAuraBudget, 1500);
+  assert.deepEqual(formation.allocation, { radius: 2, durationHours: 2, effectValue: 1000 });
+  const formationTemplate = service.resolveFormationTemplate("spirit_gathering");
+  assert.equal(resolveFormationSetupPlan(formationTemplate, 4, { radius: 1, durationHours: 1 / 60, effectValue: 1000 }).stats.requiredAuraBudget, 125);
+  assert.equal(resolveFormationSetupPlan(formationTemplate, 4, { radius: 1, durationHours: 5 / 60, effectValue: 1000 }).stats.requiredAuraBudget, 142);
+  assert.equal(resolveFormationSetupPlan(formationTemplate, 4, { radius: 1, durationHours: 10 / 60, effectValue: 1000 }).stats.requiredAuraBudget, 167);
+  assert.equal(resolveFormationSetupPlan(formationTemplate, 4, { radius: 1, durationHours: 24, effectValue: 1000 }).stats.requiredAuraBudget, 12000);
   assert.equal(instance.worldRevision, 11);
   assert.equal(deps.contextActionsRefreshed, true);
   assert.equal(notices.at(-1)?.kind, "success");
@@ -183,9 +189,9 @@ async function main() {
   const ownedAtEye = service.listOwnedFormationsAt(instanceId, playerId, 4, 5);
   assert.equal(ownedAtEye.length, 1);
   assert.equal(ownedAtEye[0].id, formation.id);
-  assert.equal(ownedAtEye[0].refillSpiritStoneCount, 100);
-  assert.equal(ownedAtEye[0].refillQiCost, 10000);
-  assert.equal(ownedAtEye[0].refillAuraBudget, 40000);
+  assert.equal(ownedAtEye[0].refillSpiritStoneCount, 4);
+  assert.equal(ownedAtEye[0].refillQiCost, 400);
+  assert.equal(ownedAtEye[0].refillAuraBudget, 1500);
 
   const worldDelta = buildFullWorldDelta({
     tick: 1,
@@ -338,9 +344,9 @@ async function main() {
     spiritStoneCount: 1,
     qiCost: 1,
   }, deps);
-  assert.equal(player.qi, 0);
-  assert.equal(player.wallet.spirit_stone, 800);
-  assert.equal(Math.round(service.getFormationCombatState(instanceId, formation.id).remainingAuraBudget - auraBeforeRefill), 40000);
+  assert.equal(player.qi, 19200);
+  assert.equal(player.wallet.spirit_stone, 992);
+  assert.equal(Math.round(service.getFormationCombatState(instanceId, formation.id).remainingAuraBudget - auraBeforeRefill), 1500);
 
   player.qi = 200000;
   player.wallet.spirit_stone = 2000;

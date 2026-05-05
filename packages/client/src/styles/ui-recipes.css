@@ -130,6 +130,151 @@
   gap: 6px;
 }
 
+.fengshui-detail-modal {
+  display: grid;
+  gap: 12px;
+  color: var(--ink-dark);
+}
+
+.fengshui-detail-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+  gap: 8px;
+}
+
+.fengshui-detail-metric {
+  min-height: 34px;
+  padding: 8px 10px;
+  border: 1px solid var(--wash-ink);
+  background: var(--surface-muted);
+  color: var(--ink-grey);
+  font-size: var(--font-size-role-body-13);
+  line-height: 1.35;
+}
+
+.fengshui-detail-reasons {
+  display: grid;
+  gap: 6px;
+  max-height: min(42dvh, 360px);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.fengshui-detail-reason {
+  min-height: 34px;
+  padding: 8px 10px;
+  border: 1px solid var(--wash-ink);
+  background: var(--surface-base);
+  color: var(--ink-dark);
+  font-size: var(--font-size-role-body-13);
+  line-height: 1.35;
+}
+
+.fengshui-detail-reason.is-good {
+  border-color: rgba(46, 109, 70, 0.32);
+  color: var(--success-ink);
+}
+
+.fengshui-detail-reason.is-bad,
+.fengshui-detail-reason.is-warning {
+  border-color: rgba(197, 60, 60, 0.32);
+  color: var(--stamp-red);
+}
+
+.building-panel-modal {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+  gap: 12px;
+  min-height: 0;
+  color: var(--ink-dark);
+}
+
+.building-panel-list,
+.building-panel-detail {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-height: 0;
+}
+
+.building-panel-list {
+  max-height: min(52dvh, 440px);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.building-panel-item,
+.building-panel-action {
+  min-height: 40px;
+  padding: 9px 10px;
+  border: 1px solid var(--wash-ink);
+  background: var(--surface-base);
+  color: var(--ink-dark);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.building-panel-item.active {
+  border-color: rgba(197, 60, 60, 0.42);
+  background: var(--surface-gradient-focus);
+  color: var(--ink-black);
+}
+
+.building-panel-line {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 8px;
+  min-height: 34px;
+  padding: 8px 10px;
+  border: 1px solid var(--wash-ink);
+  background: var(--surface-muted);
+  font-size: var(--font-size-role-body-13);
+}
+
+.building-panel-line span {
+  color: var(--ink-grey);
+}
+
+.building-panel-line strong {
+  overflow-wrap: anywhere;
+  color: var(--ink-dark);
+  font-weight: var(--font-weight-semibold);
+}
+
+.building-panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.building-panel-action {
+  min-width: 108px;
+  text-align: center;
+}
+
+@media (max-width: 720px) {
+  .building-panel-modal {
+    grid-template-columns: 1fr;
+  }
+
+  .building-panel-list {
+    max-height: 34dvh;
+  }
+
+  .fengshui-detail-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .fengshui-detail-metric,
+  .fengshui-detail-reason,
+  .building-panel-item,
+  .building-panel-action {
+    min-height: 40px;
+    font-size: var(--font-size-role-body-12);
+  }
+}
+
 .ui-form-field > label,
 .ui-form-label {
   color: var(--ink-dark);

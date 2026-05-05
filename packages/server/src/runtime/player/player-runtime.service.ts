@@ -382,6 +382,7 @@ let PlayerRuntimeService = class PlayerRuntimeService {
             startedAt: normalizedStartedAt,
             baselinePayload: buildOfflineGainSnapshot(player, this.contentTemplateRepository),
             accumulatedPayload: createEmptyOfflineGainReportParts(),
+            accumulatedDurationMs: 0,
         };
         this.playerStatisticSnapshotsByPlayerId.set(normalizedPlayerId, session.baselinePayload);
         this.offlineGainSessionsByPlayerId.set(normalizedPlayerId, session);
@@ -776,9 +777,10 @@ let PlayerRuntimeService = class PlayerRuntimeService {
     gainRealmProgress(playerId, amount, options = {}) {
 
         const player = this.getPlayerOrThrow(playerId);
+        const statisticBefore = this.captureOfflineGainBeforeTick(player);
 
         const result = this.playerProgressionService.gainRealmProgress(player, amount, options);
-        return this.applyProgressionResult(player, result);
+        return this.applyProgressionResultWithStatistics(player, result, statisticBefore);
     }
     /**
  * gainFoundation：执行gainFoundation相关逻辑。
@@ -790,9 +792,10 @@ let PlayerRuntimeService = class PlayerRuntimeService {
     gainFoundation(playerId, amount) {
 
         const player = this.getPlayerOrThrow(playerId);
+        const statisticBefore = this.captureOfflineGainBeforeTick(player);
 
         const result = this.playerProgressionService.gainFoundation(player, amount);
-        return this.applyProgressionResult(player, result);
+        return this.applyProgressionResultWithStatistics(player, result, statisticBefore);
     }
     /**
  * gainCombatExp：执行gain战斗Exp相关逻辑。
@@ -804,9 +807,10 @@ let PlayerRuntimeService = class PlayerRuntimeService {
     gainCombatExp(playerId, amount) {
 
         const player = this.getPlayerOrThrow(playerId);
+        const statisticBefore = this.captureOfflineGainBeforeTick(player);
 
         const result = this.playerProgressionService.gainCombatExp(player, amount);
-        return this.applyProgressionResult(player, result);
+        return this.applyProgressionResultWithStatistics(player, result, statisticBefore);
     }
     /**
  * advanceProgressionTick：执行advance修炼进度tick相关逻辑。
@@ -819,9 +823,10 @@ let PlayerRuntimeService = class PlayerRuntimeService {
     advanceProgressionTick(playerId, elapsedTicks = 1, options = {}) {
 
         const player = this.getPlayerOrThrow(playerId);
+        const statisticBefore = this.captureOfflineGainBeforeTick(player);
 
         const result = this.playerProgressionService.advanceProgressionTick(player, elapsedTicks, options);
-        return this.applyProgressionResult(player, result);
+        return this.applyProgressionResultWithStatistics(player, result, statisticBefore);
     }
     /**
  * advanceCultivation：执行advanceCultivation相关逻辑。
@@ -834,11 +839,12 @@ let PlayerRuntimeService = class PlayerRuntimeService {
     advanceCultivation(playerId, elapsedTicks = 1, currentTick = 0, options = {}) {
 
         const player = this.getPlayerOrThrow(playerId);
+        const statisticBefore = this.captureOfflineGainBeforeTick(player);
 
         const result = this.playerProgressionService.advanceCultivation(player, elapsedTicks, {
             auraMultiplier: normalizeCultivationAuraMultiplier(options?.auraMultiplier),
         });
-        return this.applyProgressionResult(player, result, currentTick);
+        return this.applyProgressionResultWithStatistics(player, result, statisticBefore, currentTick);
     }
     /**
  * grantMonsterKillProgress：执行grant怪物Kill进度相关逻辑。
@@ -851,9 +857,10 @@ let PlayerRuntimeService = class PlayerRuntimeService {
     grantMonsterKillProgress(playerId, input, currentTick = 0) {
 
         const player = this.getPlayerOrThrow(playerId);
+        const statisticBefore = this.captureOfflineGainBeforeTick(player);
 
         const result = this.playerProgressionService.grantMonsterKillProgress(player, input);
-        return this.applyProgressionResult(player, result, currentTick);
+        return this.applyProgressionResultWithStatistics(player, result, statisticBefore, currentTick);
     }
     /**
  * refreshProgressionPreview：执行refresh修炼进度Preview相关逻辑。
@@ -879,9 +886,10 @@ let PlayerRuntimeService = class PlayerRuntimeService {
     handleHeavenGateAction(playerId, action, element, currentTick = 0) {
 
         const player = this.getPlayerOrThrow(playerId);
+        const statisticBefore = this.captureOfflineGainBeforeTick(player);
 
         const result = this.playerProgressionService.handleHeavenGateAction(player, action, element);
-        return this.applyProgressionResult(player, result, currentTick, true);
+        return this.applyProgressionResultWithStatistics(player, result, statisticBefore, currentTick, true);
     }
     /**
  * attemptBreakthrough：执行attemptBreakthrough相关逻辑。
@@ -893,15 +901,17 @@ let PlayerRuntimeService = class PlayerRuntimeService {
     attemptBreakthrough(playerId, currentTick = 0) {
 
         const player = this.getPlayerOrThrow(playerId);
+        const statisticBefore = this.captureOfflineGainBeforeTick(player);
 
         const result = this.playerProgressionService.attemptBreakthrough(player);
-        return this.applyProgressionResult(player, result, currentTick, true);
+        return this.applyProgressionResultWithStatistics(player, result, statisticBefore, currentTick, true);
     }
     /** 凝练根基。 */
     refineRootFoundation(playerId, currentTick = 0) {
         const player = this.getPlayerOrThrow(playerId);
+        const statisticBefore = this.captureOfflineGainBeforeTick(player);
         const result = this.playerProgressionService.refineRootFoundation(player);
-        return this.applyProgressionResult(player, result, currentTick, true);
+        return this.applyProgressionResultWithStatistics(player, result, statisticBefore, currentTick, true);
     }
     /**
  * syncFromWorldView：处理From世界视图并更新相关状态。
@@ -2656,9 +2666,13 @@ let PlayerRuntimeService = class PlayerRuntimeService {
                 remainingInfusionStacks,
             };
         }
+        const statisticBefore = this.captureOfflineGainBeforeTick(player);
         const consumed = this.playerProgressionService.consumeRealmProgressAndFoundation(player, loss);
         if (Array.isArray(consumed.dirtyDomains) && consumed.dirtyDomains.length > 0) {
             markPlayerDirtyDomains(player, consumed.dirtyDomains);
+        }
+        if (consumed.changed) {
+            this.recordPlayerStatisticMutation(player, statisticBefore);
         }
         return {
             stacks,
@@ -2831,6 +2845,13 @@ let PlayerRuntimeService = class PlayerRuntimeService {
         if (!beforeSnapshot || !normalizeOfflineGainString(player?.playerId)) {
             return;
         }
+        this.recordPlayerStatisticMutation(player, beforeSnapshot);
+    }
+    /** recordPlayerStatisticMutation：把一次权威变更按发生时刻记入全局收支；离线时先归入离线会话。 */
+    recordPlayerStatisticMutation(player, beforeSnapshot, endedAt = Date.now()) {
+        if (!beforeSnapshot || !normalizeOfflineGainString(player?.playerId)) {
+            return;
+        }
         const normalizedPlayerId = normalizeOfflineGainString(player?.playerId);
         const afterSnapshot = buildOfflineGainSnapshot(player, this.contentTemplateRepository);
         const delta = buildOfflineGainDeltaParts(
@@ -2847,13 +2868,13 @@ let PlayerRuntimeService = class PlayerRuntimeService {
                 normalizeOfflineGainReportParts(offlineSession.accumulatedPayload),
                 delta,
             );
+            offlineSession.accumulatedDurationMs = normalizeOfflineGainCount(offlineSession.accumulatedDurationMs) + 1000;
             return;
         }
         if (!normalizeOfflineGainString(player?.sessionId)) {
             return;
         }
-        const now = Date.now();
-        this.recordPlayerStatisticTotals(normalizedPlayerId, delta, now);
+        this.recordPlayerStatisticTotals(normalizedPlayerId, delta, endedAt);
     }
     /** recordPlayerStatisticTotals：把收支写入服务端权威日总账，数据库落盘异步调度。 */
     recordPlayerStatisticTotals(playerId, parts, endedAt = Date.now()) {
@@ -3566,6 +3587,14 @@ let PlayerRuntimeService = class PlayerRuntimeService {
         }
         return player;
     }
+    /** applyProgressionResultWithStatistics：应用进度变更，并按变更发生顺序记录收支，避免快照净值互相抵消。 */
+    applyProgressionResultWithStatistics(player, result, beforeSnapshot, currentTick = 0, rebuildActions = false) {
+        this.applyProgressionResult(player, result, currentTick, rebuildActions);
+        if (result?.changed) {
+            this.recordPlayerStatisticMutation(player, beforeSnapshot);
+        }
+        return player;
+    }
     /**
  * rebuildActionState：构建rebuildAction状态。
  * @param player 玩家对象。
@@ -3633,16 +3662,18 @@ let PlayerRuntimeService = class PlayerRuntimeService {
         }
         const spiritualRootSeedTier = resolveSpiritualRootSeedTier(item);
         if (spiritualRootSeedTier) {
+            const statisticBefore = this.captureOfflineGainBeforeTick(player);
             const result = this.playerProgressionService.applySpiritualRootSeed(player, spiritualRootSeedTier);
             if (!result.changed) {
                 const message = result.notices?.find((notice) => typeof notice?.text === 'string' && notice.text.trim())?.text.trim()
                     ?? '当前无法使用灵根幼苗';
                 throw new common_1.BadRequestException(message);
             }
-            this.applyProgressionResult(player, result);
+            this.applyProgressionResultWithStatistics(player, result, statisticBefore);
             consumed = true;
         }
         if (item.itemId === SHATTER_SPIRIT_PILL_ITEM_ID || item.itemId === WANGSHENG_PILL_ITEM_ID) {
+            const statisticBefore = this.captureOfflineGainBeforeTick(player);
             const result = item.itemId === SHATTER_SPIRIT_PILL_ITEM_ID
                 ? this.playerProgressionService.applyShatterSpiritPill(player)
                 : this.playerProgressionService.applyWangshengPill(player);
@@ -3651,7 +3682,7 @@ let PlayerRuntimeService = class PlayerRuntimeService {
                     ?? '当前无法使用该丹药';
                 throw new common_1.BadRequestException(message);
             }
-            this.applyProgressionResult(player, result);
+            this.applyProgressionResultWithStatistics(player, result, statisticBefore);
             consumed = true;
         }
         if (selfChanged) {
@@ -3919,6 +3950,7 @@ function mergeOfflineGainSessionRecords(persistedSession, memorySession) {
         startedAt: normalizeOfflineGainCount(memorySession.startedAt || persistedSession.startedAt),
         baselinePayload: memorySession.baselinePayload ?? persistedSession.baselinePayload,
         accumulatedPayload: memorySession.accumulatedPayload ?? persistedSession.accumulatedPayload,
+        accumulatedDurationMs: normalizeOfflineGainCount(memorySession.accumulatedDurationMs ?? persistedSession.accumulatedDurationMs),
     };
 }
 function accumulateOfflineGainSessionDelta(session, beforeSnapshot, afterSnapshot) {
@@ -4147,6 +4179,7 @@ function buildPlayerStatisticRecordFromParts(player, session, endedAt, parts, sc
     const normalizedParts = normalizeOfflineGainReportParts(parts);
     const startedAt = normalizeOfflineGainCount(session?.startedAt ?? session?.baselinePayload?.snapshotAt ?? endedAt);
     const normalizedEndedAt = Math.max(startedAt, normalizeOfflineGainCount(endedAt));
+    const accumulatedDurationMs = normalizeOfflineGainCount(session?.accumulatedDurationMs);
     const normalizedScope = scope === 'online' ? 'online' : 'offline';
     return {
         id: normalizeOfflineGainString(session?.sessionId) || buildPlayerStatisticRecordId(player?.playerId, normalizedEndedAt, normalizedScope),
@@ -4155,7 +4188,7 @@ function buildPlayerStatisticRecordFromParts(player, session, endedAt, parts, sc
         source: resolvePlayerStatisticSource(normalizedParts, normalizedScope),
         startedAt,
         endedAt: normalizedEndedAt,
-        durationMs: Math.max(0, normalizedEndedAt - startedAt),
+        durationMs: accumulatedDurationMs > 0 ? accumulatedDurationMs : Math.max(0, normalizedEndedAt - startedAt),
         generatedAt: Date.now(),
         spiritStones: normalizedParts.spiritStones,
         items: normalizedParts.items,
@@ -4539,19 +4572,15 @@ function resolveCraftSkillExpToNextForLevel(level) {
 }
 function buildOfflineGainReportFromSession(player, session, endedAt, contentTemplateRepository = null) {
     const baseline = normalizeOfflineGainSnapshot(session?.baselinePayload);
-    const after = buildOfflineGainSnapshot(player, contentTemplateRepository);
     const startedAt = normalizeOfflineGainCount(session?.startedAt ?? baseline.snapshotAt);
     const normalizedEndedAt = Math.max(startedAt, normalizeOfflineGainCount(endedAt));
-    const snapshotDelta = buildOfflineGainDeltaParts(baseline, normalizeOfflineGainSnapshot(after));
-    const mergedPayload = mergeOfflineGainReportPartsByMaximum(
-        normalizeOfflineGainReportParts(session?.accumulatedPayload),
-        snapshotDelta,
-    );
+    const mergedPayload = normalizeOfflineGainReportParts(session?.accumulatedPayload);
     return buildPlayerStatisticRecordFromParts(player, {
         sessionId: normalizeOfflineGainString(session?.sessionId) || buildOfflineGainSessionId(player?.playerId, startedAt),
         startedAt,
         baselinePayload: session?.baselinePayload,
         accumulatedPayload: mergedPayload,
+        accumulatedDurationMs: normalizeOfflineGainCount(session?.accumulatedDurationMs),
     }, normalizedEndedAt, mergedPayload, 'offline');
 }
 function normalizeOfflineGainSnapshot(value) {
@@ -5319,6 +5348,7 @@ function normalizeAlchemyJob(value) {
     }
     return {
         ...value,
+        jobType: value.jobType === 'forging' ? 'forging' : 'alchemy',
         recipeId: String(value.recipeId),
         outputItemId: typeof value.outputItemId === 'string' ? value.outputItemId : '',
         outputCount: Math.max(1, Math.floor(Number(value.outputCount) || 1)),

@@ -110,8 +110,10 @@ function testBuildContextActions() {
     assert.deepEqual(actions.map((entry) => entry.id), [
         'alchemy:open',
         'battle:force_attack',
+        'building:open',
         'cultivation:toggle',
         'enhancement:open',
+        'forging:open',
         'npc:npc_a',
         'npc_quests:npc_a',
         'npc_shop:npc_a',
@@ -169,7 +171,9 @@ function testJobFallbackWithoutWeapon() {
         localNpcs: [],
     });
     assert.ok(actions.some((entry) => entry.id === 'alchemy:open'));
+    assert.ok(actions.some((entry) => entry.id === 'building:open'));
     assert.ok(actions.some((entry) => entry.id === 'enhancement:open'));
+    assert.ok(actions.some((entry) => entry.id === 'forging:open'));
 }
 
 function testReturnActionShowsBoundRespawnTarget() {

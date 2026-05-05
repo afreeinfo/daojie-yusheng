@@ -67,7 +67,12 @@ type MainActionStateSourceOptions = {
  * openTechniqueActivity：打开指定技艺活动面板。
  */
 
-  openTechniqueActivity: (kind: ClientTechniqueActivityKind) => void;  
+  openTechniqueActivity: (kind: ClientTechniqueActivityKind | 'forging') => void;
+  /**
+ * openBuildingPanel：打开营造面板。
+ */
+
+  openBuildingPanel: () => void;
   /**
  * openWorldMigrationModal：打开世界迁移弹窗。
  */
@@ -93,8 +98,9 @@ export type MainActionStateSource = ReturnType<typeof createMainActionStateSourc
 
 const TECHNIQUE_ACTIVITY_ACTIONS = {
   'alchemy:open': 'alchemy',
+  'forging:open': 'forging',
   'enhancement:open': 'enhancement',
-} as const satisfies Record<string, ClientTechniqueActivityKind>;
+} as const satisfies Record<string, ClientTechniqueActivityKind | 'forging'>;
 /**
  * createMainActionStateSource：构建并返回目标对象。
  * @param options MainActionStateSourceOptions 选项参数。
@@ -132,6 +138,12 @@ export function createMainActionStateSource(options: MainActionStateSourceOption
         options.cancelTargeting();
         options.hideObserveModal();
         options.openTechniqueActivity(techniqueActivityKind);
+        return;
+      }
+      if (actionId === 'building:open') {
+        options.cancelTargeting();
+        options.hideObserveModal();
+        options.openBuildingPanel();
         return;
       }
       if (actionId === 'world:migrate') {

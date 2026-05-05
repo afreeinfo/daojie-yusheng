@@ -62,6 +62,8 @@ export * from './sect-types';
 export * from './age';
 export * from './mail-types';
 export * from './mail';
+export * from './building-types';
+export * from './fengshui-types';
 export * from './loot-view-types';
 export * from './market-types';
 export * from './observation-types';

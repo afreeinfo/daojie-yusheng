@@ -147,6 +147,10 @@ type MainLowFrequencySocketBindingsOptions = {
  */
 
   onNpcShop: (data: ServerToClientEventPayload<typeof S2C.NpcShop>) => void;
+  onBuildResult: (data: ServerToClientEventPayload<typeof S2C.BuildResult>) => void;
+  onRoomSummaryPatch: (data: ServerToClientEventPayload<typeof S2C.RoomSummaryPatch>) => void;
+  onFengShuiOverlayPatch: (data: ServerToClientEventPayload<typeof S2C.FengShuiOverlayPatch>) => void;
+  onFengShuiDetail: (data: ServerToClientEventPayload<typeof S2C.FengShuiDetail>) => void;
   /**
  * onNotice：onNotice相关字段。
  */
@@ -192,6 +196,7 @@ export function bindMainLowFrequencySocketEvents(options: MainLowFrequencySocket
   options.socket.on(S2C.AttrDetail, options.onAttrDetail);
   bindTechniqueActivityPanelEvents(options.socket, {
     alchemy: options.onAlchemyPanel,
+    forging: options.onAlchemyPanel,
     enhancement: options.onEnhancementPanel,
   });
   options.socket.on(S2C.Leaderboard, options.onLeaderboard);
@@ -215,6 +220,10 @@ export function bindMainLowFrequencySocketEvents(options: MainLowFrequencySocket
   options.socket.on(S2C.MarketItemBook, options.onMarketItemBook);
   options.socket.on(S2C.MarketTradeHistory, options.onMarketTradeHistory);
   options.socket.on(S2C.NpcShop, options.onNpcShop);
+  options.socket.on(S2C.BuildResult, options.onBuildResult);
+  options.socket.on(S2C.RoomSummaryPatch, options.onRoomSummaryPatch);
+  options.socket.on(S2C.FengShuiOverlayPatch, options.onFengShuiOverlayPatch);
+  options.socket.on(S2C.FengShuiDetail, options.onFengShuiDetail);
   options.socket.on(S2C.Notice, options.onNotice);
   options.socket.on(S2C.Error, options.onError);
   options.socket.onKick(options.onKick);

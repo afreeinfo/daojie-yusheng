@@ -75,6 +75,12 @@ import type {
   PanelEquipmentDeltaView,
   PanelInventoryDeltaView,
 } from './synced-panel-types';
+import type {
+  BuildResultView,
+  FengShuiDetailView,
+  FengShuiOverlayPatchView,
+  RoomSummaryPatchView,
+} from './fengshui-types';
 
 /** 战利品窗口增量：同步当前可拾取源与条目。 */
 export interface S2C_LootWindowUpdate extends LootWindowUpdateView {}
@@ -110,6 +116,14 @@ export interface S2C_WorldGroundPatch extends WorldGroundPatchView {}
 export interface S2C_WorldContainerPatch extends WorldContainerPatchView {}
 /** 世界阵法补丁。 */
 export interface S2C_WorldFormationPatch extends WorldFormationPatchView {}
+/** 建造命令低频回执。 */
+export interface S2C_BuildResult extends BuildResultView {}
+/** 房间摘要低频增量。 */
+export interface S2C_RoomSummaryPatch extends RoomSummaryPatchView {}
+/** 风水 overlay 按需增量。 */
+export interface S2C_FengShuiOverlayPatch extends FengShuiOverlayPatchView {}
+/** 风水房间详情按需返回。 */
+export interface S2C_FengShuiDetail extends FengShuiDetailView {}
 /** 世界增量包：同步可见实体、战斗特效、路径、时间和地图局部补丁。 */
 export interface S2C_WorldDelta extends WorldDeltaView {
 /**

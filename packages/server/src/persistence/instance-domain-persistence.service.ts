@@ -17,6 +17,13 @@ const INSTANCE_CONTAINER_TIMER_TABLE = 'instance_container_timer';
 const INSTANCE_MONSTER_RUNTIME_STATE_TABLE = 'instance_monster_runtime_state';
 const INSTANCE_EVENT_STATE_TABLE = 'instance_event_state';
 const INSTANCE_OVERLAY_CHUNK_TABLE = 'instance_overlay_chunk';
+const INSTANCE_BUILDING_STATE_TABLE = 'instance_building_state';
+const INSTANCE_BUILDING_CELL_TABLE = 'instance_building_cell';
+const INSTANCE_ROOM_STATE_TABLE = 'instance_room_state';
+const INSTANCE_ROOM_CELL_TABLE = 'instance_room_cell';
+const INSTANCE_FENGSHUI_STATE_TABLE = 'instance_fengshui_state';
+const INSTANCE_BUILDING_AUDIT_LOG_TABLE = 'instance_building_audit_log';
+const INSTANCE_BUILDING_OPERATION_IDEMPOTENCY_TABLE = 'instance_building_operation_idempotency';
 const INSTANCE_TILE_RESOURCE_STATE_LOCK_NAMESPACE = 42871;
 const INSTANCE_TILE_RESOURCE_STATE_LOCK_KEY = 3001;
 const INSTANCE_TILE_CELL_LOCK_KEY = 3012;
@@ -31,6 +38,13 @@ const INSTANCE_CONTAINER_TIMER_LOCK_KEY = 3011;
 const INSTANCE_MONSTER_RUNTIME_STATE_LOCK_KEY = 3006;
 const INSTANCE_EVENT_STATE_LOCK_KEY = 3007;
 const INSTANCE_OVERLAY_CHUNK_LOCK_KEY = 3008;
+const INSTANCE_BUILDING_STATE_LOCK_KEY = 3014;
+const INSTANCE_ROOM_STATE_LOCK_KEY = 3015;
+const INSTANCE_FENGSHUI_STATE_LOCK_KEY = 3016;
+const INSTANCE_BUILDING_CELL_LOCK_KEY = 3017;
+const INSTANCE_ROOM_CELL_LOCK_KEY = 3018;
+const INSTANCE_BUILDING_AUDIT_LOG_LOCK_KEY = 3019;
+const INSTANCE_BUILDING_OPERATION_IDEMPOTENCY_LOCK_KEY = 3020;
 const INSTANCE_DOMAIN_BIGINT_COLUMNS_BY_TABLE = {
   [INSTANCE_TILE_RESOURCE_STATE_TABLE]: ['tile_index', 'value'],
   [INSTANCE_TILE_CELL_TABLE]: ['x', 'y'],
@@ -38,7 +52,7 @@ const INSTANCE_DOMAIN_BIGINT_COLUMNS_BY_TABLE = {
   [INSTANCE_TEMPORARY_TILE_STATE_TABLE]: ['tile_index', 'x', 'y', 'hp', 'max_hp', 'expires_at_tick', 'created_at_ms', 'modified_at_ms'],
   [INSTANCE_GROUND_ITEM_TABLE]: ['tile_index'],
   [INSTANCE_CONTAINER_ENTRY_TABLE]: ['entry_index'],
-  [INSTANCE_MONSTER_RUNTIME_STATE_TABLE]: [
+    [INSTANCE_MONSTER_RUNTIME_STATE_TABLE]: [
     'monster_level',
     'tile_index',
     'x',
@@ -46,9 +60,26 @@ const INSTANCE_DOMAIN_BIGINT_COLUMNS_BY_TABLE = {
     'hp',
     'max_hp',
     'respawn_left',
-    'respawn_ticks',
+      'respawn_ticks',
+    ],
+  [INSTANCE_BUILDING_STATE_TABLE]: ['x', 'y', 'hp', 'max_hp', 'created_at_tick', 'updated_at_tick', 'revision'],
+  [INSTANCE_BUILDING_CELL_TABLE]: ['tile_index', 'x', 'y'],
+  [INSTANCE_ROOM_STATE_TABLE]: ['min_x', 'min_y', 'max_x', 'max_y', 'area', 'perimeter', 'door_count', 'window_count', 'revision', 'updated_at_tick'],
+  [INSTANCE_ROOM_CELL_TABLE]: ['tile_index', 'x', 'y', 'edge_flags'],
+  [INSTANCE_FENGSHUI_STATE_TABLE]: [
+    'score',
+    'shape_score',
+    'enclosure_score',
+    'qi_score',
+    'sha_score',
+    'comfort_score',
+    'integrity_score',
+    'element_score',
+    'formation_score',
+    'revision',
+    'updated_at_tick',
   ],
-} as const;
+  } as const;
 
 @Injectable()
 export class InstanceDomainPersistenceService implements OnModuleInit, OnModuleDestroy {
@@ -79,6 +110,13 @@ export class InstanceDomainPersistenceService implements OnModuleInit, OnModuleD
       await ensureInstanceMonsterRuntimeStateTable(this.pool);
       await ensureInstanceEventStateTable(this.pool);
       await ensureInstanceOverlayChunkTable(this.pool);
+      await ensureInstanceBuildingStateTable(this.pool);
+      await ensureInstanceBuildingCellTable(this.pool);
+      await ensureInstanceRoomStateTable(this.pool);
+      await ensureInstanceRoomCellTable(this.pool);
+      await ensureInstanceFengShuiStateTable(this.pool);
+      await ensureInstanceBuildingAuditLogTable(this.pool);
+      await ensureInstanceBuildingOperationIdempotencyTable(this.pool);
       this.enabled = true;
       this.logger.log('实例分域持久化已启用');
     } catch (error: unknown) {
@@ -96,6 +134,308 @@ export class InstanceDomainPersistenceService implements OnModuleInit, OnModuleD
 
   isEnabled(): boolean {
     return this.enabled && this.pool !== null;
+  }
+
+  async saveBuildingRoomFengShuiState(
+    instanceId: string,
+    state: {
+      buildings?: unknown[];
+      rooms?: unknown[];
+      roomCells?: unknown[];
+      fengShui?: unknown[];
+    },
+  ): Promise<void> {
+    if (!this.pool || !this.enabled) {
+      return;
+    }
+    const normalizedInstanceId = normalizeRequiredString(instanceId);
+    if (!normalizedInstanceId) {
+      return;
+    }
+    const buildings = Array.isArray(state?.buildings) ? state.buildings : [];
+    const rooms = Array.isArray(state?.rooms) ? state.rooms : [];
+    const buildingCells = buildings.flatMap(normalizeBuildingCellPersistenceRows);
+    const roomCells = Array.isArray(state?.roomCells) ? state.roomCells.map(normalizeRoomCellPersistenceRow).filter((row) => normalizeRequiredString(row.room_id)) : [];
+    const fengShui = Array.isArray(state?.fengShui) ? state.fengShui : [];
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await acquireInstanceDomainLock(client, normalizedInstanceId);
+      await client.query(`DELETE FROM ${INSTANCE_BUILDING_CELL_TABLE} WHERE instance_id = $1`, [normalizedInstanceId]);
+      await client.query(`DELETE FROM ${INSTANCE_BUILDING_STATE_TABLE} WHERE instance_id = $1`, [normalizedInstanceId]);
+      await client.query(`DELETE FROM ${INSTANCE_ROOM_CELL_TABLE} WHERE instance_id = $1`, [normalizedInstanceId]);
+      await client.query(`DELETE FROM ${INSTANCE_ROOM_STATE_TABLE} WHERE instance_id = $1`, [normalizedInstanceId]);
+      await client.query(`DELETE FROM ${INSTANCE_FENGSHUI_STATE_TABLE} WHERE instance_id = $1`, [normalizedInstanceId]);
+      if (buildings.length > 0) {
+        await client.query(
+          `
+            WITH incoming AS (
+              SELECT *
+              FROM jsonb_to_recordset($2::jsonb) AS entry(
+                building_id varchar(120),
+                def_id varchar(120),
+                x bigint,
+                y bigint,
+                rotation int,
+                owner_player_id varchar(100),
+                owner_sect_id varchar(100),
+                room_id varchar(160),
+                hp bigint,
+                max_hp bigint,
+                state varchar(40),
+                created_at_tick bigint,
+                updated_at_tick bigint,
+                revision bigint,
+                payload jsonb
+              )
+            )
+            INSERT INTO ${INSTANCE_BUILDING_STATE_TABLE}(
+              instance_id, building_id, def_id, x, y, rotation, owner_player_id, owner_sect_id,
+              room_id, hp, max_hp, state, created_at_tick, updated_at_tick, revision, payload, updated_at
+            )
+            SELECT $1, building_id, def_id, x, y, rotation, owner_player_id, owner_sect_id,
+              room_id, hp, max_hp, state, created_at_tick, updated_at_tick, revision, COALESCE(payload, '{}'::jsonb), now()
+            FROM incoming
+            ON CONFLICT (instance_id, building_id) DO UPDATE SET
+              def_id = EXCLUDED.def_id,
+              x = EXCLUDED.x,
+              y = EXCLUDED.y,
+              rotation = EXCLUDED.rotation,
+              owner_player_id = EXCLUDED.owner_player_id,
+              owner_sect_id = EXCLUDED.owner_sect_id,
+              room_id = EXCLUDED.room_id,
+              hp = EXCLUDED.hp,
+              max_hp = EXCLUDED.max_hp,
+              state = EXCLUDED.state,
+              created_at_tick = EXCLUDED.created_at_tick,
+              updated_at_tick = EXCLUDED.updated_at_tick,
+              revision = EXCLUDED.revision,
+              payload = EXCLUDED.payload,
+              updated_at = now()
+          `,
+          [normalizedInstanceId, JSON.stringify(buildings.map(normalizeBuildingPersistenceRow))],
+        );
+      }
+      if (buildingCells.length > 0) {
+        await client.query(
+          `
+            WITH incoming AS (
+              SELECT *
+              FROM jsonb_to_recordset($2::jsonb) AS entry(
+                building_id varchar(160),
+                tile_index bigint,
+                x bigint,
+                y bigint,
+                tile_type varchar(80),
+                previous_tile_type varchar(80),
+                blocks_move boolean,
+                blocks_sight boolean
+              )
+            )
+            INSERT INTO ${INSTANCE_BUILDING_CELL_TABLE}(
+              instance_id, building_id, tile_index, x, y, tile_type, previous_tile_type,
+              blocks_move, blocks_sight, updated_at
+            )
+            SELECT $1, building_id, tile_index, x, y, tile_type, previous_tile_type,
+              blocks_move, blocks_sight, now()
+            FROM incoming
+            ON CONFLICT (instance_id, tile_index) DO UPDATE SET
+              building_id = EXCLUDED.building_id,
+              x = EXCLUDED.x,
+              y = EXCLUDED.y,
+              tile_type = EXCLUDED.tile_type,
+              previous_tile_type = EXCLUDED.previous_tile_type,
+              blocks_move = EXCLUDED.blocks_move,
+              blocks_sight = EXCLUDED.blocks_sight,
+              updated_at = now()
+          `,
+          [normalizedInstanceId, JSON.stringify(buildingCells)],
+        );
+      }
+      if (rooms.length > 0) {
+        await client.query(
+          `
+            WITH incoming AS (
+              SELECT *
+              FROM jsonb_to_recordset($2::jsonb) AS entry(
+                room_id varchar(160),
+                role varchar(60),
+                enclosed boolean,
+                semi_outdoor boolean,
+                min_x bigint,
+                min_y bigint,
+                max_x bigint,
+                max_y bigint,
+                area bigint,
+                perimeter bigint,
+                door_count bigint,
+                window_count bigint,
+                roof_coverage_ratio int,
+                room_hash varchar(120),
+                revision bigint,
+                updated_at_tick bigint,
+                payload jsonb
+              )
+            )
+            INSERT INTO ${INSTANCE_ROOM_STATE_TABLE}(
+              instance_id, room_id, role, enclosed, semi_outdoor, min_x, min_y, max_x, max_y,
+              area, perimeter, door_count, window_count, roof_coverage_ratio, room_hash,
+              revision, updated_at_tick, payload, updated_at
+            )
+            SELECT $1, room_id, role, enclosed, semi_outdoor, min_x, min_y, max_x, max_y,
+              area, perimeter, door_count, window_count, roof_coverage_ratio, room_hash,
+              revision, updated_at_tick, COALESCE(payload, '{}'::jsonb), now()
+            FROM incoming
+            ON CONFLICT (instance_id, room_id) DO UPDATE SET
+              role = EXCLUDED.role,
+              enclosed = EXCLUDED.enclosed,
+              semi_outdoor = EXCLUDED.semi_outdoor,
+              min_x = EXCLUDED.min_x,
+              min_y = EXCLUDED.min_y,
+              max_x = EXCLUDED.max_x,
+              max_y = EXCLUDED.max_y,
+              area = EXCLUDED.area,
+              perimeter = EXCLUDED.perimeter,
+              door_count = EXCLUDED.door_count,
+              window_count = EXCLUDED.window_count,
+              roof_coverage_ratio = EXCLUDED.roof_coverage_ratio,
+              room_hash = EXCLUDED.room_hash,
+              revision = EXCLUDED.revision,
+              updated_at_tick = EXCLUDED.updated_at_tick,
+              payload = EXCLUDED.payload,
+              updated_at = now()
+          `,
+          [normalizedInstanceId, JSON.stringify(rooms.map(normalizeRoomPersistenceRow))],
+        );
+      }
+      if (roomCells.length > 0) {
+        await client.query(
+          `
+            WITH incoming AS (
+              SELECT *
+              FROM jsonb_to_recordset($2::jsonb) AS entry(
+                room_id varchar(160),
+                tile_index bigint,
+                x bigint,
+                y bigint,
+                edge_flags bigint
+              )
+            )
+            INSERT INTO ${INSTANCE_ROOM_CELL_TABLE}(
+              instance_id, room_id, tile_index, x, y, edge_flags, updated_at
+            )
+            SELECT $1, room_id, tile_index, x, y, edge_flags, now()
+            FROM incoming
+            ON CONFLICT (instance_id, tile_index) DO UPDATE SET
+              room_id = EXCLUDED.room_id,
+              x = EXCLUDED.x,
+              y = EXCLUDED.y,
+              edge_flags = EXCLUDED.edge_flags,
+              updated_at = now()
+          `,
+          [normalizedInstanceId, JSON.stringify(roomCells)],
+        );
+      }
+      if (fengShui.length > 0) {
+        await client.query(
+          `
+            WITH incoming AS (
+              SELECT *
+              FROM jsonb_to_recordset($2::jsonb) AS entry(
+                room_id varchar(160),
+                score bigint,
+                grade varchar(40),
+                primary_element varchar(20),
+                function_element varchar(20),
+                shape_score bigint,
+                enclosure_score bigint,
+                qi_score bigint,
+                sha_score bigint,
+                comfort_score bigint,
+                integrity_score bigint,
+                element_score bigint,
+                formation_score bigint,
+                revision bigint,
+                updated_at_tick bigint,
+                detail_json jsonb
+              )
+            )
+            INSERT INTO ${INSTANCE_FENGSHUI_STATE_TABLE}(
+              instance_id, room_id, score, grade, primary_element, function_element,
+              shape_score, enclosure_score, qi_score, sha_score, comfort_score, integrity_score,
+              element_score, formation_score, revision, updated_at_tick, detail_json, updated_at
+            )
+            SELECT $1, room_id, score, grade, primary_element, function_element,
+              shape_score, enclosure_score, qi_score, sha_score, comfort_score, integrity_score,
+              element_score, formation_score, revision, updated_at_tick, COALESCE(detail_json, '{}'::jsonb), now()
+            FROM incoming
+            ON CONFLICT (instance_id, room_id) DO UPDATE SET
+              score = EXCLUDED.score,
+              grade = EXCLUDED.grade,
+              primary_element = EXCLUDED.primary_element,
+              function_element = EXCLUDED.function_element,
+              shape_score = EXCLUDED.shape_score,
+              enclosure_score = EXCLUDED.enclosure_score,
+              qi_score = EXCLUDED.qi_score,
+              sha_score = EXCLUDED.sha_score,
+              comfort_score = EXCLUDED.comfort_score,
+              integrity_score = EXCLUDED.integrity_score,
+              element_score = EXCLUDED.element_score,
+              formation_score = EXCLUDED.formation_score,
+              revision = EXCLUDED.revision,
+              updated_at_tick = EXCLUDED.updated_at_tick,
+              detail_json = EXCLUDED.detail_json,
+              updated_at = now()
+          `,
+          [normalizedInstanceId, JSON.stringify(fengShui.map(normalizeFengShuiPersistenceRow))],
+        );
+      }
+      await client.query('COMMIT');
+    } catch (error: unknown) {
+      await rollbackQuietly(client);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async loadBuildingRoomFengShuiState(instanceId: string): Promise<{ buildings: unknown[]; rooms: unknown[]; roomCells: unknown[]; fengShui: unknown[] }> {
+    if (!this.pool || !this.enabled) {
+      return { buildings: [], rooms: [], roomCells: [], fengShui: [] };
+    }
+    const normalizedInstanceId = normalizeRequiredString(instanceId);
+    if (!normalizedInstanceId) {
+      return { buildings: [], rooms: [], roomCells: [], fengShui: [] };
+    }
+    const [buildingRows, buildingCellRows, roomRows, roomCellRows, fengShuiRows] = await Promise.all([
+      this.pool.query(`SELECT * FROM ${INSTANCE_BUILDING_STATE_TABLE} WHERE instance_id = $1 ORDER BY building_id ASC`, [normalizedInstanceId]),
+      this.pool.query(`SELECT * FROM ${INSTANCE_BUILDING_CELL_TABLE} WHERE instance_id = $1 ORDER BY building_id ASC, tile_index ASC`, [normalizedInstanceId]),
+      this.pool.query(`SELECT * FROM ${INSTANCE_ROOM_STATE_TABLE} WHERE instance_id = $1 ORDER BY room_id ASC`, [normalizedInstanceId]),
+      this.pool.query(`SELECT * FROM ${INSTANCE_ROOM_CELL_TABLE} WHERE instance_id = $1 ORDER BY room_id ASC, tile_index ASC`, [normalizedInstanceId]),
+      this.pool.query(`SELECT * FROM ${INSTANCE_FENGSHUI_STATE_TABLE} WHERE instance_id = $1 ORDER BY room_id ASC`, [normalizedInstanceId]),
+    ]);
+    const buildingCellsById = new Map<string, Record<string, unknown>[]>();
+    for (const row of buildingCellRows.rows) {
+      const projected = projectBuildingCellPersistenceRow(row);
+      const buildingId = normalizeRequiredString(projected.buildingId);
+      if (!buildingId) {
+        continue;
+      }
+      const cells = buildingCellsById.get(buildingId) ?? [];
+      cells.push(projected);
+      buildingCellsById.set(buildingId, cells);
+    }
+    const buildings = buildingRows.rows.map((row) => {
+      const projected = projectBuildingPersistenceRow(row);
+      const cells = buildingCellsById.get(normalizeRequiredString(projected.id));
+      return cells && cells.length > 0 ? { ...projected, cells } : projected;
+    });
+    return {
+      buildings,
+      rooms: roomRows.rows.map(projectRoomPersistenceRow),
+      roomCells: roomCellRows.rows.map(projectRoomCellPersistenceRow),
+      fengShui: fengShuiRows.rows.map(projectFengShuiPersistenceRow),
+    };
   }
 
   async saveTileResourceDiffs(
@@ -2861,6 +3201,309 @@ async function ensureInstanceOverlayChunkTable(pool: Pool): Promise<void> {
   }
 }
 
+async function ensureInstanceBuildingStateTable(pool: Pool): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(`SELECT pg_advisory_lock($1, $2)`, [INSTANCE_TILE_RESOURCE_STATE_LOCK_NAMESPACE, INSTANCE_BUILDING_STATE_LOCK_KEY]);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS ${INSTANCE_BUILDING_STATE_TABLE} (
+        instance_id varchar(100) NOT NULL,
+        building_id varchar(160) NOT NULL,
+        def_id varchar(120) NOT NULL,
+        x bigint NOT NULL,
+        y bigint NOT NULL,
+        rotation int NOT NULL DEFAULT 0,
+        owner_player_id varchar(100) NULL,
+        owner_sect_id varchar(100) NULL,
+        room_id varchar(160) NULL,
+        hp bigint NOT NULL DEFAULT 1,
+        max_hp bigint NOT NULL DEFAULT 1,
+        state varchar(40) NOT NULL DEFAULT 'active',
+        created_at_tick bigint NOT NULL DEFAULT 0,
+        updated_at_tick bigint NOT NULL DEFAULT 0,
+        revision bigint NOT NULL DEFAULT 1,
+        payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+        updated_at timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY (instance_id, building_id)
+      )
+    `);
+    await ensureBigintColumns(client, INSTANCE_BUILDING_STATE_TABLE);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS instance_building_state_instance_room_idx
+      ON ${INSTANCE_BUILDING_STATE_TABLE}(instance_id, room_id)
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS instance_building_state_instance_def_idx
+      ON ${INSTANCE_BUILDING_STATE_TABLE}(instance_id, def_id)
+    `);
+    await client.query('COMMIT');
+  } catch (error: unknown) {
+    await rollbackQuietly(client);
+    throw error;
+  } finally {
+    await client.query(`SELECT pg_advisory_unlock($1, $2)`, [INSTANCE_TILE_RESOURCE_STATE_LOCK_NAMESPACE, INSTANCE_BUILDING_STATE_LOCK_KEY]).catch(() => undefined);
+    client.release();
+  }
+}
+
+async function ensureInstanceBuildingCellTable(pool: Pool): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(`SELECT pg_advisory_lock($1, $2)`, [INSTANCE_TILE_RESOURCE_STATE_LOCK_NAMESPACE, INSTANCE_BUILDING_CELL_LOCK_KEY]);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS ${INSTANCE_BUILDING_CELL_TABLE} (
+        instance_id varchar(100) NOT NULL,
+        building_id varchar(160) NOT NULL,
+        tile_index bigint NOT NULL,
+        x bigint NOT NULL,
+        y bigint NOT NULL,
+        tile_type varchar(80) NOT NULL DEFAULT 'floor',
+        previous_tile_type varchar(80) NULL,
+        blocks_move boolean NOT NULL DEFAULT false,
+        blocks_sight boolean NOT NULL DEFAULT false,
+        updated_at timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY (instance_id, tile_index)
+      )
+    `);
+    await client.query(`
+      ALTER TABLE ${INSTANCE_BUILDING_CELL_TABLE}
+      ADD COLUMN IF NOT EXISTS previous_tile_type varchar(80) NULL
+    `);
+    await client.query(`
+      ALTER TABLE ${INSTANCE_BUILDING_CELL_TABLE}
+      ADD COLUMN IF NOT EXISTS blocks_move boolean NOT NULL DEFAULT false
+    `);
+    await client.query(`
+      ALTER TABLE ${INSTANCE_BUILDING_CELL_TABLE}
+      ADD COLUMN IF NOT EXISTS blocks_sight boolean NOT NULL DEFAULT false
+    `);
+    await ensureBigintColumns(client, INSTANCE_BUILDING_CELL_TABLE);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS instance_building_cell_building_idx
+      ON ${INSTANCE_BUILDING_CELL_TABLE}(instance_id, building_id)
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS instance_building_cell_xy_idx
+      ON ${INSTANCE_BUILDING_CELL_TABLE}(instance_id, x, y)
+    `);
+    await client.query('COMMIT');
+  } catch (error: unknown) {
+    await rollbackQuietly(client);
+    throw error;
+  } finally {
+    await client.query(`SELECT pg_advisory_unlock($1, $2)`, [INSTANCE_TILE_RESOURCE_STATE_LOCK_NAMESPACE, INSTANCE_BUILDING_CELL_LOCK_KEY]).catch(() => undefined);
+    client.release();
+  }
+}
+
+async function ensureInstanceRoomStateTable(pool: Pool): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(`SELECT pg_advisory_lock($1, $2)`, [INSTANCE_TILE_RESOURCE_STATE_LOCK_NAMESPACE, INSTANCE_ROOM_STATE_LOCK_KEY]);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS ${INSTANCE_ROOM_STATE_TABLE} (
+        instance_id varchar(100) NOT NULL,
+        room_id varchar(160) NOT NULL,
+        role varchar(60) NOT NULL DEFAULT 'generic',
+        enclosed boolean NOT NULL DEFAULT false,
+        semi_outdoor boolean NOT NULL DEFAULT false,
+        min_x bigint NOT NULL DEFAULT 0,
+        min_y bigint NOT NULL DEFAULT 0,
+        max_x bigint NOT NULL DEFAULT 0,
+        max_y bigint NOT NULL DEFAULT 0,
+        area bigint NOT NULL DEFAULT 0,
+        perimeter bigint NOT NULL DEFAULT 0,
+        door_count bigint NOT NULL DEFAULT 0,
+        window_count bigint NOT NULL DEFAULT 0,
+        roof_coverage_ratio int NOT NULL DEFAULT 0,
+        room_hash varchar(120) NOT NULL DEFAULT '',
+        revision bigint NOT NULL DEFAULT 1,
+        updated_at_tick bigint NOT NULL DEFAULT 0,
+        payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+        updated_at timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY (instance_id, room_id)
+      )
+    `);
+    await ensureBigintColumns(client, INSTANCE_ROOM_STATE_TABLE);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS instance_room_state_instance_role_idx
+      ON ${INSTANCE_ROOM_STATE_TABLE}(instance_id, role)
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS instance_room_state_instance_hash_idx
+      ON ${INSTANCE_ROOM_STATE_TABLE}(instance_id, room_hash)
+    `);
+    await client.query('COMMIT');
+  } catch (error: unknown) {
+    await rollbackQuietly(client);
+    throw error;
+  } finally {
+    await client.query(`SELECT pg_advisory_unlock($1, $2)`, [INSTANCE_TILE_RESOURCE_STATE_LOCK_NAMESPACE, INSTANCE_ROOM_STATE_LOCK_KEY]).catch(() => undefined);
+    client.release();
+  }
+}
+
+async function ensureInstanceRoomCellTable(pool: Pool): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(`SELECT pg_advisory_lock($1, $2)`, [INSTANCE_TILE_RESOURCE_STATE_LOCK_NAMESPACE, INSTANCE_ROOM_CELL_LOCK_KEY]);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS ${INSTANCE_ROOM_CELL_TABLE} (
+        instance_id varchar(100) NOT NULL,
+        room_id varchar(160) NOT NULL,
+        tile_index bigint NOT NULL,
+        x bigint NOT NULL,
+        y bigint NOT NULL,
+        edge_flags bigint NOT NULL DEFAULT 0,
+        updated_at timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY (instance_id, tile_index)
+      )
+    `);
+    await ensureBigintColumns(client, INSTANCE_ROOM_CELL_TABLE);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS instance_room_cell_room_idx
+      ON ${INSTANCE_ROOM_CELL_TABLE}(instance_id, room_id)
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS instance_room_cell_xy_idx
+      ON ${INSTANCE_ROOM_CELL_TABLE}(instance_id, x, y)
+    `);
+    await client.query('COMMIT');
+  } catch (error: unknown) {
+    await rollbackQuietly(client);
+    throw error;
+  } finally {
+    await client.query(`SELECT pg_advisory_unlock($1, $2)`, [INSTANCE_TILE_RESOURCE_STATE_LOCK_NAMESPACE, INSTANCE_ROOM_CELL_LOCK_KEY]).catch(() => undefined);
+    client.release();
+  }
+}
+
+async function ensureInstanceFengShuiStateTable(pool: Pool): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(`SELECT pg_advisory_lock($1, $2)`, [INSTANCE_TILE_RESOURCE_STATE_LOCK_NAMESPACE, INSTANCE_FENGSHUI_STATE_LOCK_KEY]);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS ${INSTANCE_FENGSHUI_STATE_TABLE} (
+        instance_id varchar(100) NOT NULL,
+        room_id varchar(160) NOT NULL,
+        score bigint NOT NULL DEFAULT 0,
+        grade varchar(40) NOT NULL DEFAULT 'plain',
+        primary_element varchar(20) NOT NULL DEFAULT 'neutral',
+        function_element varchar(20) NOT NULL DEFAULT 'neutral',
+        shape_score bigint NOT NULL DEFAULT 0,
+        enclosure_score bigint NOT NULL DEFAULT 0,
+        qi_score bigint NOT NULL DEFAULT 0,
+        sha_score bigint NOT NULL DEFAULT 0,
+        comfort_score bigint NOT NULL DEFAULT 0,
+        integrity_score bigint NOT NULL DEFAULT 0,
+        element_score bigint NOT NULL DEFAULT 0,
+        formation_score bigint NOT NULL DEFAULT 0,
+        detail_json jsonb NOT NULL DEFAULT '{}'::jsonb,
+        revision bigint NOT NULL DEFAULT 1,
+        updated_at_tick bigint NOT NULL DEFAULT 0,
+        updated_at timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY (instance_id, room_id)
+      )
+    `);
+    await ensureBigintColumns(client, INSTANCE_FENGSHUI_STATE_TABLE);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS instance_fengshui_state_instance_grade_idx
+      ON ${INSTANCE_FENGSHUI_STATE_TABLE}(instance_id, grade)
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS instance_fengshui_state_updated_idx
+      ON ${INSTANCE_FENGSHUI_STATE_TABLE}(updated_at DESC)
+    `);
+    await client.query('COMMIT');
+  } catch (error: unknown) {
+    await rollbackQuietly(client);
+    throw error;
+  } finally {
+    await client.query(`SELECT pg_advisory_unlock($1, $2)`, [INSTANCE_TILE_RESOURCE_STATE_LOCK_NAMESPACE, INSTANCE_FENGSHUI_STATE_LOCK_KEY]).catch(() => undefined);
+    client.release();
+  }
+}
+
+async function ensureInstanceBuildingAuditLogTable(pool: Pool): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(`SELECT pg_advisory_lock($1, $2)`, [INSTANCE_TILE_RESOURCE_STATE_LOCK_NAMESPACE, INSTANCE_BUILDING_AUDIT_LOG_LOCK_KEY]);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS ${INSTANCE_BUILDING_AUDIT_LOG_TABLE} (
+        id bigserial PRIMARY KEY,
+        instance_id varchar(100) NOT NULL,
+        operation_key varchar(220) NULL,
+        request_id varchar(160) NULL,
+        player_id varchar(100) NULL,
+        action varchar(60) NOT NULL,
+        building_id varchar(160) NULL,
+        def_id varchar(120) NULL,
+        ok boolean NOT NULL DEFAULT false,
+        reason varchar(160) NULL,
+        payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+        created_at_tick bigint NOT NULL DEFAULT 0,
+        created_at timestamptz NOT NULL DEFAULT now()
+      )
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS instance_building_audit_instance_idx
+      ON ${INSTANCE_BUILDING_AUDIT_LOG_TABLE}(instance_id, created_at DESC, id DESC)
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS instance_building_audit_operation_idx
+      ON ${INSTANCE_BUILDING_AUDIT_LOG_TABLE}(operation_key)
+    `);
+    await client.query('COMMIT');
+  } catch (error: unknown) {
+    await rollbackQuietly(client);
+    throw error;
+  } finally {
+    await client.query(`SELECT pg_advisory_unlock($1, $2)`, [INSTANCE_TILE_RESOURCE_STATE_LOCK_NAMESPACE, INSTANCE_BUILDING_AUDIT_LOG_LOCK_KEY]).catch(() => undefined);
+    client.release();
+  }
+}
+
+async function ensureInstanceBuildingOperationIdempotencyTable(pool: Pool): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(`SELECT pg_advisory_lock($1, $2)`, [INSTANCE_TILE_RESOURCE_STATE_LOCK_NAMESPACE, INSTANCE_BUILDING_OPERATION_IDEMPOTENCY_LOCK_KEY]);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS ${INSTANCE_BUILDING_OPERATION_IDEMPOTENCY_TABLE} (
+        operation_key varchar(220) NOT NULL PRIMARY KEY,
+        instance_id varchar(100) NOT NULL,
+        request_id varchar(160) NOT NULL,
+        player_id varchar(100) NULL,
+        action varchar(60) NOT NULL,
+        result_json jsonb NOT NULL DEFAULT '{}'::jsonb,
+        created_at_tick bigint NOT NULL DEFAULT 0,
+        updated_at timestamptz NOT NULL DEFAULT now()
+      )
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS instance_building_operation_instance_idx
+      ON ${INSTANCE_BUILDING_OPERATION_IDEMPOTENCY_TABLE}(instance_id, request_id, action)
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS instance_building_operation_updated_idx
+      ON ${INSTANCE_BUILDING_OPERATION_IDEMPOTENCY_TABLE}(updated_at DESC)
+    `);
+    await client.query('COMMIT');
+  } catch (error: unknown) {
+    await rollbackQuietly(client);
+    throw error;
+  } finally {
+    await client.query(`SELECT pg_advisory_unlock($1, $2)`, [INSTANCE_TILE_RESOURCE_STATE_LOCK_NAMESPACE, INSTANCE_BUILDING_OPERATION_IDEMPOTENCY_LOCK_KEY]).catch(() => undefined);
+    client.release();
+  }
+}
+
 async function acquireInstanceDomainLock(client: any, instanceId: string): Promise<void> {
   await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [instanceId]);
 }
@@ -2924,6 +3567,337 @@ function normalizeNullableInteger(value: unknown): number | null {
     return null;
   }
   return Math.trunc(parsed);
+}
+
+function normalizeBuildingPersistenceRow(value: unknown): Record<string, unknown> {
+  const source = toRecord(value);
+  const buildingId = normalizeRequiredString(source.id) || normalizeRequiredString(source.buildingId);
+  const defId = normalizeRequiredString(source.defId) || normalizeRequiredString(source.def_id);
+  const payload = buildPayload(source, [
+    'id',
+    'buildingId',
+    'building_id',
+    'defId',
+    'def_id',
+    'x',
+    'y',
+    'rotation',
+    'ownerPlayerId',
+    'owner_player_id',
+    'ownerSectId',
+    'owner_sect_id',
+    'roomId',
+    'room_id',
+    'hp',
+    'maxHp',
+    'max_hp',
+    'state',
+    'createdAtTick',
+    'created_at_tick',
+    'updatedAtTick',
+    'updated_at_tick',
+    'revision',
+    'payload',
+  ]);
+  return {
+    building_id: buildingId,
+    def_id: defId,
+    x: normalizeIntegerWithFallback(source.x, 0),
+    y: normalizeIntegerWithFallback(source.y, 0),
+    rotation: normalizeRotation(source.rotation),
+    owner_player_id: normalizeRequiredString(source.ownerPlayerId) || normalizeRequiredString(source.owner_player_id) || null,
+    owner_sect_id: normalizeRequiredString(source.ownerSectId) || normalizeRequiredString(source.owner_sect_id) || null,
+    room_id: normalizeRequiredString(source.roomId) || normalizeRequiredString(source.room_id) || null,
+    hp: Math.max(0, normalizeIntegerWithFallback(source.hp, 0)),
+    max_hp: Math.max(1, normalizeIntegerWithFallback(source.maxHp ?? source.max_hp, 1)),
+    state: normalizeRequiredString(source.state) || 'active',
+    created_at_tick: Math.max(0, normalizeIntegerWithFallback(source.createdAtTick ?? source.created_at_tick, 0)),
+    updated_at_tick: Math.max(0, normalizeIntegerWithFallback(source.updatedAtTick ?? source.updated_at_tick, 0)),
+    revision: Math.max(1, normalizeIntegerWithFallback(source.revision, 1)),
+    payload,
+  };
+}
+
+function normalizeBuildingCellPersistenceRows(value: unknown): Record<string, unknown>[] {
+  const source = toRecord(value);
+  const buildingId = normalizeRequiredString(source.id) || normalizeRequiredString(source.buildingId) || normalizeRequiredString(source.building_id);
+  if (!buildingId || !Array.isArray(source.cells)) {
+    return [];
+  }
+  const rows: Record<string, unknown>[] = [];
+  for (const cell of source.cells) {
+    const cellSource = toRecord(cell);
+    const tileIndex = normalizeNullableInteger(cellSource.tileIndex ?? cellSource.tile_index);
+    const x = normalizeNullableInteger(cellSource.x);
+    const y = normalizeNullableInteger(cellSource.y);
+    if (tileIndex === null || x === null || y === null || tileIndex < 0) {
+      continue;
+    }
+    rows.push({
+      building_id: buildingId,
+      tile_index: tileIndex,
+      x,
+      y,
+      tile_type: normalizeRequiredString(cellSource.tileType) || normalizeRequiredString(cellSource.tile_type) || 'floor',
+      previous_tile_type: normalizeRequiredString(cellSource.previousTileType) || normalizeRequiredString(cellSource.previous_tile_type) || null,
+      blocks_move: cellSource.blocksMove === true || cellSource.blocks_move === true,
+      blocks_sight: cellSource.blocksSight === true || cellSource.blocks_sight === true,
+    });
+  }
+  return rows;
+}
+
+function normalizeRoomPersistenceRow(value: unknown): Record<string, unknown> {
+  const source = toRecord(value);
+  const roomId = normalizeRequiredString(source.id) || normalizeRequiredString(source.roomId) || normalizeRequiredString(source.room_id);
+  const payload = buildPayload(source, [
+    'id',
+    'roomId',
+    'room_id',
+    'role',
+    'enclosed',
+    'semiOutdoor',
+    'semi_outdoor',
+    'minX',
+    'min_x',
+    'minY',
+    'min_y',
+    'maxX',
+    'max_x',
+    'maxY',
+    'max_y',
+    'area',
+    'perimeter',
+    'doorCount',
+    'door_count',
+    'windowCount',
+    'window_count',
+    'roofCoverageRatio',
+    'roof_coverage_ratio',
+    'roomHash',
+    'room_hash',
+    'revision',
+    'updatedAtTick',
+    'updated_at_tick',
+    'payload',
+  ]);
+  const revision = normalizeIntegerWithFallback(source.revision ?? source.topologyRevision, 1);
+  return {
+    room_id: roomId,
+    role: normalizeRequiredString(source.role) || 'generic',
+    enclosed: source.enclosed === true,
+    semi_outdoor: source.semiOutdoor === true || source.semi_outdoor === true,
+    min_x: normalizeIntegerWithFallback(source.minX ?? source.min_x, 0),
+    min_y: normalizeIntegerWithFallback(source.minY ?? source.min_y, 0),
+    max_x: normalizeIntegerWithFallback(source.maxX ?? source.max_x, 0),
+    max_y: normalizeIntegerWithFallback(source.maxY ?? source.max_y, 0),
+    area: Math.max(0, normalizeIntegerWithFallback(source.area, 0)),
+    perimeter: Math.max(0, normalizeIntegerWithFallback(source.perimeter, 0)),
+    door_count: Math.max(0, normalizeIntegerWithFallback(source.doorCount ?? source.door_count, 0)),
+    window_count: Math.max(0, normalizeIntegerWithFallback(source.windowCount ?? source.window_count, 0)),
+    roof_coverage_ratio: clampInteger(source.roofCoverageRatio ?? source.roof_coverage_ratio, 0, 100, 0),
+    room_hash: normalizeRequiredString(source.roomHash) || normalizeRequiredString(source.room_hash) || roomId,
+    revision: Math.max(1, revision),
+    updated_at_tick: Math.max(0, normalizeIntegerWithFallback(source.updatedAtTick ?? source.updated_at_tick, 0)),
+    payload,
+  };
+}
+
+function normalizeRoomCellPersistenceRow(value: unknown): Record<string, unknown> {
+  const source = toRecord(value);
+  const roomId = normalizeRequiredString(source.roomId) || normalizeRequiredString(source.room_id);
+  return {
+    room_id: roomId,
+    tile_index: Math.max(0, normalizeIntegerWithFallback(source.tileIndex ?? source.tile_index, 0)),
+    x: normalizeIntegerWithFallback(source.x, 0),
+    y: normalizeIntegerWithFallback(source.y, 0),
+    edge_flags: Math.max(0, normalizeIntegerWithFallback(source.edgeFlags ?? source.edge_flags, 0)),
+  };
+}
+
+function normalizeFengShuiPersistenceRow(value: unknown): Record<string, unknown> {
+  const source = toRecord(value);
+  const roomId = normalizeRequiredString(source.roomId) || normalizeRequiredString(source.room_id);
+  const payload = buildPayload(source, [
+    'instanceId',
+    'instance_id',
+    'roomId',
+    'room_id',
+    'score',
+    'grade',
+    'primaryElement',
+    'primary_element',
+    'functionElement',
+    'function_element',
+    'shapeScore',
+    'shape_score',
+    'enclosureScore',
+    'enclosure_score',
+    'qiScore',
+    'qi_score',
+    'shaScore',
+    'sha_score',
+    'comfortScore',
+    'comfort_score',
+    'integrityScore',
+    'integrity_score',
+    'elementScore',
+    'element_score',
+    'formationScore',
+    'formation_score',
+    'revision',
+    'updatedAtTick',
+    'updated_at_tick',
+    'detail_json',
+  ]);
+  if (Array.isArray(source.reasons)) {
+    payload.reasons = source.reasons;
+  }
+  return {
+    room_id: roomId,
+    score: clampInteger(source.score, 0, 1000, 0),
+    grade: normalizeRequiredString(source.grade) || 'plain',
+    primary_element: normalizeRequiredString(source.primaryElement) || normalizeRequiredString(source.primary_element) || 'neutral',
+    function_element: normalizeRequiredString(source.functionElement) || normalizeRequiredString(source.function_element) || 'neutral',
+    shape_score: normalizeIntegerWithFallback(source.shapeScore ?? source.shape_score, 0),
+    enclosure_score: normalizeIntegerWithFallback(source.enclosureScore ?? source.enclosure_score, 0),
+    qi_score: normalizeIntegerWithFallback(source.qiScore ?? source.qi_score, 0),
+    sha_score: normalizeIntegerWithFallback(source.shaScore ?? source.sha_score, 0),
+    comfort_score: normalizeIntegerWithFallback(source.comfortScore ?? source.comfort_score, 0),
+    integrity_score: normalizeIntegerWithFallback(source.integrityScore ?? source.integrity_score, 0),
+    element_score: normalizeIntegerWithFallback(source.elementScore ?? source.element_score, 0),
+    formation_score: normalizeIntegerWithFallback(source.formationScore ?? source.formation_score, 0),
+    revision: Math.max(1, normalizeIntegerWithFallback(source.revision, 1)),
+    updated_at_tick: Math.max(0, normalizeIntegerWithFallback(source.updatedAtTick ?? source.updated_at_tick, 0)),
+    detail_json: payload,
+  };
+}
+
+function projectBuildingPersistenceRow(row: Record<string, unknown>): Record<string, unknown> {
+  const payload = toRecord(row.payload);
+  return {
+    ...payload,
+    id: normalizeRequiredString(row.building_id),
+    defId: normalizeRequiredString(row.def_id),
+    x: normalizeIntegerWithFallback(row.x, 0),
+    y: normalizeIntegerWithFallback(row.y, 0),
+    rotation: normalizeRotation(row.rotation),
+    ownerPlayerId: normalizeRequiredString(row.owner_player_id) || null,
+    ownerSectId: normalizeRequiredString(row.owner_sect_id) || null,
+    roomId: normalizeRequiredString(row.room_id) || null,
+    hp: Math.max(0, normalizeIntegerWithFallback(row.hp, 0)),
+    maxHp: Math.max(1, normalizeIntegerWithFallback(row.max_hp, 1)),
+    state: normalizeRequiredString(row.state) || 'active',
+    createdAtTick: Math.max(0, normalizeIntegerWithFallback(row.created_at_tick, 0)),
+    updatedAtTick: Math.max(0, normalizeIntegerWithFallback(row.updated_at_tick, 0)),
+    revision: Math.max(1, normalizeIntegerWithFallback(row.revision, 1)),
+  };
+}
+
+function projectBuildingCellPersistenceRow(row: Record<string, unknown>): Record<string, unknown> {
+  return {
+    buildingId: normalizeRequiredString(row.building_id),
+    tileIndex: Math.max(0, normalizeIntegerWithFallback(row.tile_index, 0)),
+    x: normalizeIntegerWithFallback(row.x, 0),
+    y: normalizeIntegerWithFallback(row.y, 0),
+    tileType: normalizeRequiredString(row.tile_type) || 'floor',
+    previousTileType: normalizeRequiredString(row.previous_tile_type) || null,
+    blocksMove: row.blocks_move === true,
+    blocksSight: row.blocks_sight === true,
+  };
+}
+
+function projectRoomPersistenceRow(row: Record<string, unknown>): Record<string, unknown> {
+  const payload = toRecord(row.payload);
+  return {
+    ...payload,
+    id: normalizeRequiredString(row.room_id),
+    role: normalizeRequiredString(row.role) || 'generic',
+    enclosed: row.enclosed === true,
+    semiOutdoor: row.semi_outdoor === true,
+    minX: normalizeIntegerWithFallback(row.min_x, 0),
+    minY: normalizeIntegerWithFallback(row.min_y, 0),
+    maxX: normalizeIntegerWithFallback(row.max_x, 0),
+    maxY: normalizeIntegerWithFallback(row.max_y, 0),
+    area: Math.max(0, normalizeIntegerWithFallback(row.area, 0)),
+    perimeter: Math.max(0, normalizeIntegerWithFallback(row.perimeter, 0)),
+    doorCount: Math.max(0, normalizeIntegerWithFallback(row.door_count, 0)),
+    windowCount: Math.max(0, normalizeIntegerWithFallback(row.window_count, 0)),
+    roofCoverageRatio: clampInteger(row.roof_coverage_ratio, 0, 100, 0),
+    roomHash: normalizeRequiredString(row.room_hash),
+    revision: Math.max(1, normalizeIntegerWithFallback(row.revision, 1)),
+    updatedAtTick: Math.max(0, normalizeIntegerWithFallback(row.updated_at_tick, 0)),
+  };
+}
+
+function projectRoomCellPersistenceRow(row: Record<string, unknown>): Record<string, unknown> {
+  return {
+    roomId: normalizeRequiredString(row.room_id),
+    tileIndex: Math.max(0, normalizeIntegerWithFallback(row.tile_index, 0)),
+    x: normalizeIntegerWithFallback(row.x, 0),
+    y: normalizeIntegerWithFallback(row.y, 0),
+    edgeFlags: Math.max(0, normalizeIntegerWithFallback(row.edge_flags, 0)),
+  };
+}
+
+function projectFengShuiPersistenceRow(row: Record<string, unknown>): Record<string, unknown> {
+  const detail = toRecord(row.detail_json);
+  return {
+    ...detail,
+    roomId: normalizeRequiredString(row.room_id),
+    score: clampInteger(row.score, 0, 1000, 0),
+    grade: normalizeRequiredString(row.grade) || 'plain',
+    primaryElement: normalizeRequiredString(row.primary_element) || 'neutral',
+    functionElement: normalizeRequiredString(row.function_element) || 'neutral',
+    shapeScore: normalizeIntegerWithFallback(row.shape_score, 0),
+    enclosureScore: normalizeIntegerWithFallback(row.enclosure_score, 0),
+    qiScore: normalizeIntegerWithFallback(row.qi_score, 0),
+    shaScore: normalizeIntegerWithFallback(row.sha_score, 0),
+    comfortScore: normalizeIntegerWithFallback(row.comfort_score, 0),
+    integrityScore: normalizeIntegerWithFallback(row.integrity_score, 0),
+    elementScore: normalizeIntegerWithFallback(row.element_score, 0),
+    formationScore: normalizeIntegerWithFallback(row.formation_score, 0),
+    revision: Math.max(1, normalizeIntegerWithFallback(row.revision, 1)),
+    updatedAtTick: Math.max(0, normalizeIntegerWithFallback(row.updated_at_tick, 0)),
+  };
+}
+
+function buildPayload(source: Record<string, unknown>, excludedKeys: readonly string[]): Record<string, unknown> {
+  const base = toRecord(source.payload);
+  const excluded = new Set(excludedKeys);
+  for (const [key, value] of Object.entries(source)) {
+    if (!excluded.has(key)) {
+      base[key] = value;
+    }
+  }
+  return base;
+}
+
+function toRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? { ...(value as Record<string, unknown>) }
+    : {};
+}
+
+function normalizeIntegerWithFallback(value: unknown, fallback: number): number {
+  const parsed = normalizeNullableInteger(value);
+  return parsed === null ? fallback : parsed;
+}
+
+function clampInteger(value: unknown, min: number, max: number, fallback: number): number {
+  const parsed = normalizeNullableInteger(value);
+  if (parsed === null) {
+    return fallback;
+  }
+  return Math.max(min, Math.min(max, parsed));
+}
+
+function normalizeRotation(value: unknown): 0 | 90 | 180 | 270 {
+  const normalized = ((normalizeIntegerWithFallback(value, 0) % 360) + 360) % 360;
+  if (normalized === 90 || normalized === 180 || normalized === 270) {
+    return normalized;
+  }
+  return 0;
 }
 
 function hashString(value: string): string {

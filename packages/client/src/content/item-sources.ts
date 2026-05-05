@@ -1,5 +1,5 @@
 /** 物品来源的分类类型。 */
-export type ItemSourceKind = 'monster_drop' | 'mining' | 'search' | 'shop' | 'quest' | 'alchemy' | 'runtime_pvp_reward';
+export type ItemSourceKind = 'monster_drop' | 'mining' | 'search' | 'shop' | 'quest' | 'alchemy' | 'forging' | 'runtime_pvp_reward';
 /** 灵石对应的物品 ID。 */
 const SPIRIT_STONE_ITEM_ID = 'spirit_stone';
 
@@ -203,6 +203,12 @@ export interface AlchemyItemSourceEntry extends ItemSourceBaseEntry {
   recipeId: string;
 }
 
+/** 炼器配方来源条目。 */
+export interface ForgingItemSourceEntry extends ItemSourceBaseEntry {
+  kind: 'forging';
+  recipeId: string;
+}
+
 /** 运行时玩家战斗奖励来源条目。 */
 export interface RuntimePvpRewardItemSourceEntry extends ItemSourceBaseEntry {
   kind: 'runtime_pvp_reward';
@@ -217,6 +223,7 @@ export type ItemSourceEntry =
   | ShopItemSourceEntry
   | QuestItemSourceEntry
   | AlchemyItemSourceEntry
+  | ForgingItemSourceEntry
   | RuntimePvpRewardItemSourceEntry;
 
 /** 物品来源目录的内存结构。 */
@@ -283,6 +290,8 @@ function getSourceLinkLabel(kind: ItemSourceKind): string {
       return '任务';
     case 'alchemy':
       return '炼丹';
+    case 'forging':
+      return '炼器';
     case 'runtime_pvp_reward':
       return '战斗';
   }
@@ -321,7 +330,7 @@ function formatSourceDetails(entry: ItemSourceEntry): Array<{
     ];
   }
 
-  if (entry.kind === 'alchemy') {
+  if (entry.kind === 'alchemy' || entry.kind === 'forging') {
     return [
       { tone: 'map', text: entry.mapName },
       { tone: 'quest', text: entry.recipeId },

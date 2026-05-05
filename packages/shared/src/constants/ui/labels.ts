@@ -145,6 +145,7 @@ export const DIRECTION_LABELS: Record<Direction, string> = {
 export const ACTION_TYPE_LABELS: Record<ActionType, string> = {
   skill: '技能',
   gather: '采集',
+  craft: '技艺',
   interact: '交互',
   quest: '任务',
   toggle: '行动',

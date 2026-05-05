@@ -21,6 +21,7 @@ import type {
   VisibleTilePatch,
   S2C_MapStatic,
   TickRenderEntity,
+  FengShuiGrade,
 } from '@mud/shared';
 
 /** 地图安全区边距。 */
@@ -260,6 +261,37 @@ export interface MapSenseQiOverlayState {
   levelBaseValue?: number;
 }
 
+export interface MapBuildPreviewOverlayCell {
+  x: number;
+  y: number;
+  ok: boolean;
+  warning?: boolean;
+}
+
+export interface MapBuildPreviewOverlayState {
+  requestId?: string;
+  defId: string;
+  originX: number;
+  originY: number;
+  rotation?: 0 | 90 | 180 | 270;
+  cells: MapBuildPreviewOverlayCell[];
+}
+
+export interface MapFengShuiOverlayCell {
+  x: number;
+  y: number;
+  roomId: string;
+  score: number;
+  grade: FengShuiGrade;
+  revision: number;
+}
+
+export interface MapFengShuiOverlayState {
+  instanceId: string;
+  revision: number;
+  cells: MapFengShuiOverlayCell[];
+}
+
 /** 地图统一叠加层状态。 */
 export interface MapOverlayState {
 /**
@@ -282,6 +314,8 @@ export interface MapOverlayState {
  */
 
   senseQi: MapSenseQiOverlayState | null;  
+  buildPreview: MapBuildPreviewOverlayState | null;
+  fengShui: MapFengShuiOverlayState | null;
   /**
  * threatArrows：集合字段。
  */
@@ -851,6 +885,8 @@ export interface MapRuntimeApi {
   setTargetingOverlay(state: MapTargetingOverlayState | null): void;
   setFormationRangeOverlay(state: MapFormationRangeOverlayState | null): void;
   setSenseQiOverlay(state: MapSenseQiOverlayState | null): void;
+  setBuildPreviewOverlay(state: MapBuildPreviewOverlayState | null): void;
+  setFengShuiOverlay(state: MapFengShuiOverlayState | null): void;
   replaceVisibleEntities(
     entities: ObservedMapEntity[],
     transition?: MapEntityTransition | null,

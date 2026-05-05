@@ -14,6 +14,9 @@ import {
   resolveCurrentTargetingRange as resolveCurrentTargetingRangeHelper,
   resolveTargetRefForAction as resolveTargetRefForActionHelper,
 } from './main-targeting-helpers';
+import type { BuildingSenseQiRoomInfo } from './main-building-fengshui-state-source';
+
+const SENSE_QI_FENGSHUI_OVERLAY_REQUEST_INTERVAL_MS = 3000;
 /**
  * MainTargetingPendingAction：统一结构类型，保证协议与运行时一致性。
  */
@@ -247,6 +250,8 @@ type MainTargetingStateSourceOptions = {
  */
 
   formatAuraLevelText: (auraValue: number) => string;
+  getSenseQiRoomInfoAt?: (x: number, y: number) => BuildingSenseQiRoomInfo | null;
+  requestSenseQiFengShuiOverlay?: (x?: number, y?: number) => void;
   /**
  * showToast：showToast相关字段。
  */
@@ -282,6 +287,27 @@ function appendSenseQiFormationLines(lines: string[], entities: readonly MainTar
     const radius = Math.max(1, Math.trunc(Number(entity.formationRadius) || 0));
     lines.push(`${entity.name ?? '阵法'} · 中心 (${entity.wx}, ${entity.wy}) · 半径 ${radius}`);
   }
+}
+
+function appendSenseQiRoomLines(lines: string[], info: BuildingSenseQiRoomInfo | null): void {
+  if (!info) {
+    return;
+  }
+  lines.push(`房间：${info.roomLabel}`);
+  const roomParts: string[] = [];
+  if (typeof info.area === 'number') {
+    roomParts.push(`面积 ${Math.max(0, Math.round(info.area))}`);
+  }
+  if (typeof info.enclosed === 'boolean') {
+    roomParts.push(info.enclosed ? '封闭完整' : '连通外界');
+  }
+  if (typeof info.doorCount === 'number' || typeof info.windowCount === 'number') {
+    roomParts.push(`门窗 ${Math.max(0, Math.round(info.doorCount ?? 0))}/${Math.max(0, Math.round(info.windowCount ?? 0))}`);
+  }
+  if (roomParts.length > 0) {
+    lines.push(roomParts.join(' · '));
+  }
+  lines.push(`风水：${info.fengShuiLabel} ${Math.max(0, Math.round(info.score))}`);
 }
 
 function isTileInsideFormationRange(entity: MainTargetingObservedEntity, x: number, y: number): boolean {
@@ -325,6 +351,7 @@ export type MainTargetingStateSource = ReturnType<typeof createMainTargetingStat
 export function createMainTargetingStateSource(options: MainTargetingStateSourceOptions) {
   let pendingTargetedAction: MainTargetingPendingAction = null;
   let hoveredMapTile: MainTargetingHoveredTile = null;
+  let lastSenseQiFengShuiOverlayRequestAt = 0;
   /**
  * computeAffectedCells：执行AffectedCell相关逻辑。
  * @param action NonNullable<MainTargetingPendingAction> 参数说明。
@@ -577,6 +604,15 @@ export function createMainTargetingStateSource(options: MainTargetingStateSource
         hoverY: hoveredMapTile?.y,
         levelBaseValue: options.getAuraLevelBaseValue(),
       });
+      const now = Date.now();
+      if (
+        options.requestSenseQiFengShuiOverlay
+        && hoveredMapTile
+        && now - lastSenseQiFengShuiOverlayRequestAt >= SENSE_QI_FENGSHUI_OVERLAY_REQUEST_INTERVAL_MS
+      ) {
+        lastSenseQiFengShuiOverlayRequestAt = now;
+        options.requestSenseQiFengShuiOverlay(hoveredMapTile.x, hoveredMapTile.y);
+      }
 
       if (pendingTargetedAction || !hoveredMapTile) {
         options.senseQiTooltip.hide();
@@ -591,6 +627,7 @@ export function createMainTargetingStateSource(options: MainTargetingStateSource
 
       const lines = buildSenseQiTooltipLines(tile, hoveredMapTile.x, hoveredMapTile.y, options.formatAuraLevelText);
       appendSenseQiFormationLines(lines, options.getLatestEntities(), hoveredMapTile.x, hoveredMapTile.y);
+      appendSenseQiRoomLines(lines, options.getSenseQiRoomInfoAt?.(hoveredMapTile.x, hoveredMapTile.y) ?? null);
       options.senseQiTooltip.show(
         '感气视角',
         lines,

@@ -13,6 +13,7 @@ import type { CraftWorkbenchModal } from './ui/craft-workbench-modal';
 import type { DebugPanel } from './ui/debug-panel';
 import type { MainAttrDetailStateSource } from './main-attr-detail-state-source';
 import type { MainBreakthroughStateSource } from './main-breakthrough-state-source';
+import type { MainBuildingFengShuiStateSource } from './main-building-fengshui-state-source';
 import type { MainConnectionStateSource } from './main-connection-state-source';
 import type { MainDetailStateSource } from './main-detail-state-source';
 import type { MainMailStateSource } from './main-mail-state-source';
@@ -46,6 +47,7 @@ import {
   bindResponsiveViewportCss,
 } from './ui/responsive-viewport';
 import type { SocketAdminSender } from './network/socket-send-admin';
+import type { SocketBuildingSender } from './network/socket-send-building';
 import type { SocketPanelSender } from './network/socket-send-panel';
 import type { SocketRuntimeSender } from './network/socket-send-runtime';
 import type { SocketSocialEconomySender } from './network/socket-send-social-economy';
@@ -254,6 +256,13 @@ type MainBootstrapAssemblyOptions = {
     | 'handleQuestNavigateResult'
     | 'handleNpcShop'
   >;
+  buildingFengShuiStateSource: Pick<
+    MainBuildingFengShuiStateSource,
+    | 'handleBuildResult'
+    | 'handleRoomSummaryPatch'
+    | 'handleFengShuiOverlayPatch'
+    | 'handleFengShuiDetail'
+  >;
   /**
  * suggestionStateSource：suggestion状态来源相关字段。
  */
@@ -351,7 +360,7 @@ type MainBootstrapAssemblyOptions = {
  * craftWorkbenchModal：炼制Workbench弹层相关字段。
  */
 
-  craftWorkbenchModal: Pick<CraftWorkbenchModal, 'setCallbacks' | 'openAlchemy' | 'openEnhancement'>;
+  craftWorkbenchModal: Pick<CraftWorkbenchModal, 'setCallbacks' | 'openAlchemy' | 'openForging' | 'openEnhancement'>;
   /**
  * debugPanel：debug面板相关字段。
  */
@@ -463,11 +472,14 @@ type MainBootstrapAssemblyOptions = {
     | 'sendRequestNpcShop'
     | 'sendBuyNpcShopItem'
     | 'sendRequestAlchemyPanel'
+    | 'sendRequestForgingPanel'
     | 'sendSaveAlchemyPreset'
     | 'sendDeleteAlchemyPreset'
     | 'sendRequestEnhancementPanel'
     | 'sendStartAlchemy'
+    | 'sendStartForging'
     | 'sendCancelAlchemy'
+    | 'sendCancelForging'
     | 'sendStartEnhancement'
     | 'sendCancelEnhancement'
     | 'sendRequestLeaderboard'
@@ -483,6 +495,13 @@ type MainBootstrapAssemblyOptions = {
  */
 
   adminSender: Pick<SocketAdminSender, 'sendDebugResetSpawn'>;
+  buildingSender: Pick<
+    SocketBuildingSender,
+    | 'sendBuildPlaceIntent'
+    | 'sendBuildDeconstruct'
+    | 'sendRoomSetRole'
+    | 'sendFengShuiObserve'
+  >;
   /**
  * loginUI：loginUI相关字段。
  */
@@ -509,9 +528,11 @@ type MainBootstrapAssemblyOptions = {
 export function bootstrapMainApp(options: MainBootstrapAssemblyOptions): void {
   const techniqueActivityPanelHandlers: {
     [K in ClientTechniqueActivityKind]:
-      K extends 'alchemy' ? MainDetailStateSource['handleAlchemyPanel'] : MainDetailStateSource['handleEnhancementPanel'];
+      K extends 'enhancement' ? MainDetailStateSource['handleEnhancementPanel'] : MainDetailStateSource['handleAlchemyPanel'];
   } = {
     alchemy: (data: Parameters<MainDetailStateSource['handleAlchemyPanel']>[0]) =>
+      options.detailStateSource.handleAlchemyPanel(data),
+    forging: (data: Parameters<MainDetailStateSource['handleAlchemyPanel']>[0]) =>
       options.detailStateSource.handleAlchemyPanel(data),
     enhancement: (data: Parameters<MainDetailStateSource['handleEnhancementPanel']>[0]) =>
       options.detailStateSource.handleEnhancementPanel(data),
@@ -685,6 +706,10 @@ export function bootstrapMainApp(options: MainBootstrapAssemblyOptions): void {
     onMarketItemBook: (data) => options.marketStateSource.handleMarketItemBook(data),
     onMarketTradeHistory: (data) => options.marketStateSource.handleMarketTradeHistory(data),
     onNpcShop: (data) => options.detailStateSource.handleNpcShop(data),
+    onBuildResult: (data) => options.buildingFengShuiStateSource.handleBuildResult(data),
+    onRoomSummaryPatch: (data) => options.buildingFengShuiStateSource.handleRoomSummaryPatch(data),
+    onFengShuiOverlayPatch: (data) => options.buildingFengShuiStateSource.handleFengShuiOverlayPatch(data),
+    onFengShuiDetail: (data) => options.buildingFengShuiStateSource.handleFengShuiDetail(data),
     onNotice: (payload) => options.noticeStateSource.handleNotice(payload),
     onError: (data) => options.connectionStateSource.handleError(data),
     onKick: () => options.connectionStateSource.handleKick(),

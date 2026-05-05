@@ -43,6 +43,8 @@ import type {
   MapBootstrapInput,
   MapEntityTransition,
   MapFormationRangeOverlayState,
+  MapBuildPreviewOverlayState,
+  MapFengShuiOverlayState,
   MapSelfDeltaInput,
   MapWorldDeltaInput,
   MapSenseQiOverlayState,
@@ -358,6 +360,10 @@ export class MapStore {
   /** 当前寻路/施法叠加层状态。 */
   private targeting: MapTargetingOverlayState | null = null;
   private formationRange: MapFormationRangeOverlayState | null = null;
+  /** 本地建造预览叠加层，只表达输入反馈，不作为权威合法性。 */
+  private buildPreview: MapBuildPreviewOverlayState | null = null;
+  /** 服务端返回的风水格子叠加层。 */
+  private fengShui: MapFengShuiOverlayState | null = null;
   /** 感气视角叠加层状态。 */
   private senseQi: MapSenseQiOverlayState | null = null;  
   /**
@@ -821,6 +827,14 @@ export class MapStore {
     this.senseQi = state ? { ...state } : null;
   }
 
+  setBuildPreviewOverlay(state: MapBuildPreviewOverlayState | null): void {
+    this.buildPreview = state ? cloneJson(state) : null;
+  }
+
+  setFengShuiOverlay(state: MapFengShuiOverlayState | null): void {
+    this.fengShui = state ? cloneJson(state) : null;
+  }
+
   /** 清空地图会话状态，保留实例可复用。 */
   reset(): void {
     this.mapMeta = null;
@@ -838,6 +852,8 @@ export class MapStore {
     this.pathCells = [];
     this.targeting = null;
     this.formationRange = null;
+    this.buildPreview = null;
+    this.fengShui = null;
     this.senseQi = null;
     this.threatArrows = [];
     this.minimapMemoryVersion = 0;
@@ -933,6 +949,8 @@ export class MapStore {
         targeting: this.targeting,
         formationRange: this.formationRange,
         senseQi: this.senseQi,
+        buildPreview: this.buildPreview,
+        fengShui: this.fengShui,
         threatArrows: this.threatArrows,
       },
       minimap: {

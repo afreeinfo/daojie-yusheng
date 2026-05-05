@@ -59,12 +59,15 @@ export function bindTechniqueActivityPanelEvents(
   socket: Pick<SocketManager, 'on'>,
   handlers: TechniqueActivityPanelHandlerMap,
 ): void {
-  socket.on(TECHNIQUE_ACTIVITY_METADATA.alchemy.panelEvent, handlers.alchemy);
+  socket.on(TECHNIQUE_ACTIVITY_METADATA.alchemy.panelEvent, (data) => {
+    const kind = (data as { kind?: unknown })?.kind === 'forging' ? 'forging' : 'alchemy';
+    handlers[kind](data as never);
+  });
   socket.on(TECHNIQUE_ACTIVITY_METADATA.enhancement.panelEvent, handlers.enhancement);
 }
 
 export function applyTechniqueActivityPanelToWorkbench<K extends ClientTechniqueActivityKind>(
-  workbenchModal: Pick<CraftWorkbenchModal, 'updateAlchemy' | 'updateEnhancement'>,
+  workbenchModal: Pick<CraftWorkbenchModal, 'updateAlchemy' | 'updateForging' | 'updateEnhancement'>,
   kind: K,
   data: TechniqueActivityPanelPayloadByKind[K],
 ): void {
@@ -72,6 +75,7 @@ export function applyTechniqueActivityPanelToWorkbench<K extends ClientTechnique
     [P in ClientTechniqueActivityKind]: (payload: TechniqueActivityPanelPayloadByKind[P]) => void;
   } = {
     alchemy: (payload) => workbenchModal.updateAlchemy(payload),
+    forging: (payload) => workbenchModal.updateForging(payload),
     enhancement: (payload) => workbenchModal.updateEnhancement(payload),
   };
   applyMap[kind](data);

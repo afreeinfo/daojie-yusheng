@@ -43,6 +43,8 @@ type MainAttrDetailStateSourceOptions = {
  */
 
   cloneJson: <T>(value: T) => T;
+  /** 打开属性面板技艺页中对应的低频 UI。 */
+  onOpenCraftSkill?: (key: string) => void;
 };
 /**
  * MainAttrDetailStateSource：统一结构类型，保证协议与运行时一致性。
@@ -135,6 +137,9 @@ export function createMainAttrDetailStateSource(options: MainAttrDetailStateSour
   options.attrPanel.setCallbacks({
     onRequestDetail: () => {
       source.requestDetail();
+    },
+    onOpenCraftSkill: (key) => {
+      options.onOpenCraftSkill?.(key);
     },
   });
   return source;

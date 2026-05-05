@@ -484,6 +484,9 @@
       cursor: help;
       transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
     }
+    .attr-craft-row[data-craft-open] {
+      cursor: pointer;
+    }
     .attr-mini-main {
       display: grid;
       grid-template-columns: 30px minmax(0, 1fr);

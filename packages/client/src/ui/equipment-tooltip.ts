@@ -571,11 +571,12 @@ export function describeItemEffectDetails(item: ItemStack): string[] {
 export function describeEquipmentUtilityBonuses(item: ItemStack): string[] {
   const lines: string[] = [];
   const formatSignedRate = (value: number): string => `${value > 0 ? '+' : ''}${formatDisplayPercent(value * 100)}`;
+  const craftLabel = item.tags?.includes('forging_tool') && !item.tags?.includes('alchemy_furnace') ? '炼器' : '炼丹';
   if (typeof item.alchemySpeedRate === 'number' && item.alchemySpeedRate !== 0) {
-    lines.push(`炼丹速度 ${formatSignedRate(item.alchemySpeedRate)}`);
+    lines.push(`${craftLabel}速度 ${formatSignedRate(item.alchemySpeedRate)}`);
   }
   if (typeof item.alchemySuccessRate === 'number' && item.alchemySuccessRate !== 0) {
-    lines.push(`炼丹成功 ${formatSignedRate(item.alchemySuccessRate)}`);
+    lines.push(`${craftLabel}成功 ${formatSignedRate(item.alchemySuccessRate)}`);
   }
   if (typeof item.enhancementSpeedRate === 'number' && item.enhancementSpeedRate !== 0) {
     lines.push(`强化速度 ${formatSignedRate(item.enhancementSpeedRate)}`);

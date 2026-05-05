@@ -37,6 +37,7 @@ export function createMainFrontendModules(windowRef: Window) {
     panelSender: socket.panel,
     socialEconomySender: socket.socialEconomy,
     adminSender: socket.admin,
+    buildingSender: socket.building,
     mapRuntime: createMapRuntime(),
     loginUI: new LoginUI(socket),
     hud: new HUD(),

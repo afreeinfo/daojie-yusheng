@@ -1,0 +1,28 @@
+import fs from 'node:fs';
+import path from 'node:path';
+
+const repoRoot = path.resolve(process.cwd(), '..', '..');
+const sourcePath = path.join(repoRoot, 'packages/server/data/content/building-runtime/buildings.json');
+const targetDir = path.join(process.cwd(), 'src/constants/world');
+const targetPath = path.join(targetDir, 'building-catalog.generated.json');
+
+const buildings = JSON.parse(fs.readFileSync(sourcePath, 'utf8'));
+const catalog = buildings.map((building) => ({
+  id: building.id,
+  name: building.name,
+  layer: building.placement?.layer ?? 'decoration',
+  allowRotate: building.placement?.allowRotate !== false,
+  footprint: (building.placement?.footprint ?? []).map((cell) => ({ dx: Math.trunc(Number(cell.dx) || 0), dy: Math.trunc(Number(cell.dy) || 0) })),
+  cost: (building.economy?.cost ?? []).map((entry) => ({ itemId: entry.itemId, count: Math.max(1, Math.trunc(Number(entry.count) || 1)) })),
+  traits: Array.isArray(building.fengShui?.traits) ? building.fengShui.traits.slice() : [],
+  elementVector: building.fengShui?.elementVector ?? {},
+}));
+
+fs.mkdirSync(targetDir, { recursive: true });
+const next = `${JSON.stringify(catalog, null, 2)}\n`;
+if (!fs.existsSync(targetPath) || fs.readFileSync(targetPath, 'utf8') !== next) {
+  fs.writeFileSync(targetPath, next);
+  console.log(`已生成 ${path.relative(repoRoot, targetPath)}`);
+} else {
+  console.log('building-catalog.generated.json 无变更');
+}

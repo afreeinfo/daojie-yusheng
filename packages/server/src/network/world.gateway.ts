@@ -51,6 +51,7 @@ const world_gateway_npc_helper_1 = require("./world-gateway-npc.helper");
 const world_gateway_craft_helper_1 = require("./world-gateway-craft.helper");
 const world_gateway_market_helper_1 = require("./world-gateway-market.helper");
 const world_gateway_read_model_helper_1 = require("./world-gateway-read-model.helper");
+const world_gateway_building_helper_1 = require("./world-gateway-building.helper");
 const world_gateway_client_emit_helper_1 = require("./world-gateway-client-emit.helper");
 const world_gateway_guard_helper_1 = require("./world-gateway-guard.helper");
 const world_gateway_session_state_helper_1 = require("./world-gateway-session-state.helper");
@@ -80,6 +81,7 @@ let WorldGateway = WorldGateway_1 = class WorldGateway {
         gatewayBootstrapHelper; gatewayGmCommandHelper; gatewayGmSuggestionHelper; gatewaySuggestionHelper;
         gatewayMovementHelper; gatewayInventoryHelper; gatewayMailHelper; gatewayPlayerControlsHelper;
         gatewayNpcHelper; gatewayCraftHelper; gatewayMarketHelper; gatewayReadModelHelper; gatewayActionHelper;
+        gatewayBuildingHelper;
         gatewayClientEmitHelper; gatewayGuardHelper; gatewaySessionStateHelper; gatewayPresenceHelper;
         server; logger = new common_1.Logger(WorldGateway_1.name);
     constructor(worldGmSocketService, worldProtocolProjectionService, sessionBootstrapService, healthReadinessService, playerDomainPersistenceService, playerPersistenceFlushService, playerRuntimeService, mailRuntimeService, marketRuntimeService, craftPanelRuntimeService, suggestionRuntimeService, leaderboardRuntimeService, runtimeGmStateService, worldRuntimeService, worldClientEventService, worldSessionService, playerSessionRouteService, worldSyncService) {
@@ -114,6 +116,7 @@ let WorldGateway = WorldGateway_1 = class WorldGateway {
         this.gatewayMarketHelper = new world_gateway_market_helper_1.WorldGatewayMarketHelper(this);
         this.gatewayReadModelHelper = new world_gateway_read_model_helper_1.WorldGatewayReadModelHelper(this);
         this.gatewayActionHelper = new world_gateway_action_helper_1.WorldGatewayActionHelper(this);
+        this.gatewayBuildingHelper = new world_gateway_building_helper_1.WorldGatewayBuildingHelper(this);
         this.gatewayClientEmitHelper = new world_gateway_client_emit_helper_1.WorldGatewayClientEmitHelper(this);
         this.gatewayGuardHelper = new world_gateway_guard_helper_1.WorldGatewayGuardHelper(this);
         this.gatewaySessionStateHelper = new world_gateway_session_state_helper_1.WorldGatewaySessionStateHelper(this);
@@ -348,6 +351,10 @@ let WorldGateway = WorldGateway_1 = class WorldGateway {
     handleRefillFormation(client, payload) {
         return this.gatewayInventoryHelper.handleRefillFormation(client, payload);
     }
+    handleBuildPlaceIntent(client, payload) { return this.gatewayBuildingHelper.handleBuildPlaceIntent(client, payload); }
+    handleBuildDeconstruct(client, payload) { return this.gatewayBuildingHelper.handleBuildDeconstruct(client, payload); }
+    handleRoomSetRole(client, payload) { return this.gatewayBuildingHelper.handleRoomSetRole(client, payload); }
+    handleFengShuiObserve(client, payload) { return this.gatewayBuildingHelper.handleFengShuiObserve(client, payload); }
     handleDropItem(client, payload) {
         return this.gatewayInventoryHelper.handleDropItem(client, payload);
     }
@@ -888,6 +895,10 @@ __decorate([
     __metadata("design:paramtypes", [socket_io_1.Socket, Object]),
     __metadata("design:returntype", void 0)
 ], WorldGateway.prototype, "handleRefillFormation", null);
+__decorate([(0, websockets_1.SubscribeMessage)(shared_1.C2S.BuildPlaceIntent), __param(0, (0, websockets_1.ConnectedSocket)()), __param(1, (0, websockets_1.MessageBody)()), __metadata("design:type", Function), __metadata("design:paramtypes", [socket_io_1.Socket, Object]), __metadata("design:returntype", void 0)], WorldGateway.prototype, "handleBuildPlaceIntent", null);
+__decorate([(0, websockets_1.SubscribeMessage)(shared_1.C2S.BuildDeconstruct), __param(0, (0, websockets_1.ConnectedSocket)()), __param(1, (0, websockets_1.MessageBody)()), __metadata("design:type", Function), __metadata("design:paramtypes", [socket_io_1.Socket, Object]), __metadata("design:returntype", void 0)], WorldGateway.prototype, "handleBuildDeconstruct", null);
+__decorate([(0, websockets_1.SubscribeMessage)(shared_1.C2S.RoomSetRole), __param(0, (0, websockets_1.ConnectedSocket)()), __param(1, (0, websockets_1.MessageBody)()), __metadata("design:type", Function), __metadata("design:paramtypes", [socket_io_1.Socket, Object]), __metadata("design:returntype", void 0)], WorldGateway.prototype, "handleRoomSetRole", null);
+__decorate([(0, websockets_1.SubscribeMessage)(shared_1.C2S.FengShuiObserve), __param(0, (0, websockets_1.ConnectedSocket)()), __param(1, (0, websockets_1.MessageBody)()), __metadata("design:type", Function), __metadata("design:paramtypes", [socket_io_1.Socket, Object]), __metadata("design:returntype", void 0)], WorldGateway.prototype, "handleFengShuiObserve", null);
 __decorate([
     (0, websockets_1.SubscribeMessage)(shared_1.C2S.DropItem),
     __param(0, (0, websockets_1.ConnectedSocket)()),

@@ -37,6 +37,8 @@ const mapsDir = path.join(repoRoot, 'packages/server/data/maps');
  * 记录炼丹配方路径。
  */
 const alchemyRecipesPath = path.join(repoRoot, 'packages/server/data/content/alchemy/recipes.json');
+/** 记录炼器配方路径。 */
+const forgingRecipesPath = path.join(repoRoot, 'packages/server/data/content/forging/recipes.json');
 /**
  * 记录输出文件路径。
  */
@@ -468,7 +470,8 @@ function sortSources(entries) {
     shop: 2,
     quest: 3,
     alchemy: 4,
-    runtime_pvp_reward: 5,
+    forging: 5,
+    runtime_pvp_reward: 6,
   };
 /**
  * 记录seen。
@@ -585,6 +588,7 @@ function main() {
   const mapNameById = buildMapNameById(maps);
   const monsterLocationCatalog = buildMonsterLocationCatalog(monsters, mapRefsByMonsterId);
   const alchemyRecipes = readJson(alchemyRecipesPath);
+  const forgingRecipes = readJson(forgingRecipesPath);
   const sourceByItemId = new Map(
     items
       .slice()
@@ -789,6 +793,14 @@ function main() {
       kind: 'alchemy',
       mapId: 'crafting',
       mapName: '炼丹',
+      recipeId: recipe.recipeId,
+    });
+  }
+  for (const recipe of Array.isArray(forgingRecipes) ? forgingRecipes : []) {
+    pushSource(sourceByItemId, recipe.outputItemId, {
+      kind: 'forging',
+      mapId: 'crafting',
+      mapName: '炼器',
       recipeId: recipe.recipeId,
     });
   }

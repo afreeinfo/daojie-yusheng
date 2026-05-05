@@ -11,6 +11,7 @@ services:
       GM_PASSWORD: ${GM_PASSWORD:-${SERVER_GM_PASSWORD:-}}
       SERVER_RUNTIME_TOKEN: ${SERVER_RUNTIME_TOKEN}
       SERVER_GM_DATABASE_BACKUP_DIR: /var/lib/server/gm-database-backups
+      SERVER_DATABASE_BACKUP_WORKER_ROOT_DIR: /var/lib/server
     ports:
       - target: 3000
         published: 11923
@@ -36,6 +37,35 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
+    deploy:
+      replicas: 1
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first
+        failure_action: rollback
+      rollback_config:
+        parallelism: 1
+        delay: 10s
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 5
+        window: 120s
+
+  backup-worker:
+    image: ${SERVER_IMAGE_REPOSITORY:-ghcr.io/${GHCR_OWNER:-fruktoguo}/daojie-yusheng-server}:${SERVER_IMAGE_TAG:-shadow-latest}
+    command: ["node", "dist/tools/database-backup-worker.js"]
+    environment:
+      SERVER_DATABASE_URL: postgres://${DB_USERNAME:-mud}:${DB_PASSWORD}@postgres:5432/${DB_DATABASE:-daojie_yusheng}
+      DATABASE_URL: postgres://${DB_USERNAME:-mud}:${DB_PASSWORD}@postgres:5432/${DB_DATABASE:-daojie_yusheng}
+      SERVER_GM_DATABASE_BACKUP_DIR: /var/lib/server/gm-database-backups
+      SERVER_DATABASE_BACKUP_WORKER_ROOT_DIR: /var/lib/server
+    volumes:
+      - server_backup_data:/var/lib/server
+    networks:
+      - daojie_net
+    stop_grace_period: 30s
     deploy:
       replicas: 1
       update_config:

@@ -373,7 +373,7 @@ interface AutoUseItemRuleRow {
 
 interface ActiveJobRow {
   jobRunId: string;
-  jobType: 'alchemy' | 'enhancement';
+  jobType: 'alchemy' | 'forging' | 'enhancement';
   status: string;
   phase: string;
   startedAt: number;
@@ -4475,7 +4475,7 @@ function buildActiveJobRow(
     );
     return {
       jobRunId,
-      jobType: 'alchemy',
+      jobType: alchemyJob.jobType === 'forging' ? 'forging' : 'alchemy',
       status: normalizeJobStatus(alchemyJob),
       phase: normalizeOptionalString(alchemyJob.phase) ?? 'running',
       startedAt,
@@ -5254,11 +5254,11 @@ function applyProjectedActiveJob(
   };
   const jobType = normalizeOptionalString(row.job_type);
   if (jobType === 'enhancement') {
-    snapshot.progression.enhancementJob = normalizedJob;
+    snapshot.progression.enhancementJob = { ...normalizedJob, jobType: 'enhancement' };
     snapshot.progression.alchemyJob = null;
     return;
   }
-  snapshot.progression.alchemyJob = normalizedJob;
+  snapshot.progression.alchemyJob = { ...normalizedJob, jobType: jobType === 'forging' ? 'forging' : 'alchemy' };
   snapshot.progression.enhancementJob = null;
 }
 

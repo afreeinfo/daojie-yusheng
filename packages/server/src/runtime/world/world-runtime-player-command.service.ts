@@ -184,6 +184,8 @@ let WorldRuntimePlayerCommandService = class WorldRuntimePlayerCommandService {
         switch (kind) {
             case 'alchemy':
                 return this.worldRuntimeAlchemyService.dispatchStartAlchemy(playerId, payload, deps);
+            case 'forging':
+                return this.worldRuntimeAlchemyService.dispatchStartAlchemy(playerId, { ...(payload ?? {}), kind: 'forging' }, deps);
             case 'enhancement':
                 return this.worldRuntimeEnhancementService.dispatchStartEnhancement(playerId, payload, deps);
             case 'gather':
@@ -208,6 +210,8 @@ let WorldRuntimePlayerCommandService = class WorldRuntimePlayerCommandService {
         switch (kind) {
             case 'alchemy':
                 return this.worldRuntimeAlchemyService.dispatchCancelAlchemy(playerId, deps);
+            case 'forging':
+                return this.worldRuntimeAlchemyService.dispatchCancelAlchemy(playerId, deps, 'forging');
             case 'enhancement':
                 return this.worldRuntimeEnhancementService.dispatchCancelEnhancement(playerId, deps);
             case 'gather':
@@ -287,6 +291,10 @@ let WorldRuntimePlayerCommandService = class WorldRuntimePlayerCommandService {
                 return this.dispatchStartTechniqueActivity(playerId, 'alchemy', command.payload, deps);
             case 'cancelAlchemy':
                 return this.dispatchCancelTechniqueActivity(playerId, 'alchemy', deps);
+            case 'startForging':
+                return this.dispatchStartTechniqueActivity(playerId, 'forging', command.payload, deps);
+            case 'cancelForging':
+                return this.dispatchCancelTechniqueActivity(playerId, 'forging', deps);
             case 'saveAlchemyPreset':
                 this.worldRuntimeAlchemyService.dispatchSaveAlchemyPreset(playerId, command.payload, deps);
                 return;

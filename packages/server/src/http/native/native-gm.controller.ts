@@ -18,7 +18,7 @@ interface UpdatePlayerPasswordBody {
  * newPassword：newPassword相关字段。
  */
 
-  newPassword?: string;  
+  newPassword?: string;
   /**
  * password：password相关字段。
  */
@@ -47,7 +47,7 @@ interface UpdatePlayerBody {
  * section：section相关字段。
  */
 
-  section?: unknown;  
+  section?: unknown;
   /**
  * snapshot：快照状态或数据块。
  */
@@ -88,7 +88,7 @@ interface SpawnBotsBody {
  * anchorPlayerId：anchor玩家ID标识。
  */
 
-  anchorPlayerId?: string;  
+  anchorPlayerId?: string;
   /**
  * count：数量或计量字段。
  */
@@ -105,7 +105,7 @@ interface RemoveBotsBody {
  * playerIds：玩家ID相关字段。
  */
 
-  playerIds?: string[];  
+  playerIds?: string[];
   /**
  * all：all相关字段。
  */
@@ -155,12 +155,12 @@ interface RedeemCodeGroupBody {
  * name：名称名称或显示文本。
  */
 
-  name?: string;  
+  name?: string;
   /**
  * rewards：reward相关字段。
  */
 
-  rewards?: unknown[];  
+  rewards?: unknown[];
   /**
  * count：数量或计量字段。
  */
@@ -221,7 +221,7 @@ export class NativeGmController {
  * redeemCodeRuntimeService：redeemCode运行态服务引用。
  */
 
-  private readonly redeemCodeRuntimeService: RedeemCodeRuntimeServicePort;  
+  private readonly redeemCodeRuntimeService: RedeemCodeRuntimeServicePort;
   /**
  * 构造器：初始化 当前 实例并建立基础状态。
  * @param nextGmWorldService NativeGmWorldService 参数说明。
@@ -241,7 +241,7 @@ export class NativeGmController {
     @Inject(RedeemCodeRuntimeService) redeemCodeRuntimeService: RedeemCodeRuntimeServicePort,
   ) {
     this.redeemCodeRuntimeService = redeemCodeRuntimeService;
-  }  
+  }
   /**
  * getState：读取状态。
  * @returns 无返回值，完成状态的读取/组装。
@@ -251,7 +251,7 @@ export class NativeGmController {
   @Get('state')
   getState(@Query() query: GmListPlayersQuery) {
     return this.nextGmWorldService.getState(query);
-  }  
+  }
   /**
  * getWorldSummary：读取世界运行态摘要。
  * @returns 无返回值，完成世界运行态摘要的读取/组装。
@@ -261,7 +261,7 @@ export class NativeGmController {
   @Get('world/summary')
   getWorldSummary() {
     return this.nextGmWorldService.getRuntimeSummary();
-  }  
+  }
   /**
  * getWorldDirtyBacklog：读取世界脏积压。
  * @returns 无返回值，完成世界脏积压的读取/组装。
@@ -272,7 +272,7 @@ export class NativeGmController {
   getWorldDirtyBacklog() {
     const summary = this.nextGmWorldService.getRuntimeSummary();
     return typeof summary === 'object' && summary !== null ? (summary as { dirtyBacklog?: unknown }).dirtyBacklog ?? null : null;
-  }  
+  }
   /**
  * getWorldNodes：读取节点列表与健康状态。
  * @returns 无返回值，完成节点列表与健康状态的读取/组装。
@@ -282,7 +282,7 @@ export class NativeGmController {
   @Get('world/nodes')
   getWorldNodes() {
     return this.nextGmWorldService.getNodeRegistryHealth();
-  }  
+  }
   /**
  * getWorldOutboxRetryQueue：读取失败重试队列。
  * @returns 无返回值，完成失败重试队列的读取/组装。
@@ -292,7 +292,7 @@ export class NativeGmController {
   @Get('world/outbox/retry-queue')
   getWorldOutboxRetryQueue() {
     return this.nextGmWorldService.getOutboxRetryQueue();
-  }  
+  }
   /**
  * replayWorldOperation：重放单个 operation_id。
  * @param operationId string operation ID。
@@ -303,7 +303,7 @@ export class NativeGmController {
   @Get('world/operations/:operationId/replay')
   replayWorldOperation(@Param('operationId') operationId: string) {
     return this.nextGmWorldService.replayOperation(operationId);
-  }  
+  }
   /**
  * freezeWorldInstanceWriting：冻结实例写入。
  * @param instanceId string 实例 ID。
@@ -315,7 +315,7 @@ export class NativeGmController {
   freezeWorldInstanceWriting(@Param('instanceId') instanceId: string) {
     this.nextGmWorldService.freezeInstanceWriting(instanceId);
     return { ok: true };
-  }  
+  }
   /**
  * unfreezeWorldInstanceWriting：解冻实例写入。
  * @param instanceId string 实例 ID。
@@ -326,7 +326,7 @@ export class NativeGmController {
   @Post('world/instances/:instanceId/unfreeze')
   unfreezeWorldInstanceWriting(@Param('instanceId') instanceId: string) {
     return this.nextGmWorldService.unfreezeInstanceWriting(instanceId);
-  }  
+  }
   /**
  * getWorldInstanceLease：读取实例 lease / owner。
  * @param instanceId string 实例 ID。
@@ -337,7 +337,7 @@ export class NativeGmController {
   @Get('world/instances/:instanceId/lease')
   getWorldInstanceLease(@Param('instanceId') instanceId: string) {
     return this.nextGmWorldService.getInstanceLeaseStatus(instanceId);
-  }  
+  }
   /**
  * flushWorldPlayer：强制刷单玩家。
  * @param playerId string 玩家 ID。
@@ -348,7 +348,7 @@ export class NativeGmController {
   @Post('world/players/:playerId/flush')
   flushWorldPlayer(@Param('playerId') playerId: string) {
     return this.nextGmWorldService.flushPlayerPersistence(playerId);
-  }  
+  }
   /**
  * flushWorldInstance：强制刷单实例。
  * @param instanceId string 实例 ID。
@@ -359,7 +359,7 @@ export class NativeGmController {
   @Post('world/instances/:instanceId/flush')
   flushWorldInstance(@Param('instanceId') instanceId: string) {
     return this.nextGmWorldService.flushInstancePersistence(instanceId);
-  }  
+  }
   /**
  * rebuildWorldInstance：强制重建某实例。
  * @param instanceId string 实例 ID。
@@ -370,7 +370,7 @@ export class NativeGmController {
   @Post('world/instances/:instanceId/rebuild')
   rebuildWorldInstance(@Param('instanceId') instanceId: string) {
     return this.nextGmWorldService.rebuildPersistentInstance(instanceId);
-  }  
+  }
   /**
  * migrateWorldInstance：手动迁移实例到指定节点。
  * @param instanceId string 实例 ID。
@@ -386,7 +386,7 @@ export class NativeGmController {
       throw new BadRequestException('目标节点 ID 不能为空');
     }
     return this.nextGmWorldService.migrateInstanceToNode(instanceId, targetNodeId);
-  }  
+  }
   /**
  * migrateWorldPlayer：手动迁移玩家到指定节点。
  * @param playerId string 玩家 ID。
@@ -402,7 +402,7 @@ export class NativeGmController {
       throw new BadRequestException('目标节点 ID 不能为空');
     }
     return this.nextGmWorldService.migratePlayerToNode(playerId, targetNodeId);
-  }  
+  }
   /**
  * getEditorCatalog：读取Editor目录。
  * @returns 无返回值，完成Editor目录的读取/组装。
@@ -412,7 +412,7 @@ export class NativeGmController {
   @Get('editor-catalog')
   getEditorCatalog() {
     return this.nextGmWorldService.getEditorCatalog();
-  }  
+  }
   /**
  * getMaps：读取地图。
  * @returns 无返回值，完成地图的读取/组装。
@@ -422,7 +422,7 @@ export class NativeGmController {
   @Get('maps')
   getMaps() {
     return this.nextGmWorldService.getMaps();
-  }  
+  }
   /**
  * getMapRuntime：读取和平公共线兼容运行态。
  * @param mapId string 地图 ID。
@@ -445,7 +445,7 @@ export class NativeGmController {
     @Query('viewerId') viewerId: string,
   ) {
     return this.nextGmWorldService.getMapRuntime(mapId, qx, qy, qw, qh, viewerId);
-  }  
+  }
   /**
  * getWorldInstances：读取实例列表。
  * @returns 无返回值，完成实例列表的读取/组装。
@@ -455,7 +455,7 @@ export class NativeGmController {
   @Get('world/instances')
   getWorldInstances() {
     return this.nextGmWorldService.getWorldInstances();
-  }  
+  }
   /**
  * getWorldInstanceRuntime：读取实例运行态。
  * @param instanceId string 实例 ID。
@@ -478,7 +478,47 @@ export class NativeGmController {
     @Query('viewerId') viewerId: string,
   ) {
     return this.nextGmWorldService.getWorldInstanceRuntime(instanceId, qx, qy, qw, qh, viewerId);
-  }  
+  }
+
+  @Get('world/instances/:instanceId/buildings')
+  getWorldInstanceBuildings(@Param('instanceId') instanceId: string) {
+    return this.nextGmWorldService.getWorldInstanceBuildingState(instanceId);
+  }
+
+  @Get('world/instances/:instanceId/rooms')
+  getWorldInstanceRooms(@Param('instanceId') instanceId: string) {
+    return this.nextGmWorldService.getWorldInstanceBuildingState(instanceId);
+  }
+
+  @Get('world/instances/:instanceId/fengshui')
+  getWorldInstanceFengShui(@Param('instanceId') instanceId: string) {
+    return this.nextGmWorldService.getWorldInstanceBuildingState(instanceId);
+  }
+
+  @Get('world/instances/:instanceId/building-cell')
+  getWorldInstanceBuildingCell(
+    @Param('instanceId') instanceId: string,
+    @Query('x') x: string,
+    @Query('y') y: string,
+  ) {
+    return this.nextGmWorldService.getWorldInstanceBuildingCellState(instanceId, x, y);
+  }
+
+  @Get('world/building-audit')
+  getWorldBuildingAudit(@Query('limit') limit: string) {
+    return this.nextGmWorldService.getWorldBuildingOperationAudit(limit);
+  }
+
+  @Post('world/instances/:instanceId/recalculate-building-fengshui')
+  recalculateWorldInstanceBuildingFengShui(@Param('instanceId') instanceId: string) {
+    return this.nextGmWorldService.recalculateWorldInstanceBuildingState(instanceId);
+  }
+
+  @Post('world/instances/:instanceId/repair-building-fengshui')
+  repairWorldInstanceBuildingFengShui(@Param('instanceId') instanceId: string) {
+    return this.nextGmWorldService.repairWorldInstanceBuildingState(instanceId);
+  }
+
   /**
  * createWorldInstance：创建手动实例。
  * @param body GmCreateWorldInstanceReq 参数说明。
@@ -489,7 +529,7 @@ export class NativeGmController {
   @Post('world/instances')
   createWorldInstance(@Body() body: GmCreateWorldInstanceReq) {
     return this.nextGmWorldService.createWorldInstance(body);
-  }  
+  }
   /**
  * transferPlayerToInstance：迁移玩家到指定实例。
  * @param body GmTransferPlayerToInstanceReq 参数说明。
@@ -500,7 +540,7 @@ export class NativeGmController {
   @Post('world/instances/transfer-player')
   transferPlayerToInstance(@Body() body: GmTransferPlayerToInstanceReq) {
     return this.nextGmWorldService.transferPlayerToInstance(body);
-  }  
+  }
   /**
  * getPlayer：读取玩家。
  * @param playerId string 玩家 ID。
@@ -517,7 +557,7 @@ export class NativeGmController {
       throw new BadRequestException('目标玩家不存在');
     }
     return player;
-  }  
+  }
   /**
  * updatePlayerPassword：处理玩家Password并更新相关状态。
  * @param playerId string 玩家 ID。
@@ -533,7 +573,7 @@ export class NativeGmController {
       : body?.password ?? '';
     await this.nextManagedAccountService.updateManagedPlayerPassword(playerId, nextPassword);
     return { ok: true };
-  }  
+  }
   /**
  * updatePlayerAccount：处理玩家Account并更新相关状态。
  * @param playerId string 玩家 ID。
@@ -546,7 +586,7 @@ export class NativeGmController {
   async updatePlayerAccount(@Param('playerId') playerId: string, @Body() body: UpdatePlayerAccountBody) {
     await this.nextManagedAccountService.updateManagedPlayerAccount(playerId, body?.username ?? '');
     return { ok: true };
-  }  
+  }
   /**
  * banPlayerAccount：封禁玩家账号。
  * @param playerId string 玩家 ID。
@@ -586,7 +626,7 @@ export class NativeGmController {
   async updatePlayer(@Param('playerId') playerId: string, @Body() body: UpdatePlayerBody) {
     await this.nextGmPlayerService.updatePlayer(playerId, body ?? {});
     return { ok: true };
-  }  
+  }
   /**
  * resetPlayer：执行reset玩家相关逻辑。
  * @param playerId string 玩家 ID。
@@ -604,7 +644,7 @@ export class NativeGmController {
       await this.nextGmPlayerService.resetPersistedPlayer(playerId);
     }
     return { ok: true };
-  }  
+  }
   /**
  * setPlayerBodyTrainingLevel：设置玩家炼体等级。
  * @param playerId string 玩家 ID。
@@ -617,7 +657,7 @@ export class NativeGmController {
   async setPlayerBodyTrainingLevel(@Param('playerId') playerId: string, @Body() body: SetPlayerBodyTrainingLevelBody) {
     await this.nextGmPlayerService.setPlayerBodyTrainingLevel(playerId, body?.level);
     return { ok: true };
-  }  
+  }
   /**
  * addPlayerFoundation：调整玩家底蕴。
  * @param playerId string 玩家 ID。
@@ -630,7 +670,7 @@ export class NativeGmController {
   async addPlayerFoundation(@Param('playerId') playerId: string, @Body() body: AddPlayerCounterBody) {
     await this.nextGmPlayerService.addPlayerFoundation(playerId, body?.amount);
     return { ok: true };
-  }  
+  }
   /**
  * addPlayerCombatExp：调整玩家战斗经验。
  * @param playerId string 玩家 ID。
@@ -643,7 +683,7 @@ export class NativeGmController {
   async addPlayerCombatExp(@Param('playerId') playerId: string, @Body() body: AddPlayerCounterBody) {
     await this.nextGmPlayerService.addPlayerCombatExp(playerId, body?.amount);
     return { ok: true };
-  }  
+  }
   /**
  * resetHeavenGate：执行resetHeavenGate相关逻辑。
  * @param playerId string 玩家 ID。
@@ -655,7 +695,7 @@ export class NativeGmController {
   async resetHeavenGate(@Param('playerId') playerId: string) {
     await this.nextGmPlayerService.resetHeavenGate(playerId);
     return { ok: true };
-  }  
+  }
   /**
  * spawnBots：执行spawnBot相关逻辑。
  * @param body SpawnBotsBody 参数说明。
@@ -667,7 +707,7 @@ export class NativeGmController {
   async spawnBots(@Body() body: SpawnBotsBody) {
     this.nextGmPlayerService.spawnBots(body?.anchorPlayerId ?? '', body?.count);
     return { ok: true };
-  }  
+  }
   /**
  * removeBots：处理Bot并更新相关状态。
  * @param body RemoveBotsBody 参数说明。
@@ -679,7 +719,7 @@ export class NativeGmController {
   async removeBots(@Body() body: RemoveBotsBody) {
     this.nextGmPlayerService.removeBots(body?.playerIds ?? [], body?.all ?? false);
     return { ok: true };
-  }  
+  }
   /**
  * returnAllPlayersToDefaultSpawn：执行returnAll玩家To默认Spawn相关逻辑。
  * @returns 无返回值，直接更新returnAll玩家ToDefaultSpawn相关状态。
@@ -689,7 +729,7 @@ export class NativeGmController {
   @Post('shortcuts/players/return-all-to-default-spawn')
   async returnAllPlayersToDefaultSpawn(@Body() body: GmPlayerScopeBody) {
     return this.nextGmPlayerService.returnAllPlayersToDefaultSpawn(body ?? {});
-  }  
+  }
   /**
  * cleanupAllPlayersInvalidItems：清理全部非机器人的无效物品。
  * @returns 无返回值，直接更新全部无效物品清理相关状态。
@@ -699,7 +739,7 @@ export class NativeGmController {
   @Post('shortcuts/players/cleanup-invalid-items')
   async cleanupAllPlayersInvalidItems(@Body() body: GmPlayerScopeBody) {
     return this.nextGmPlayerService.cleanupAllPlayersInvalidItems(body ?? {});
-  }  
+  }
   /**
  * compensateAllPlayersCombatExp：补偿全部非机器人的战斗经验。
  * @returns 无返回值，直接更新全部战斗经验补偿相关状态。
@@ -709,7 +749,7 @@ export class NativeGmController {
   @Post('shortcuts/compensation/combat-exp-2026-04-09')
   async compensateAllPlayersCombatExp(@Body() body: GmPlayerScopeBody) {
     return this.nextGmPlayerService.compensateAllPlayersCombatExp(body ?? {});
-  }  
+  }
   /**
  * compensateAllPlayersFoundation：补偿全部非机器人的底蕴。
  * @returns 无返回值，直接更新全部底蕴补偿相关状态。
@@ -719,7 +759,7 @@ export class NativeGmController {
   @Post('shortcuts/compensation/foundation-2026-04-09')
   async compensateAllPlayersFoundation(@Body() body: GmPlayerScopeBody) {
     return this.nextGmPlayerService.compensateAllPlayersFoundation(body ?? {});
-  }  
+  }
   /**
  * resetNetworkPerf：执行resetNetworkPerf相关逻辑。
  * @returns 无返回值，直接更新resetNetworkPerf相关状态。
@@ -730,7 +770,7 @@ export class NativeGmController {
   resetNetworkPerf() {
     this.nextGmWorldService.resetNetworkPerf();
     return { ok: true };
-  }  
+  }
   /**
  * resetCpuPerf：执行resetCpuPerf相关逻辑。
  * @returns 无返回值，直接更新resetCpuPerf相关状态。
@@ -741,7 +781,7 @@ export class NativeGmController {
   resetCpuPerf() {
     this.nextGmWorldService.resetCpuPerf();
     return { ok: true };
-  }  
+  }
   /**
  * resetPathfindingPerf：读取resetPathfindingPerf并返回结果。
  * @returns 无返回值，直接更新resetPathfindingPerf相关状态。
@@ -752,7 +792,7 @@ export class NativeGmController {
   resetPathfindingPerf() {
     this.nextGmWorldService.resetPathfindingPerf();
     return { ok: true };
-  }  
+  }
   /**
  * createDirectMail：构建并返回目标对象。
  * @param playerId string 玩家 ID。
@@ -765,7 +805,7 @@ export class NativeGmController {
   async createDirectMail(@Param('playerId') playerId: string, @Body() body: DirectMailBody) {
     const mailId = await this.nextGmMailService.createDirectMail(playerId, body ?? {});
     return { ok: true, mailId };
-  }  
+  }
   /**
  * createBroadcastMail：构建并返回目标对象。
  * @param body BroadcastMailBody 参数说明。
@@ -777,7 +817,7 @@ export class NativeGmController {
   async createBroadcastMail(@Body() body: BroadcastMailBody) {
     const result = await this.nextGmMailService.createBroadcastMail(body ?? {});
     return { ok: true, mailId: result.mailId, batchId: result.batchId, recipientCount: result.recipientCount };
-  }  
+  }
   /**
  * getRedeemCodeGroups：读取RedeemCodeGroup。
  * @returns 无返回值，完成RedeemCodeGroup的读取/组装。
@@ -787,7 +827,7 @@ export class NativeGmController {
   @Get('redeem-code-groups')
   getRedeemCodeGroups() {
     return this.redeemCodeRuntimeService.listGroups();
-  }  
+  }
   /**
  * createRedeemCodeGroup：构建并返回目标对象。
  * @param body RedeemCodeGroupBody 参数说明。
@@ -798,7 +838,7 @@ export class NativeGmController {
   @Post('redeem-code-groups')
   async createRedeemCodeGroup(@Body() body: RedeemCodeGroupBody) {
     return this.redeemCodeRuntimeService.createGroup(body?.name ?? '', body?.rewards ?? [], Number(body?.count));
-  }  
+  }
   /**
  * getRedeemCodeGroup：读取RedeemCodeGroup。
  * @param groupId string group ID。
@@ -809,7 +849,7 @@ export class NativeGmController {
   @Get('redeem-code-groups/:groupId')
   async getRedeemCodeGroup(@Param('groupId') groupId: string) {
     return this.redeemCodeRuntimeService.getGroupDetail(groupId);
-  }  
+  }
   /**
  * updateRedeemCodeGroup：处理RedeemCodeGroup并更新相关状态。
  * @param groupId string group ID。
@@ -821,7 +861,7 @@ export class NativeGmController {
   @Put('redeem-code-groups/:groupId')
   async updateRedeemCodeGroup(@Param('groupId') groupId: string, @Body() body: RedeemCodeGroupBody) {
     return this.redeemCodeRuntimeService.updateGroup(groupId, body?.name ?? '', body?.rewards ?? []);
-  }  
+  }
   /**
  * appendRedeemCodes：执行appendRedeemCode相关逻辑。
  * @param groupId string group ID。
@@ -833,7 +873,7 @@ export class NativeGmController {
   @Post('redeem-code-groups/:groupId/codes')
   async appendRedeemCodes(@Param('groupId') groupId: string, @Body() body: RedeemCodeGroupBody) {
     return this.redeemCodeRuntimeService.appendCodes(groupId, Number(body?.count));
-  }  
+  }
   /**
  * destroyRedeemCode：执行destroyRedeemCode相关逻辑。
  * @param codeId string code ID。
@@ -844,7 +884,7 @@ export class NativeGmController {
   @Delete('redeem-codes/:codeId')
   async destroyRedeemCode(@Param('codeId') codeId: string) {
     return this.redeemCodeRuntimeService.destroyCode(codeId);
-  }  
+  }
   /**
  * getSuggestions：读取Suggestion。
  * @param query SuggestionsQuery 参数说明。
@@ -855,7 +895,7 @@ export class NativeGmController {
   @Get('suggestions')
   getSuggestions(@Query() query: SuggestionsQuery) {
     return this.nextGmWorldService.getSuggestions(query ?? {});
-  }  
+  }
   /**
  * completeSuggestion：执行completeSuggestion相关逻辑。
  * @param id string 参数说明。
@@ -866,7 +906,7 @@ export class NativeGmController {
   @Post('suggestions/:id/complete')
   async completeSuggestion(@Param('id') id: string) {
     return this.nextGmWorldService.completeSuggestion(id);
-  }  
+  }
   /**
  * replySuggestion：执行replySuggestion相关逻辑。
  * @param id string 参数说明。
@@ -878,7 +918,7 @@ export class NativeGmController {
   @Post('suggestions/:id/replies')
   async replySuggestion(@Param('id') id: string, @Body() body: SuggestionReplyBody) {
     return this.nextGmWorldService.replySuggestion(id, body ?? {});
-  }  
+  }
   /**
  * removeSuggestion：处理Suggestion并更新相关状态。
  * @param id string 参数说明。
@@ -889,7 +929,7 @@ export class NativeGmController {
   @Delete('suggestions/:id')
   async removeSuggestion(@Param('id') id: string) {
     return this.nextGmWorldService.removeSuggestion(id);
-  }  
+  }
   /**
  * updateMapTick：处理地图tick并更新相关状态。
  * @param mapId string 地图 ID。
@@ -902,7 +942,7 @@ export class NativeGmController {
   async updateMapTick(@Param('mapId') mapId: string, @Body() body: MapConfigBody) {
     await this.nextGmWorldService.updateMapTick(mapId, body ?? {});
     return { ok: true };
-  }  
+  }
   /**
  * updateMapTime：处理地图时间并更新相关状态。
  * @param mapId string 地图 ID。
@@ -915,7 +955,7 @@ export class NativeGmController {
   async updateMapTime(@Param('mapId') mapId: string, @Body() body: MapConfigBody) {
     await this.nextGmWorldService.updateMapTime(mapId, body ?? {});
     return { ok: true };
-  }  
+  }
   /**
  * reloadTickConfig：读取reloadtick配置并返回结果。
  * @returns 无返回值，直接更新reloadtick配置相关状态。
@@ -925,7 +965,7 @@ export class NativeGmController {
   @Post('tick-config/reload')
   async reloadTickConfig() {
     return this.nextGmWorldService.reloadTickConfig();
-  }  
+  }
   /**
  * clearWorldObservation：执行clear世界Observation相关逻辑。
  * @param viewerId string viewer ID。

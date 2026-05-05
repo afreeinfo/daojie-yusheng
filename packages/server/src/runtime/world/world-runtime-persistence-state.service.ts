@@ -227,6 +227,26 @@ let WorldRuntimePersistenceStateService = class WorldRuntimePersistenceStateServ
             }
             persistedDomains.push('monster_runtime');
         }
+        if (currentDomains.has('building') || currentDomains.has('room') || currentDomains.has('fengshui')) {
+            if (typeof persistence.saveBuildingRoomFengShuiState !== 'function') {
+                throw new Error(`instance_building_domain_persistence_missing:${instanceId}`);
+            }
+            const state = typeof instance.buildBuildingRoomFengShuiPersistenceState === 'function'
+                ? instance.buildBuildingRoomFengShuiPersistenceState()
+                : {
+                    buildings: typeof instance.buildBuildingPersistenceEntries === 'function'
+                        ? instance.buildBuildingPersistenceEntries()
+                        : [],
+                    rooms: typeof instance.listRoomSummaries === 'function' ? instance.listRoomSummaries() : [],
+                    fengShui: [],
+                };
+            await persistence.saveBuildingRoomFengShuiState(instanceId, state);
+            for (const domain of ['building', 'room', 'fengshui']) {
+                if (currentDomains.has(domain)) {
+                    persistedDomains.push(domain);
+                }
+            }
+        }
         if (currentDomains.has('time') && typeof persistence.saveInstanceCheckpoint === 'function') {
             await persistence.saveInstanceCheckpoint(instanceId, {
                 kind: 'time_checkpoint',

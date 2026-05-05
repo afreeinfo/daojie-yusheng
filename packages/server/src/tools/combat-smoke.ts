@@ -194,14 +194,8 @@ async function main() {
             y: 18,
         },
     });
-    await waitFor(async () => {
-        if (!attackerId || !defenderId) {
-            return false;
-        }
-        const [attackerState, defenderState] = await Promise.all([fetchState(attackerId), fetchState(defenderId)]);
-        return attackerState.player?.instanceId === combatInstanceId
-            && defenderState.player?.instanceId === combatInstanceId;
-    }, 5000);
+    await waitForPlayerPlacement(attackerId, combatInstanceId, 18, 18);
+    await waitForPlayerPlacement(defenderId, combatInstanceId, 19, 18);
     await ensurePlayersAdjacent(attacker, attackerId, defender, defenderId);
 /**
  * 记录attacker状态。
@@ -462,6 +456,22 @@ async function fetchState(playerId) {
         throw new Error(`request failed: ${response.status} ${await response.text()}`);
     }
     return response.json();
+}
+/**
+ * 等待 GM 迁移后的玩家实例与坐标都稳定，避免后续战斗断言抢在投影同步前执行。
+ */
+async function waitForPlayerPlacement(playerId, instanceId, x, y) {
+  // 关键分支按状态与边界条件处理，非法路径会被提前拦截。
+
+    await waitFor(async () => {
+        if (!playerId || !instanceId) {
+            return false;
+        }
+        const state = await fetchState(playerId);
+        return state.player?.instanceId === instanceId
+            && state.player?.x === x
+            && state.player?.y === y;
+    }, 5000);
 }
 /**
  * 处理postjson。

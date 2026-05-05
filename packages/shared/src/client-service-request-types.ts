@@ -383,6 +383,11 @@ export interface BuyNpcShopItemView {
 /** 请求炼制面板。 */
 export interface RequestAlchemyPanelView {
 /**
+ * kind：制造面板类型；默认炼丹，forging 复用炼丹同构交互。
+ */
+
+  kind?: 'alchemy' | 'forging';
+/**
  * knownCatalogVersion：known目录Version相关字段。
  */
 
@@ -425,6 +430,11 @@ export interface DeleteAlchemyPresetView {
 /** 开始炼制。 */
 export interface StartAlchemyView {
 /**
+ * kind：制造任务类型；默认炼丹，forging 表示炼器。
+ */
+
+  kind?: 'alchemy' | 'forging';
+/**
  * recipeId：recipeID标识。
  */
 
@@ -447,7 +457,9 @@ export interface StartAlchemyView {
 }
 
 /** 取消炼制。 */
-export interface CancelAlchemyView {}
+export interface CancelAlchemyView {
+  kind?: 'alchemy' | 'forging';
+}
 
 /** 请求强化面板。 */
 export interface RequestEnhancementPanelView {}

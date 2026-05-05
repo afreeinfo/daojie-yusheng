@@ -66,6 +66,7 @@ const EXPECTED_INTERFACES = {
     container: { type: 'S2C_ContainerDetail', optional: true },
   },
   S2C_AlchemyPanel: {
+    kind: { type: "'alchemy' | 'forging'", optional: true },
     state: { type: 'SyncedAlchemyPanelState | null', optional: false },
     catalogVersion: { type: 'number', optional: false },
     catalog: { type: 'AlchemyRecipeCatalogEntry[]', optional: true },

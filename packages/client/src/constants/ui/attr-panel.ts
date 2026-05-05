@@ -183,4 +183,6 @@ export const CRAFT_ICON_ATLAS_CELLS: Record<string, NumericCardIconAtlasCell> = 
   alchemy: { col: 0, row: 0 },
   gather: { col: 1, row: 0 },
   enhancement: { col: 2, row: 0 },
+  forging: { col: 2, row: 0 },
+  building: { col: 2, row: 0 },
 };

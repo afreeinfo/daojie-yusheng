@@ -12302,6 +12302,24 @@
       ]
     },
     {
+      "itemId": "equip.copper_forging_tool",
+      "name": "铜炼器钳",
+      "type": "equipment",
+      "grade": "yellow",
+      "level": 2,
+      "desc": "铜柄火钳嵌着稳纹小环，能夹持低阶器胚，是初学炼器者最常用的入门工具。",
+      "equipSlot": "weapon",
+      "tags": [
+        "forging_tool"
+      ],
+      "equipValueStats": {
+        "physAtk": 3,
+        "resolvePower": 1
+      },
+      "alchemySuccessRate": 0.1,
+      "alchemySpeedRate": 0.2
+    },
+    {
       "itemId": "equip.copper_enhancement_hammer",
       "name": "铜强化锤",
       "type": "equipment",
@@ -12336,6 +12354,38 @@
       },
       "alchemySuccessRate": 0.1,
       "alchemySpeedRate": 0.2
+    },
+    {
+      "itemId": "equip.copper_array_plate",
+      "name": "铜纹阵盘",
+      "type": "equipment",
+      "grade": "yellow",
+      "level": 2,
+      "desc": "薄铜盘上刻着最浅的定向灵纹，可承载入门阵法演算。",
+      "equipSlot": "weapon",
+      "tags": [
+        "array_plate"
+      ],
+      "equipValueStats": {
+        "resolvePower": 1,
+        "spellAtk": 3
+      }
+    },
+    {
+      "itemId": "equip.copper_building_hammer",
+      "name": "铜营造锤",
+      "type": "equipment",
+      "grade": "yellow",
+      "level": 2,
+      "desc": "锤身刻着规尺短线，可用于夯定梁柱与地基，是营造入门时的基础建造锤。",
+      "equipSlot": "weapon",
+      "tags": [
+        "building_hammer"
+      ],
+      "equipValueStats": {
+        "physAtk": 4,
+        "block": 1
+      }
     },
     {
       "itemId": "pill.wangsheng",

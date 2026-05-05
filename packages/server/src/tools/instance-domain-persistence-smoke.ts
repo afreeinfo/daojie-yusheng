@@ -554,6 +554,91 @@ async function main(): Promise<void> {
     await service.replaceOverlayChunks(instanceId, []);
     const overlayChunksAfterReplaceClear = await service.loadOverlayChunks(instanceId);
     assert.equal(overlayChunksAfterReplaceClear.length, 0);
+    await service.saveBuildingRoomFengShuiState(instanceId, {
+      buildings: [
+        {
+          id: 'building:stone_wall:1',
+          defId: 'stone_wall',
+          defHandle: 7,
+          x: 6,
+          y: 8,
+          rotation: 90,
+          ownerPlayerId: 'player:builder',
+          ownerSectId: 'sect:builder',
+          roomId: 'room:alchemy:1',
+          hp: 80,
+          maxHp: 100,
+          state: 'active',
+          createdAtTick: 10,
+          updatedAtTick: 12,
+          revision: 3,
+          cells: [{ tileIndex: 88, x: 6, y: 8 }],
+        },
+      ],
+      rooms: [
+        {
+          id: 'room:alchemy:1',
+          role: 'alchemy',
+          enclosed: true,
+          semiOutdoor: false,
+          minX: 5,
+          minY: 7,
+          maxX: 9,
+          maxY: 11,
+          area: 9,
+          perimeter: 12,
+          doorCount: 1,
+          windowCount: 0,
+          roofCoverageRatio: 100,
+          roomHash: 'hash:alchemy:1',
+          topologyRevision: 31,
+          contentRevision: 17,
+          updatedAtTick: 13,
+        },
+      ],
+      fengShui: [
+        {
+          roomId: 'room:alchemy:1',
+          score: 742,
+          grade: 'great_good',
+          primaryElement: 'wood',
+          functionElement: 'fire',
+          shapeScore: 40,
+          enclosureScore: 80,
+          qiScore: 90,
+          shaScore: 0,
+          comfortScore: 10,
+          integrityScore: 0,
+          elementScore: 45,
+          formationScore: 0,
+          reasons: [
+            { code: 'element.generates_function', delta: 45, severity: 'good' },
+          ],
+          revision: 48,
+          updatedAtTick: 14,
+        },
+      ],
+    });
+    const loadedBuildingRoomFengShuiState = await service.loadBuildingRoomFengShuiState(instanceId) as {
+      buildings: Array<Record<string, unknown>>;
+      rooms: Array<Record<string, unknown>>;
+      fengShui: Array<Record<string, unknown>>;
+    };
+    assert.equal(loadedBuildingRoomFengShuiState.buildings.length, 1);
+    assert.equal(loadedBuildingRoomFengShuiState.buildings[0]?.id, 'building:stone_wall:1');
+    assert.equal(loadedBuildingRoomFengShuiState.buildings[0]?.defId, 'stone_wall');
+    assert.equal(loadedBuildingRoomFengShuiState.buildings[0]?.defHandle, 7);
+    assert.deepEqual(loadedBuildingRoomFengShuiState.buildings[0]?.cells, [{ tileIndex: 88, x: 6, y: 8 }]);
+    assert.equal(loadedBuildingRoomFengShuiState.rooms.length, 1);
+    assert.equal(loadedBuildingRoomFengShuiState.rooms[0]?.id, 'room:alchemy:1');
+    assert.equal(loadedBuildingRoomFengShuiState.rooms[0]?.roofCoverageRatio, 100);
+    assert.equal(loadedBuildingRoomFengShuiState.rooms[0]?.topologyRevision, 31);
+    assert.equal(loadedBuildingRoomFengShuiState.fengShui.length, 1);
+    assert.equal(loadedBuildingRoomFengShuiState.fengShui[0]?.roomId, 'room:alchemy:1');
+    assert.equal(loadedBuildingRoomFengShuiState.fengShui[0]?.score, 742);
+    assert.deepEqual(loadedBuildingRoomFengShuiState.fengShui[0]?.reasons, [
+      { code: 'element.generates_function', delta: 45, severity: 'good' },
+    ]);
 
     const legacySnapshot = {
       version: 1,
@@ -619,7 +704,7 @@ async function main(): Promise<void> {
           ok: true,
           instanceId,
           rowCount: rows.length,
-          answers: 'with-db 下已验证 instance_tile_cell 可按 instance_id/x/y 落地和回读动态地块，instance_tile_resource_state 可按 instance_id/resource_key/tile_index 落地、delta upsert/delete 并回读 tile resource diff，instance_tile_damage_state 可按 instance_id/tile_index 落地、delta upsert/delete、按 x/y 回读动态地块坐标、清空并回读地块损坏状态，instance_temporary_tile_state 可按 instance_id/tile_index 落地、回读并清空技能生成临时地块，instance_checkpoint 可按 instance_id 存储/读取冷启动 checkpoint，instance_recovery_watermark 也可按 instance_id 存储/读取恢复水位，instance_ground_item 也能按 ground_item_id 落地/删除、按 tile delta 替换并按 instance_id 回读，instance_container_state/entry/timer 能按 instance_id/container_id 拆表落地、重建回读并删除，instance_monster_runtime_state 也能只给高价值怪物写入、delta upsert/delete 并按 instance_id 回读，低价值怪物会被拒绝落库，instance_event_state 也能按 event_id/instance_id 落地、回读并删除，instance_overlay_chunk 也能按 instance_id/patch_kind/chunk_key 落地、回读并删除',
+          answers: 'with-db 下已验证 instance_tile_cell 可按 instance_id/x/y 落地和回读动态地块，instance_tile_resource_state 可按 instance_id/resource_key/tile_index 落地、delta upsert/delete 并回读 tile resource diff，instance_tile_damage_state 可按 instance_id/tile_index 落地、delta upsert/delete、按 x/y 回读动态地块坐标、清空并回读地块损坏状态，instance_temporary_tile_state 可按 instance_id/tile_index 落地、回读并清空技能生成临时地块，instance_checkpoint 可按 instance_id 存储/读取冷启动 checkpoint，instance_recovery_watermark 也可按 instance_id 存储/读取恢复水位，instance_ground_item 也能按 ground_item_id 落地/删除、按 tile delta 替换并按 instance_id 回读，instance_container_state/entry/timer 能按 instance_id/container_id 拆表落地、重建回读并删除，instance_monster_runtime_state 也能只给高价值怪物写入、delta upsert/delete 并按 instance_id 回读，低价值怪物会被拒绝落库，instance_event_state 也能按 event_id/instance_id 落地、回读并删除，instance_overlay_chunk 也能按 instance_id/patch_kind/chunk_key 落地、回读并删除，instance_building_state/instance_room_state/instance_fengshui_state 能按 instance_id 分域落地和回读建筑真源、房间快照与风水解释',
           excludes: '不证明完整实例分域恢复/迁移链，也不证明其它 instance_* 专表',
           completionMapping: 'release:proof:with-db.instance-domain-persistence',
         },
@@ -641,6 +726,9 @@ async function cleanupRows(pool: Pool, instanceId: string): Promise<void> {
   await pool.query('DELETE FROM instance_monster_runtime_state WHERE instance_id = $1 OR instance_id = $2', [instanceId, `${instanceId}:monster`]);
   await pool.query('DELETE FROM instance_event_state WHERE instance_id = $1', [instanceId]);
   await pool.query('DELETE FROM instance_overlay_chunk WHERE instance_id = $1', [instanceId]);
+  await pool.query('DELETE FROM instance_fengshui_state WHERE instance_id = $1', [instanceId]).catch(() => undefined);
+  await pool.query('DELETE FROM instance_room_state WHERE instance_id = $1', [instanceId]).catch(() => undefined);
+  await pool.query('DELETE FROM instance_building_state WHERE instance_id = $1', [instanceId]).catch(() => undefined);
   await pool.query('DELETE FROM instance_container_entry WHERE instance_id = $1', [instanceId]).catch(() => undefined);
   await pool.query('DELETE FROM instance_container_timer WHERE instance_id = $1', [instanceId]).catch(() => undefined);
   await pool.query('DELETE FROM instance_container_state WHERE instance_id = $1', [instanceId]);

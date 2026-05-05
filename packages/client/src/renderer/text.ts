@@ -2,7 +2,15 @@
  * 文字渲染器——基于 Canvas 2D 的地图、实体与特效绘制，默认 IRenderer 实现。
  */
 
-import { FormationRangeOverlayState, IRenderer, SenseQiOverlayState, TargetingOverlayState, type FloatingActionTextStyle } from './types';
+import {
+  BuildPreviewOverlayState,
+  FengShuiOverlayState,
+  FormationRangeOverlayState,
+  IRenderer,
+  SenseQiOverlayState,
+  TargetingOverlayState,
+  type FloatingActionTextStyle,
+} from './types';
 import {
   DEFAULT_AURA_LEVEL_BASE_VALUE,
   GameTimeState,
@@ -602,6 +610,42 @@ function colorWithAlpha(color: string | undefined, alpha: number): string {
   return value;
 }
 
+function getFengShuiOverlayFill(grade: FengShuiOverlayState['cells'][number]['grade']): string {
+  switch (grade) {
+    case 'blessed':
+      return 'rgba(34, 197, 94, 0.30)';
+    case 'great_good':
+      return 'rgba(20, 184, 166, 0.28)';
+    case 'minor_good':
+      return 'rgba(132, 204, 22, 0.24)';
+    case 'bad':
+      return 'rgba(245, 158, 11, 0.27)';
+    case 'disaster':
+      return 'rgba(220, 38, 38, 0.34)';
+    case 'plain':
+    default:
+      return 'rgba(148, 163, 184, 0.20)';
+  }
+}
+
+function getFengShuiOverlayStroke(grade: FengShuiOverlayState['cells'][number]['grade']): string {
+  switch (grade) {
+    case 'blessed':
+      return 'rgba(74, 222, 128, 0.88)';
+    case 'great_good':
+      return 'rgba(45, 212, 191, 0.82)';
+    case 'minor_good':
+      return 'rgba(163, 230, 53, 0.76)';
+    case 'bad':
+      return 'rgba(251, 191, 36, 0.84)';
+    case 'disaster':
+      return 'rgba(248, 113, 113, 0.92)';
+    case 'plain':
+    default:
+      return 'rgba(203, 213, 225, 0.68)';
+  }
+}
+
 /** 浮动文字实例。 */
 interface FloatingText {
 /**
@@ -875,10 +919,16 @@ export class TextRenderer implements IRenderer {
   private formationRangeOverlay: FormationRangeOverlayState | null = null;
   /** 感气叠加层状态。 */
   private senseQiOverlay: SenseQiOverlayState | null = null;
+  /** 本地建造预览叠加层。 */
+  private buildPreviewOverlay: BuildPreviewOverlayState | null = null;
+  /** 服务端权威风水叠加层。 */
+  private fengShuiOverlay: FengShuiOverlayState | null = null;
   /** 受到影响的瞄准格子。 */
   private targetingAffectedKeys = new Set<string>();
   /** 受到影响的阵法范围格子。 */
   private formationRangeAffectedKeys = new Set<string>();
+  private buildPreviewCellByKey = new Map<string, BuildPreviewOverlayState['cells'][number]>();
+  private fengShuiCellByKey = new Map<string, FengShuiOverlayState['cells'][number]>();
   /** 当前浮动文字列表。 */
   private floatingTexts: FloatingText[] = [];
   /** 当前攻击拖尾列表。 */
@@ -949,6 +999,10 @@ export class TextRenderer implements IRenderer {
     this.formationRangeOverlay = null;
     this.formationRangeAffectedKeys.clear();
     this.senseQiOverlay = null;
+    this.buildPreviewOverlay = null;
+    this.buildPreviewCellByKey.clear();
+    this.fengShuiOverlay = null;
+    this.fengShuiCellByKey.clear();
     this.lastMotionSyncToken = undefined;
     this.previousVisibleTileKeys.clear();
     this.previousVisibleTileRevision = -1;
@@ -1015,6 +1069,16 @@ export class TextRenderer implements IRenderer {
   /** 设置感气视角叠加层。 */
   setSenseQiOverlay(state: SenseQiOverlayState | null) {
     this.senseQiOverlay = state;
+  }
+
+  setBuildPreviewOverlay(state: BuildPreviewOverlayState | null) {
+    this.buildPreviewOverlay = state;
+    this.buildPreviewCellByKey = new Map((state?.cells ?? []).map((cell) => [`${cell.x},${cell.y}`, cell]));
+  }
+
+  setFengShuiOverlay(state: FengShuiOverlayState | null) {
+    this.fengShuiOverlay = state;
+    this.fengShuiCellByKey = new Map((state?.cells ?? []).map((cell) => [`${cell.x},${cell.y}`, cell]));
   }
 
   /** 设置地面物品堆缓存，支持 Map 与可迭代输入。 */
@@ -1161,6 +1225,26 @@ export class TextRenderer implements IRenderer {
             ctx.strokeStyle = colorWithAlpha(rangeColor, 0.86);
             ctx.lineWidth = 2;
             ctx.strokeRect(sx + 1.5, sy + 1.5, cellSize - 3, cellSize - 3);
+          }
+          const fengShuiCell = this.fengShuiCellByKey.get(key);
+          if (fengShuiCell) {
+            ctx.fillStyle = getFengShuiOverlayFill(fengShuiCell.grade);
+            ctx.fillRect(sx + 1, sy + 1, cellSize - 2, cellSize - 2);
+            ctx.strokeStyle = getFengShuiOverlayStroke(fengShuiCell.grade);
+            ctx.lineWidth = 1;
+            ctx.strokeRect(sx + 1.5, sy + 1.5, cellSize - 3, cellSize - 3);
+          }
+          const buildPreviewCell = this.buildPreviewCellByKey.get(key);
+          if (buildPreviewCell) {
+            ctx.fillStyle = buildPreviewCell.ok
+              ? (buildPreviewCell.warning ? 'rgba(217, 119, 6, 0.24)' : 'rgba(22, 163, 74, 0.24)')
+              : 'rgba(220, 38, 38, 0.30)';
+            ctx.fillRect(sx + 2, sy + 2, cellSize - 4, cellSize - 4);
+            ctx.strokeStyle = buildPreviewCell.ok
+              ? (buildPreviewCell.warning ? 'rgba(245, 158, 11, 0.92)' : 'rgba(34, 197, 94, 0.92)')
+              : 'rgba(248, 113, 113, 0.96)';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(sx + 2.5, sy + 2.5, cellSize - 5, cellSize - 5);
           }
           if (tile && !this.senseQiOverlay && isVisible) {
             const visibleFormationRangeVisual = this.resolveFormationRangeVisual(gx, gy, false);
