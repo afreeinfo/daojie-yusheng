@@ -1,5 +1,5 @@
 FROM node:20-alpine AS builder
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
 WORKDIR /app
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml* ./
 COPY tsconfig.base.json ./
@@ -15,7 +15,7 @@ RUN pnpm --filter @mud/shared build && pnpm --filter @mud/server compile
 
 FROM node:20-alpine
 RUN apk add --no-cache postgresql-client
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
 WORKDIR /app
 COPY --from=builder /app/pnpm-workspace.yaml /app/package.json ./
 COPY --from=builder /app/tsconfig.base.json ./tsconfig.base.json
